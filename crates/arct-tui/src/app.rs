@@ -106,6 +106,13 @@ pub struct App {
     /// Onboarding wizard (shown on first run)
     pub onboarding: Option<crate::panels::onboarding::OnboardingWizard>,
 
+    /// First Keys, the pre-reader mode: while open it takes the whole
+    /// screen and every key
+    pub first_keys: Option<crate::first_keys::FirstKeys>,
+
+    /// Leaving First Keys quits arct (it was opened with `arct first-keys`)
+    pub first_keys_quits: bool,
+
     /// Settings panel (interactive)
     pub settings_panel: Option<crate::panels::settings::SettingsPanel>,
 
@@ -410,6 +417,8 @@ impl App {
             ai_loading: false,
             ai_mode: false,
             onboarding,
+            first_keys: options.first_keys.then(Self::open_first_keys),
+            first_keys_quits: options.first_keys,
             settings_panel: None,
             analytics: crate::analytics::Analytics::new().ok(),
             session_id: uuid::Uuid::new_v4().to_string(),
@@ -583,8 +592,10 @@ impl App {
 
     /// Run the application
     pub async fn run(&mut self) -> Result<()> {
-        // Show splash screen
-        Self::show_splash_screen()?;
+        // Show splash screen (not in First Keys: the child sees their screen at once)
+        if self.first_keys.is_none() {
+            Self::show_splash_screen()?;
+        }
 
         // Safe mode: start the shell in ~/ArcAcademy/home
         if self.config.shell.safe_mode {
@@ -683,6 +694,17 @@ impl App {
     async fn handle_event(&mut self, event: Event) -> Result<()> {
         match event {
             Event::Key(key) => {
+                // First Keys takes every key; only the grown-up sequence leaves
+                if let Some(keys) = self.first_keys.as_mut() {
+                    if keys.handle_key(key) == crate::first_keys::KeyOutcome::Exit {
+                        self.first_keys = None;
+                        if self.first_keys_quits {
+                            self.should_quit = true;
+                        }
+                    }
+                    return Ok(());
+                }
+
                 // The welcome dashboard dismisses on the first keypress;
                 // the key still does whatever it normally does
                 self.show_dashboard = false;
@@ -833,7 +855,10 @@ impl App {
                 self.handle_action(action).await?;
             }
             Event::Mouse(mouse) => {
-                self.handle_mouse(mouse).await?;
+                // Clicks and wheel do nothing in First Keys
+                if self.first_keys.is_none() {
+                    self.handle_mouse(mouse).await?;
+                }
             }
             Event::Resize(_, _) => {
                 // Terminal will automatically redraw on next iteration
@@ -1138,6 +1163,12 @@ impl App {
             }
             Action::ResetPlayground => {
                 self.reset_playground();
+            }
+            Action::StartFirstKeys => {
+                self.command_palette = None;
+                self.first_keys = Some(Self::open_first_keys());
+                self.first_keys_quits = false;
+                self.record_feature_event("first_keys");
             }
             Action::CommandPalette => {
                 if self.command_palette.is_some() {
@@ -3869,6 +3900,12 @@ impl App {
         }
     }
 
+    /// A fresh First Keys session, speaking through the system voice
+    /// (silent when ARCT_NO_SPEECH is set or no voice is installed)
+    fn open_first_keys() -> crate::first_keys::FirstKeys {
+        crate::first_keys::FirstKeys::new(Box::new(crate::first_keys::SystemVoice::new()))
+    }
+
     /// Execute a command selected from the command palette.
     ///
     /// Everything routes through the normal `Action` dispatch so behavior
@@ -4008,6 +4045,104 @@ mod playthrough_tests {
                 "{} was not recorded as completed",
                 lesson.id
             );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+#[cfg(test)]
+mod first_keys_wiring_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn app(name: &str, first_keys: bool) -> (App, std::path::PathBuf) {
+        // Never let a test run talk out loud
+        std::env::set_var("ARCT_NO_SPEECH", "1");
+        let dir = std::env::temp_dir().join(format!("arct-firstkeys-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("ARCT_DATA_DIR", &dir);
+        let config = dir.join("config.toml");
+        std::fs::write(&config, "[general]\nsetup_complete = true\n").unwrap();
+        let app = App::new_with_options(crate::RunOptions {
+            config_path: Some(config),
+            first_keys,
+            ..Default::default()
+        })
+        .unwrap();
+        (app, dir)
+    }
+
+    async fn press(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+        app.handle_event(Event::Key(KeyEvent::new(code, modifiers))).await.unwrap();
+    }
+
+    async fn type_word(app: &mut App, word: &str) {
+        for c in word.chars() {
+            press(app, KeyCode::Char(c), KeyModifiers::NONE).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn keys_that_quit_or_open_things_elsewhere_do_nothing_in_first_keys() {
+        let (mut app, dir) = app("mash", true);
+        assert!(app.first_keys.is_some());
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        press(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL).await;
+        press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL).await;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::F(1), KeyModifiers::NONE).await;
+        type_word(&mut app, "quit").await;
+        assert!(!app.should_quit, "a child's keys must never quit");
+        assert!(app.first_keys.is_some());
+        assert!(app.command_palette.is_none());
+        assert!(!app.show_help);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn the_grown_up_sequence_quits_when_started_from_the_command_line() {
+        let (mut app, dir) = app("cli-exit", true);
+        press(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+        type_word(&mut app, "quit").await;
+        assert!(app.first_keys.is_none());
+        assert!(app.should_quit);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn from_the_palette_the_grown_up_sequence_returns_to_arct() {
+        let (mut app, dir) = app("palette", false);
+        assert!(app.first_keys.is_none());
+        app.execute_palette_command(crate::panels::command_palette::PaletteCommand::Action(
+            Action::StartFirstKeys,
+        ))
+        .await
+        .unwrap();
+        assert!(app.first_keys.is_some());
+        press(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+        type_word(&mut app, "quit").await;
+        assert!(app.first_keys.is_none());
+        assert!(!app.should_quit, "leaving First Keys from the palette goes back to arct");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn first_keys_takes_the_whole_screen() {
+        let (mut app, dir) = app("draw", true);
+        // Smaller than the normal minimum size too
+        for (w, h) in [(120, 36), (40, 12)] {
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(w, h)).unwrap();
+            terminal.draw(|f| crate::ui::draw(f, &mut app)).unwrap();
+            let screen: String = terminal
+                .backend()
+                .buffer()
+                .content()
+                .iter()
+                .map(|c| c.symbol().to_string())
+                .collect();
+            assert!(!screen.contains("Terminal too small"), "{w}x{h}");
+            assert!(!screen.contains("Ctrl+K"), "normal key hints leaked into First Keys at {w}x{h}");
         }
         let _ = std::fs::remove_dir_all(&dir);
     }

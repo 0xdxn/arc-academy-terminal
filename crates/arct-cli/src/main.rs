@@ -63,6 +63,10 @@ enum Commands {
         action: TelemetryAction,
     },
 
+    /// First Keys: a safe screen for children who can't read yet.
+    /// Letters appear big and are spoken; a grown-up leaves with Ctrl+G, then q u i t
+    FirstKeys,
+
     /// Make a printable certificate for a finished track
     Certificate {
         /// Track to certify (default: every finished track)
@@ -165,7 +169,7 @@ async fn main() -> Result<()> {
     }
 
     match cli.command {
-        None | Some(Commands::Start { .. }) => {
+        None | Some(Commands::Start { .. }) | Some(Commands::FirstKeys) => {
             // Default: run TUI
             run_tui(cli.command, cli.config).await?;
         }
@@ -273,6 +277,7 @@ async fn run_tui(command: Option<Commands>, config_path: Option<PathBuf>) -> Res
     let mut options = arct_tui::RunOptions {
         config_path,
         theme: None,
+        first_keys: matches!(command, Some(Commands::FirstKeys)),
     };
 
     // Apply any start options

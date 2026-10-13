@@ -90,6 +90,12 @@ pub fn footer_mode(app: &App) -> FooterMode {
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let size = frame.size();
 
+    // First Keys owns the whole screen, at any size
+    if let Some(keys) = app.first_keys.as_ref() {
+        keys.render(frame, size, &app.theme);
+        return;
+    }
+
     // Check minimum terminal size
     if size.width < MIN_WIDTH || size.height < MIN_HEIGHT {
         let msg = format!(
