@@ -15,7 +15,8 @@ permissions:
 jobs:
   build:
     strategy:
-      fail-fast: true
+      # One target failing must not cancel the others' builds.
+      fail-fast: false
       matrix:
         include:
           - { os: macos-14, target: aarch64-apple-darwin }

@@ -56,6 +56,10 @@ impl ShellExecutor {
         cmd.arg(command);
 
         let mut child = pair.slave.spawn_command(cmd)?;
+        // The parent must not hold the slave end: on Linux the master never
+        // reaches EOF while it is open, and the read below would block
+        // after the child exits.
+        drop(pair.slave);
 
         // Read output from master
         let mut reader = pair.master.try_clone_reader()?;
