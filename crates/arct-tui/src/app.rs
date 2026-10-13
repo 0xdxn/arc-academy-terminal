@@ -2894,7 +2894,7 @@ impl App {
     /// Execute a lesson command against the real playground (practice_mode =
     /// "real"): guard-check it, handle the cd builtin with persistent cwd,
     /// and run everything else through the real shell executor.
-    async fn execute_playground_command(
+    pub(crate) async fn execute_playground_command(
         &mut self,
         cmd: &arct_core::Command,
         command_str: &str,

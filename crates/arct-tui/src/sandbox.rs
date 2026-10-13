@@ -1254,6 +1254,44 @@ mod tests {
         assert!(checked(&shell, "cd $PWD"));
     }
 
+    #[tokio::test]
+    async fn real_files_lesson_uses_variables_end_to_end() {
+        let mut app = app("realfiles");
+        let root = std::env::temp_dir().join(format!("arct-realfiles-{}", std::process::id()));
+        let mut playground = arct_core::Playground::open(root.clone()).unwrap();
+        let lesson = playground.enter_lesson("variables", &[]).unwrap();
+        std::fs::create_dir_all(lesson.join("tour")).unwrap();
+        app.playground = Some(playground);
+        let mut real = async |app: &mut App, line: &str| {
+            let cmd = app.analyzer.parse(line).unwrap();
+            app.execute_playground_command(&cmd, line).await
+        };
+
+        assert_eq!(real(&mut app, "LIST=\"tour/encore songs.txt\"").await, "");
+        real(&mut app, "echo \"Starlight Road\" > \"$LIST\"").await;
+        assert_eq!(
+            std::fs::read_to_string(lesson.join("tour/encore songs.txt")).unwrap(),
+            "Starlight Road\n"
+        );
+        assert!(real(&mut app, "DAY=friday; echo \"Load in\" > tour/${DAY}_notes.txt; cat tour/$DAY\"_notes.txt\"")
+            .await
+            .contains("Load in"));
+        real(&mut app, "cd tour").await;
+        assert!(real(&mut app, "echo $PWD").await.contains("tour"));
+        // the guard sees what the variable holds
+        real(&mut app, "X=/").await;
+        let out = real(&mut app, "rm -rf $X").await;
+        assert!(out.contains("'rm -rf /'"), "{out}");
+        let out = real(&mut app, "ls $X").await;
+        assert!(out.contains("points outside"), "{out}");
+        let out = real(&mut app, "cat $HOME/.profile").await;
+        assert!(out.contains("points outside"), "{out}");
+        let out = real(&mut app, "for f in *; do echo $f; done").await;
+        assert!(out.contains("can't be checked"), "{out}");
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
     #[test]
     fn real_mode_runs_exactly_the_expanded_line() {
         let dir = std::env::temp_dir().join(format!("arct-real-{}", std::process::id()));
