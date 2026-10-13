@@ -14,6 +14,7 @@ pub mod session;
 pub mod context;
 pub mod types;
 pub mod virtual_fs;
+pub mod virtual_fs_tools;
 pub mod achievement;
 pub mod stats;
 pub mod challenge;

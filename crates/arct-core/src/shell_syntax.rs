@@ -172,6 +172,8 @@ pub fn parse(
     Ok(list)
 }
 
+// end_word! resets its state even after the last word
+#[allow(unused_assignments)]
 fn tokenize(line: &str, lookup: &dyn Fn(&str) -> Option<String>) -> Result<Vec<Token>, String> {
     let chars: Vec<char> = line.chars().collect();
     let mut tokens = Vec::new();
@@ -368,12 +370,18 @@ fn expand_dollar(
     }
 }
 
-/// Does `name` match the glob `pattern`? Supports `*`, `?`, `[abc]`,
-/// `[a-z]` and `[!abc]`. Like sh, a leading `.` must be matched explicitly.
+/// Does `name` match the glob `pattern` the way the shell expands it?
+/// Supports `*`, `?`, `[abc]`, `[a-z]` and `[!abc]`; a leading `.` must
+/// be matched explicitly, so `*` skips hidden files.
 pub fn glob_match(pattern: &str, name: &str) -> bool {
     if name.starts_with('.') && !pattern.starts_with('.') {
         return false;
     }
+    fnmatch(pattern, name)
+}
+
+/// Pattern match without the shell's hidden-file rule (as `find -name` does)
+pub fn fnmatch(pattern: &str, name: &str) -> bool {
     let p: Vec<char> = pattern.chars().collect();
     let n: Vec<char> = name.chars().collect();
     match_from(&p, &n)
@@ -545,5 +553,6 @@ mod tests {
         assert!(!glob_match("*", ".hidden"));
         assert!(glob_match(".*", ".hidden"));
         assert!(glob_match("*", ""));
+        assert!(fnmatch("*.txt", ".hidden.txt"));
     }
 }
