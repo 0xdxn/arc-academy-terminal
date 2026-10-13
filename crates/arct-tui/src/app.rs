@@ -144,6 +144,9 @@ pub struct App {
     /// none, the free shell still has the safety guard.
     explore_jail: Option<Option<crate::jail::Jail>>,
 
+    /// The learner has been told safe mode runs without the OS sandbox here
+    told_unjailed: bool,
+
     /// Lesson menu for selecting lessons
     pub lesson_menu: Option<crate::panels::lesson_menu::LessonMenuPanel>,
 
@@ -421,6 +424,7 @@ impl App {
             explore: None,
             real_jail: None,
             explore_jail: None,
+            told_unjailed: false,
             lesson_menu: None,
             completed_lessons,
             user_stats,
@@ -2126,6 +2130,12 @@ impl App {
         // Determine if command was successful
         let success = !Self::output_reports_failure(&output);
 
+        // Safe mode without a working OS sandbox: say so, once
+        if self.config.shell.safe_mode && jail.is_none() && !self.told_unjailed {
+            self.told_unjailed = true;
+            self.last_output.push_str(&format!("\n{}{}\n", icons::hint().content, Self::unjailed_note()));
+        }
+
         // Reset scroll to top for new output
         self.output_scroll = 0;
 
@@ -2681,6 +2691,19 @@ impl App {
             self.explore_jail = Some(jail);
         }
         self.explore_jail.clone().flatten()
+    }
+
+    /// Safe mode is running on the safety guard alone
+    fn unjailed_note() -> String {
+        let how = if cfg!(target_os = "linux") {
+            " Installing the bwrap package (bubblewrap) adds the sandbox."
+        } else {
+            ""
+        };
+        format!(
+            "Safe mode here has the safety guard but not the system sandbox: the guard reads each \
+             command before it runs, but can't see what a script or program does once it starts.{how}"
+        )
     }
 
     /// Why real-files practice isn't available on this system
@@ -4009,6 +4032,31 @@ mod playthrough_tests {
                 lesson.id
             );
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Safe mode without a jail says so, once. Runs only `echo`, in the
+    /// test's own folder; no safe-mode home is opened.
+    #[tokio::test]
+    async fn safe_mode_without_a_jail_says_so_once() {
+        let dir = std::env::temp_dir().join(format!("arct-unjailed-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("ARCT_DATA_DIR", &dir);
+        let config = dir.join("config.toml");
+        std::fs::write(&config, "[general]\nsetup_complete = true\n[shell]\nsafe_mode = true\n").unwrap();
+        let mut app = App::new_with_options(crate::RunOptions {
+            config_path: Some(config),
+            ..Default::default()
+        })
+        .unwrap();
+        app.explore_jail = Some(None);
+        app.command_buffer = "echo hi".to_string();
+        app.execute_command().await.unwrap();
+        assert!(app.last_output.contains("hi"), "{}", app.last_output);
+        assert!(app.last_output.contains("not the system sandbox"), "{}", app.last_output);
+        app.command_buffer = "echo again".to_string();
+        app.execute_command().await.unwrap();
+        assert!(!app.last_output.contains("not the system sandbox"), "{}", app.last_output);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
