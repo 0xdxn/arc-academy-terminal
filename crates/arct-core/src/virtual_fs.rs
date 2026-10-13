@@ -1071,10 +1071,8 @@ impl MemTree {
         match (&moving, self.nodes.get(to)) {
             (Node::File { .. }, Some(Node::Dir { .. })) => return Err(os_error("Is a directory")),
             (Node::Dir { .. }, Some(Node::File { .. })) => return Err(os_error("Not a directory")),
-            (Node::Dir { .. }, Some(Node::Dir { .. })) => {
-                if !self.descendants(to).is_empty() {
-                    return Err(os_error("Directory not empty"));
-                }
+            (Node::Dir { .. }, Some(Node::Dir { .. })) if !self.descendants(to).is_empty() => {
+                return Err(os_error("Directory not empty"))
             }
             _ => {}
         }
