@@ -154,7 +154,7 @@ pub fn sed_script(args: &[String]) -> Option<&String> {
 fn sed(args: &[String], lines: &[&str]) -> Result<Vec<String>, String> {
     let quiet = args.iter().any(|a| a == "-n");
     for a in args.iter().filter(|a| a.starts_with('-') && a.len() > 1) {
-        if !matches!(a.as_str(), "-n" | "-E" | "-r" | "-i") {
+        if !matches!(a.as_str(), "-n" | "-E" | "-r") && !a.starts_with("-i") {
             return Err(format!("sed: the {a} flag isn't available in the sandbox"));
         }
     }

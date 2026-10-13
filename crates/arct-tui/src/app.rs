@@ -2675,11 +2675,59 @@ impl App {
             .execute(to_run.to_string(), env_vars, timeout, Some(cwd), Some(&jail))
             .await
         {
-            Ok(output) => output,
+            Ok(output) => {
+                // Only a line that succeeded says where its cds went: in
+                // `mkdir notes && cd notes` a failed mkdir means no cd
+                if !Self::output_reports_failure(&output) {
+                    self.follow_list_cds(to_run);
+                }
+                output
+            }
             Err(e) => match e.downcast_ref::<crate::shell::CommandTimeout>() {
                 Some(timeout) => timeout.to_string(),
                 None => format!("{}Error: {}", icons::error().content, e),
             },
+        }
+    }
+
+    /// After a real-files line like `cd weather; ls` or `mkdir a && cd a`
+    /// has run, the next command should start where its `cd`s left the
+    /// shell. Each line runs in a fresh shell, so the folder is followed
+    /// here, through the playground's own cd (real paths, never outside the
+    /// root), as sh would: a failed cd skips the `&&` parts after it, and
+    /// `;` carries on. Called only when the whole line succeeded, so other
+    /// commands are taken to have worked. Nothing is run. Lines with `||`, or a cd with a pipe, `&`, a subshell or a
+    /// redirect, aren't followed: the folder afterwards isn't knowable from
+    /// the line alone.
+    fn follow_list_cds(&mut self, line: &str) {
+        use arct_core::shell_syntax::{split_list, Joiner};
+        let parts = split_list(line);
+        if parts.len() < 2 || parts.iter().any(|(joiner, _)| *joiner == Joiner::IfFailed) {
+            return;
+        }
+        // (joiner, Some(cd target) or None for any other command)
+        let mut steps = Vec::new();
+        for (joiner, part) in &parts {
+            let Ok(words) = shellwords::split(part) else { return };
+            if words.first().map(String::as_str) == Some("cd") {
+                if part.contains(['|', '&', '(', ')', '<', '>']) || words.len() > 2 {
+                    return;
+                }
+                steps.push((*joiner, Some(words.get(1).cloned().unwrap_or_default())));
+            } else {
+                steps.push((*joiner, None));
+            }
+        }
+        let Some(playground) = self.playground.as_mut() else { return };
+        let mut last_ok = true;
+        for (joiner, target) in steps {
+            if joiner == Joiner::IfOk && !last_ok {
+                continue;
+            }
+            last_ok = match target {
+                Some(target) => playground.change_directory(&target).is_ok(),
+                None => true,
+            };
         }
     }
 
@@ -3643,6 +3691,60 @@ mod playthrough_tests {
         app.command_buffer = "echo again".to_string();
         app.execute_command().await.unwrap();
         assert!(!app.last_output.contains("not the system sandbox"), "{}", app.last_output);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The folder after a real-files list follows its cds the way sh
+    /// would, and never leaves the playground. Runs nothing.
+    #[test]
+    fn real_files_lists_leave_you_where_their_cd_did() {
+        let dir = std::env::temp_dir().join(format!("arct-cdlist-{}", std::process::id()));
+        let root = dir.join("playground");
+        for sub in ["weather/archive", "notes"] {
+            std::fs::create_dir_all(root.join(sub)).unwrap();
+        }
+        std::env::set_var("ARCT_DATA_DIR", &dir);
+        let config = dir.join("config.toml");
+        std::fs::write(&config, "[general]\nsetup_complete = true\n").unwrap();
+        let mut app = App::new_with_options(crate::RunOptions {
+            config_path: Some(config),
+            ..Default::default()
+        })
+        .unwrap();
+        let fresh = |app: &mut App| {
+            app.playground = Some(arct_core::Playground::open(root.clone()).unwrap());
+        };
+        let here = |app: &App| {
+            let pg = app.playground.as_ref().unwrap();
+            pg.cwd().strip_prefix(pg.root()).unwrap().display().to_string()
+        };
+
+        fresh(&mut app);
+        app.follow_list_cds("cd weather; ls");
+        assert_eq!(here(&app), "weather");
+        app.follow_list_cds("cd archive && ls && cd ..");
+        assert_eq!(here(&app), "weather");
+
+        // a failed cd skips the && after it; ; carries on
+        fresh(&mut app);
+        app.follow_list_cds("cd nope && cd weather");
+        assert_eq!(here(&app), "");
+        app.follow_list_cds("cd nope; cd weather");
+        assert_eq!(here(&app), "weather");
+
+        // never outside the playground, however the line climbs
+        fresh(&mut app);
+        app.follow_list_cds("cd notes; cd ../..; ls");
+        assert_eq!(here(&app), "notes");
+        app.follow_list_cds("ls; cd /");
+        assert_eq!(here(&app), "notes");
+
+        // not followed: ||, pipes, subshells, redirects on the cd
+        fresh(&mut app);
+        for line in ["cd notes || ls", "ls; cd notes | cat", "ls; (cd notes)", "ls; cd notes > x"] {
+            app.follow_list_cds(line);
+            assert_eq!(here(&app), "", "{line}");
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

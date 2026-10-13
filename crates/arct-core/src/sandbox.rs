@@ -690,7 +690,9 @@ impl<'a> Sandbox<'a> {
     }
 
     fn sandbox_sed(&mut self, args: &[String]) -> String {
-        let in_place = args.iter().any(|a| a == "-i");
+        // -i edits the file; -i.bak (a suffix right after -i) keeps the
+        // original beside it, as sed does on Linux and on a Mac
+        let in_place = args.iter().find(|a| a.starts_with("-i")).map(|a| a[2..].to_string());
         let ops = text_filter::operands("sed", args);
         let Some((_, files)) = ops.split_first() else {
             return self.error("sed needs a script, like: sed 's/old/new/' notes.txt");
@@ -698,7 +700,8 @@ impl<'a> Sandbox<'a> {
         if files.is_empty() {
             return self.error("sed needs a file here, or text piped in: cat notes.txt | sed 's/old/new/'");
         }
-        let filter_args: Vec<String> = args.iter().filter(|a| *a != "-i" && !files.contains(a)).cloned().collect();
+        let filter_args: Vec<String> =
+            args.iter().filter(|a| !a.starts_with("-i") && !files.contains(a)).cloned().collect();
         let mut out = String::new();
         for file in files {
             let text = match self.vfs.read_file(file) {
@@ -709,7 +712,14 @@ impl<'a> Sandbox<'a> {
                 }
             };
             match text_filter::apply("sed", &filter_args, &text) {
-                Ok(changed) if in_place => {
+                Ok(changed) if in_place.is_some() => {
+                    let suffix = in_place.as_deref().unwrap_or_default();
+                    if !suffix.is_empty() {
+                        if let Err(e) = self.vfs.write_file(&format!("{file}{suffix}"), &text, false) {
+                            out.push_str(&self.error(format!("sed: {file}{suffix}: {e}")));
+                            continue;
+                        }
+                    }
                     if let Err(e) = self.vfs.write_file(file, &changed, false) {
                         out.push_str(&self.error(format!("sed: {file}: {e}")));
                     }
