@@ -4,8 +4,8 @@
 
 ### Safety
 - Safe mode, on by default: the free shell runs inside `~/ArcAcademy/home` (created with starter files) behind the safety guard. Turn it off in settings; catastrophic commands are still refused everywhere.
-- The guard checks every part of a chained command (`a && b`, `a; b`, `a | b`), refuses `rm -r ~` and `--no-preserve-root`, and no longer lets `~/...` paths climb out with `..`.
-- In the simulated sandbox, `rm -rf /` now gets the safety lesson instead of wiping the sandbox, and flags like `-rf` are never treated as file names.
+- The guard checks every part of a chained command (`a && b`, `a; b`, `a | b`), refuses `rm -r ~` and `--no-preserve-root`, and keeps `~/...` paths inside the playground, `..` included.
+- In the simulated sandbox, `rm -rf /` gets the safety lesson, and flags like `-rf` are always read as flags, never as file names.
 - A lesson step only passes if its command actually worked.
 - The guard also checks each command after variables and wildcards are filled in, so `X=/; rm -rf $X` is refused like `rm -rf /`. Redirecting into `/dev/null` is allowed; into a real device it is not.
 - Real-files lessons can use `$`: arct fills in variables, `~` and wildcards itself, the guard checks the command with the real values and file names, and exactly that command runs, with nothing expanded a second time. Wildcards never match `.` or `..`. `$(...)` and backticks are still refused, and so is `$` inside `for`, `while` and `if`, whose values only exist as the shell runs them.
@@ -20,7 +20,7 @@
 - In real-files lessons, variables and `export` carry from one command to the next.
 - Lessons are TOML files, and steps can check outcomes (a folder exists, a file contains text, where you are) instead of exact keystrokes.
 - Hints come one per miss; the answer only after the last hint; challenge steps give none.
-- Practice and fill-in-the-blank steps are now actually checked.
+- Practice and fill-in-the-blank steps check the learner's answer.
 - Onboarding asks who's learning (Explorer or Operator); the lesson map groups by track and points at the next lesson.
 - Sandbox: `ls` with folders, `-l` and `-h`; pipes into grep, head, tail, wc, sort, uniq and cut; scripts with `sh`, `bash` and `./`; `chmod +x` works.
 - Operator lessons use their own practice files instead of system files; `top` is explained rather than run; the curl example fetches example.com.
@@ -44,7 +44,7 @@
 ### Setup and privacy
 - The AI helper is off unless you choose it; onboarding says where questions go. The name is optional.
 - Esc goes back during setup. Plain one-cell icons by default (Nerd Font icons optional), so panels line up in any terminal.
-- The installer downloads a prebuilt binary and checks its SHA-256 sum; it no longer installs Rust without asking.
+- The installer downloads a prebuilt binary and checks its SHA-256 sum, and asks before installing Rust.
 - `ARCT_DATA_DIR` sets where progress is kept.
 
 ## [1.0.0] (2026-07-06)
