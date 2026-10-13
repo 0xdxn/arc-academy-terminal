@@ -4,13 +4,179 @@ description = "Pack folders into one file, look inside, and unpack them."
 difficulty = "Intermediate"
 estimated_minutes = 15
 prerequisites = ["file-mgmt"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "tar", "gzip", "archives", "backup"]
+
+[[setup]]
+path = "bakery/notes.txt"
+contents = """Bakery notes
+Oven 2 runs hot. Bake scones 5 minutes less.
+Flour delivery every Tuesday.
+"""
+
+[[setup]]
+path = "bakery/recipes/bread.txt"
+contents = """Sourdough loaf
+500g flour, 350g water, 100g starter, 10g salt.
+Mix, rest 1 hour, fold, prove overnight, bake at 240C for 40 minutes.
+"""
+
+[[setup]]
+path = "bakery/recipes/scones.txt"
+contents = """Cheese scones
+250g flour, 60g butter, 100g cheese, 150ml milk.
+Rub, mix, cut, bake at 220C for 12 minutes.
+"""
+
+[[setup]]
+path = "bakery/orders/2026-03.csv"
+contents = """date,customer,item,qty
+2026-03-02,Sam,sourdough loaf,2
+2026-03-02,Mei,cheese scones,6
+2026-03-03,Omar,sourdough loaf,1
+2026-03-04,Ada,cheese scones,12
+2026-03-05,Grace,sourdough loaf,3
+"""
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "One file instead of many"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+An archive packs a whole folder into one file. One file is
+easy to back up, email or copy to another machine.
+
+tar does the packing. gzip squeezes it smaller. Together
+they make a .tar.gz file.
+
+  tar -czf NAME.tar.gz FOLDER    pack a folder
+  tar -tzf NAME.tar.gz           list what is inside
+  tar -xzf NAME.tar.gz           unpack here
+  tar -xzf NAME.tar.gz -C DIR    unpack into DIR
+
+The letters: c create, t list, x extract, z gzip, f file name.
+
+  gzip FILE          squeeze one file into FILE.gz
+  gunzip FILE.gz     get it back"""
+
+[[steps]]
+step_number = 2
+title = "Pack the bakery"
+instruction = "Pack the whole bakery folder into one file called bakery.tar.gz, here in your home folder."
+hints = ["tar with c (create), z (gzip) and f (file name), then the archive's name, then the folder.", "Type: tar -czf bakery.tar.gz bakery"]
+solution = ["tar -czf bakery.tar.gz bakery"]
+
+[steps.step_type.Task]
+goal = "Make bakery.tar.gz"
+success_message = "One file now holds the notes, the recipes and the orders. tar prints nothing when it works."
+checks = [{ FileExists = "bakery.tar.gz" }]
+
+[[steps]]
+step_number = 3
+title = "Look before you unpack"
+instruction = "Before you unpack an archive, look inside. Some keep everything in one folder; others spill dozens of files into wherever you are. List what is in bakery.tar.gz."
+hints = ["t lists. Keep z and f.", "Type: tar -tzf bakery.tar.gz"]
+solution = ["tar -tzf bakery.tar.gz"]
+
+[steps.step_type.Task]
+goal = "List the archive"
+success_message = "Everything sits under bakery/, so unpacking makes one tidy folder. Folders end in /."
+checks = [{ Used = "tar" }, { OutputContains = "bakery/recipes/bread.txt" }]
+
+[[steps]]
+step_number = 4
+title = "Why f comes last"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "Someone types: tar -cfz bakery.tar.gz bakery. What goes wrong?"
+options = [
+    "Nothing. The letters can go in any order.",
+    "f takes the archive's name from right after it, so tar names the archive z.",
+    "tar refuses, because z must always come first.",
+]
+correct_index = 1
+explanation = "f needs a value: the archive's name. It takes whatever follows it, and here that is the z. Put f last in the bundle so the next word is the name. The order of c, t, x and z doesn't matter."
+
+[[steps]]
+step_number = 5
+title = "Unpack somewhere safe"
+instruction = "Unpacking here would write over the bakery folder you already have. Make a new folder called restore, then unpack bakery.tar.gz into it with -C restore. tar won't make that folder for you."
+hints = ["Two commands: mkdir, then tar with x instead of c, and -C at the end.", "Type: mkdir restore   then: tar -xzf bakery.tar.gz -C restore"]
+solution = ["mkdir restore", "tar -xzf bakery.tar.gz -C restore"]
+
+[steps.step_type.Task]
+goal = "Unpack into restore"
+success_message = "A full copy now sits in restore/bakery, and the original was never touched. That's how you test a backup."
+checks = [{ FileExists = "restore/bakery/recipes/bread.txt" }, { FileExists = "restore/bakery/orders/2026-03.csv" }]
+
+[[steps]]
+step_number = 6
+title = "Squeeze one file"
+instruction = "gzip works on single files. Compress bakery/orders/2026-03.csv. (gzip shines on big text files such as logs; a tiny file like this one barely shrinks.)"
+hints = ["gzip, then the file's path.", "Type: gzip bakery/orders/2026-03.csv"]
+solution = ["gzip bakery/orders/2026-03.csv"]
+
+[steps.step_type.Task]
+goal = "Compress the orders file"
+success_message = "gzip replaced the file with 2026-03.csv.gz. List bakery/orders and you'll see: the original isn't next to it any more; it is inside the .gz."
+checks = [{ FileExists = "bakery/orders/2026-03.csv.gz" }, { Missing = "bakery/orders/2026-03.csv" }]
+
+[[steps]]
+step_number = 7
+title = "And back again"
+instruction = "You can't read a .gz file with cat. Turn it back into the plain CSV."
+hints = ["The opposite of gzip.", "Type: gunzip bakery/orders/2026-03.csv.gz"]
+solution = ["gunzip bakery/orders/2026-03.csv.gz"]
+
+[steps.step_type.Task]
+goal = "Get the CSV back"
+success_message = "Back to a plain CSV, and the .gz is gone. gzip and gunzip swap one for the other."
+checks = [{ FileExists = "bakery/orders/2026-03.csv" }, { Missing = "bakery/orders/2026-03.csv.gz" }]
+
+[[steps]]
+step_number = 8
+title = "Reading the name"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "A friend sends you menu.tgz. What is it?"
+options = [
+    "A tar archive squeezed with gzip, the same as menu.tar.gz.",
+    "One gzipped file, like menu.txt.gz.",
+    "An archive only Windows can open.",
+]
+correct_index = 0
+explanation = ".tgz is the short name for .tar.gz. Look inside with tar -tzf menu.tgz, then unpack with tar -xzf. A name ending in plain .gz, with no tar, is one squeezed file: use gunzip."
+
+[[steps]]
+step_number = 9
+title = "On your own"
+instruction = "Grace only needs the orders. Go into the bakery folder. Pack just the orders folder into orders.tgz, kept in bakery. Then check it by unpacking it into a new folder called for-grace, also in bakery."
+challenge = true
+solution = ["cd bakery", "tar -czf orders.tgz orders", "mkdir for-grace", "tar -xzf orders.tgz -C for-grace"]
+
+[steps.step_type.Task]
+goal = "Pack and test orders.tgz"
+success_message = "Grace gets the orders and nothing else, and you checked it before sending."
+checks = [{ FileExists = "bakery/orders.tgz" }, { FileExists = "bakery/for-grace/orders/2026-03.csv" }, { Missing = "bakery/for-grace/recipes" }]
+
+[[steps]]
+step_number = 10
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  tar -czf NAME.tar.gz FOLDER    pack (f last: the name follows it)
+  tar -tzf NAME.tar.gz           look inside first
+  tar -xzf NAME.tar.gz -C DIR    unpack into a folder you made
+  gzip FILE / gunzip FILE.gz     squeeze or restore one file
+
+.tar.gz and .tgz are the same thing. gzip replaces the file
+it squeezes.
+
+You will also see the letters without a dash, as in
+tar czf. It means the same. Modern tar spots gzip on its
+own when it reads, so tar -tf works too, but z never hurts."""

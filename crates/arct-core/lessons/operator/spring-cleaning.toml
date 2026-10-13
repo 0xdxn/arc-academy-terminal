@@ -4,13 +4,232 @@ description = "Archive, measure and tidy a messy project folder, safely."
 difficulty = "Advanced"
 estimated_minutes = 20
 prerequisites = ["archives", "disk-usage", "find-files"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "capstone", "du", "find", "tar", "rm", "cleanup"]
+
+# A community garden's booking website: source, old logs, temp files,
+# and a build folder that can be made again from the source at any time.
+# The build files are filler text, long enough to make the folder big.
+
+[[setup]]
+path = "garden-app/README.md"
+contents = """Garden plot bookings
+src/    the code
+build/  made from src by the build step; safe to delete, it comes back
+logs/   the app's monthly logs
+"""
+
+[[setup]]
+path = "garden-app/src/main.js"
+contents = """// Garden plot bookings
+import { bookPlot } from "./booking.js";
+bookPlot("Plot 4", "Ada", "2026-04-01");
+"""
+
+[[setup]]
+path = "garden-app/src/booking.js"
+contents = """export function bookPlot(plot, name, date) {
+  console.log(name + " booked " + plot + " from " + date);
+}
+"""
+
+[[setup]]
+path = "garden-app/src/draft.tmp"
+contents = "half-finished edit, autosaved\n"
+
+[[setup]]
+path = "garden-app/cache.tmp"
+contents = "cached page list\n"
+
+[[setup]]
+path = "garden-app/tmp/session-1.tmp"
+contents = "session for Mei\n"
+
+[[setup]]
+path = "garden-app/tmp/session-2.tmp"
+contents = "session for Sam\n"
+
+[[setup]]
+path = "garden-app/logs/README.md"
+contents = """Logs are kept one file per month.
+Archive old months before deleting them.
+"""
+
+[[setup]]
+path = "garden-app/logs/2026-01.log"
+contents = """2026-01-04 09:12 Plot 2 booked by Omar
+2026-01-11 10:40 Plot 7 booked by Grace
+2026-01-19 14:03 Plot 2 released by Omar
+2026-01-27 08:55 Plot 4 booked by Ada
+"""
+
+[[setup]]
+path = "garden-app/logs/2026-02.log"
+contents = """2026-02-02 11:20 Plot 9 booked by Sam
+2026-02-08 16:45 Plot 7 released by Grace
+2026-02-14 09:30 Plot 1 booked by Mei
+2026-02-22 13:10 Plot 7 booked by Omar
+"""
+
+[[setup]]
+path = "garden-app/logs/2026-03.log"
+contents = """2026-03-01 10:05 Plot 3 booked by Grace
+2026-03-09 12:15 Plot 9 released by Sam
+2026-03-16 15:50 Plot 9 booked by Ada
+2026-03-28 09:00 Plot 5 booked by Mei
+"""
+
+[[setup]]
+path = "garden-app/build/bundle.js"
+contents = "/* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */ /* Built from src. Filler so this file takes up space. */................................................\n"
+
+[[setup]]
+path = "garden-app/build/bundle.js.map"
+contents = "/* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */ /* Map for the built file. Filler so this file takes up space. */..................................\n"
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "The cleaning habit"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+garden-app, a community garden's booking site, has got
+messy: old logs, temp files, a big build folder. You'll tidy
+it the safe way, in five moves:
+
+  1. measure    du: what takes the space?
+  2. back up    tar: keep a copy of anything you might want
+  3. preview    ls or echo: see exactly what a glob matches
+  4. delete     rm: only what you previewed
+  5. verify     ls, find, du: did it do what you meant?
+
+rm has no undo. The other four moves are what make it safe."""
+
+[[steps]]
+step_number = 2
+title = "Measure"
+instruction = "Which folders in garden-app take the most space? Show them biggest first."
+hints = ["Plain du numbers, piped into sort with -r and -n.", "Type: du garden-app | sort -rn"]
+solution = ["du garden-app | sort -rn"]
+
+[steps.step_type.Task]
+goal = "Rank the folders by size"
+success_message = "After the total, build is the biggest by far. The README says it can be made again from src."
+checks = [{ Used = "sort" }, { OutputContains = "garden-app/build" }]
+
+[[steps]]
+step_number = 3
+title = "Find the junk"
+instruction = "Temp files end in .tmp. Find every one, anywhere in garden-app."
+hints = ["find with -name and a quoted pattern.", "Type: find garden-app -name '*.tmp'"]
+solution = ["find garden-app -name '*.tmp'"]
+
+[steps.step_type.Task]
+goal = "Find the .tmp files"
+success_message = "Four temp files in three places. Keep this list in mind for later."
+checks = [{ Used = "find" }, { OutputContains = "src/draft.tmp" }, { OutputContains = "tmp/session-2.tmp" }]
+
+[[steps]]
+step_number = 4
+title = "Back up the old logs"
+instruction = "The old logs might matter one day. Before deleting anything, pack the garden-app/logs folder into garden-logs.tar.gz, here in your home folder."
+hints = ["tar -czf, the archive's name, then the folder.", "Type: tar -czf garden-logs.tar.gz garden-app/logs"]
+solution = ["tar -czf garden-logs.tar.gz garden-app/logs"]
+
+[steps.step_type.Task]
+goal = "Make garden-logs.tar.gz"
+success_message = "The archive sits outside garden-app, so cleaning the project can't touch it."
+checks = [{ FileExists = "garden-logs.tar.gz" }]
+
+[[steps]]
+step_number = 5
+title = "Check the backup"
+instruction = "A backup you haven't looked at is only a hope. List what is inside garden-logs.tar.gz."
+hints = ["tar with t to list.", "Type: tar -tzf garden-logs.tar.gz"]
+solution = ["tar -tzf garden-logs.tar.gz"]
+
+[steps.step_type.Task]
+goal = "List the backup"
+success_message = "All three months are in there. Now the logs can go."
+checks = [{ Used = "tar" }, { OutputContains = "2026-03.log" }]
+
+[[steps]]
+step_number = 6
+title = "Why preview?"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "You plan to run rm garden-app/logs/*.log. Which command shows exactly what it would delete, and deletes nothing?"
+options = [
+    "echo garden-app/logs/*.log",
+    "rm -r garden-app/logs",
+    "cat garden-app/logs/*.log > /dev/null",
+]
+correct_index = 0
+explanation = "The shell turns the glob into a list of names before any command runs. echo (or ls) with the same glob prints that exact list. Then swap echo for rm."
+
+[[steps]]
+step_number = 7
+title = "Preview"
+instruction = "Preview everything in the logs folder with ls garden-app/logs/*. Is there anything in there you'd want to keep?"
+hints = ["ls, then the folder and a * glob. Don't run rm yet.", "Type: ls garden-app/logs/*"]
+solution = ["ls garden-app/logs/*"]
+
+[steps.step_type.Task]
+goal = "Preview the logs folder"
+success_message = "README.md is in there too, and it explains the logs. A plain * would have deleted it. *.log matches only the logs."
+checks = [{ OutputContains = "logs/README.md" }, { FileExists = "garden-app/logs/README.md" }]
+
+[[steps]]
+step_number = 8
+title = "Delete the old logs"
+instruction = "They're backed up and previewed. Delete the three .log files and nothing else."
+hints = ["rm with the *.log glob, not a plain *.", "Type: rm garden-app/logs/*.log"]
+solution = ["rm garden-app/logs/*.log"]
+
+[steps.step_type.Task]
+goal = "Delete the .log files"
+success_message = "Three logs gone, README.md kept, and a copy safe in garden-logs.tar.gz."
+checks = [{ Missing = "garden-app/logs/2026-01.log" }, { Missing = "garden-app/logs/2026-02.log" }, { Missing = "garden-app/logs/2026-03.log" }, { FileExists = "garden-app/logs/README.md" }]
+
+[[steps]]
+step_number = 9
+title = "Clear the temp files"
+instruction = "Now delete all four .tmp files that find showed you. They sit in three folders, so you need a glob for each. Preview with echo first, then rm."
+hints = ["Preview with echo and one glob per folder: garden-app/*.tmp, garden-app/src/*.tmp and garden-app/tmp/*.tmp. If the list is right, run the same line with rm instead of echo.", "Type: rm garden-app/*.tmp garden-app/src/*.tmp garden-app/tmp/*.tmp"]
+solution = ["echo garden-app/*.tmp garden-app/src/*.tmp garden-app/tmp/*.tmp", "rm garden-app/*.tmp garden-app/src/*.tmp garden-app/tmp/*.tmp"]
+
+[steps.step_type.Task]
+goal = "Delete the four .tmp files"
+success_message = "Temp files gone, code untouched. On a real machine, find garden-app -name '*.tmp' -delete does this in one go: run it without -delete first, as the preview. (The sandbox's find has no -delete.)"
+checks = [{ Missing = "garden-app/cache.tmp" }, { Missing = "garden-app/src/draft.tmp" }, { Missing = "garden-app/tmp/session-1.tmp" }, { Missing = "garden-app/tmp/session-2.tmp" }, { FileExists = "garden-app/src/main.js" }, { FileExists = "garden-app/src/booking.js" }]
+
+[[steps]]
+step_number = 10
+title = "On your own"
+instruction = "Finish the job. The build folder can be made again from src, so remove it. Then prove the cleanup worked: show garden-app's total size."
+challenge = true
+solution = ["ls garden-app/build", "rm -r garden-app/build", "du -sh garden-app"]
+
+[steps.step_type.Task]
+goal = "Remove build and measure again"
+success_message = "build was most of the folder, and now the folder is tiny. The code, the README and a backup of the logs are all safe. Measure, back up, preview, delete, verify."
+checks = [{ Missing = "garden-app/build" }, { FileExists = "garden-app/src/main.js" }, { FileExists = "garden-logs.tar.gz" }, { Used = "du" }, { OutputContains = "garden-app" }]
+
+[[steps]]
+step_number = 11
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  du FOLDER | sort -rn            measure: what is big?
+  find FOLDER -name '*.tmp'       find the junk
+  tar -czf backup.tar.gz FOLDER   back up first
+  tar -tzf backup.tar.gz          check the backup
+  echo PATTERN / ls PATTERN       preview the glob
+  rm PATTERN / rm -r FOLDER       delete what you previewed
+  du -sh FOLDER / find / ls       verify
+
+Measure, back up, preview, delete, verify. The same five
+moves work on a real disk, where rm is just as final."""

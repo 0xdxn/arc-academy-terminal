@@ -4,13 +4,212 @@ description = "Measure folders and find what takes the most space."
 difficulty = "Intermediate"
 estimated_minutes = 12
 prerequisites = ["find-files"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "du", "disk-space", "sort", "find"]
+
+# A small podcast's shared folder. The .wav and .mp3 files are stand-ins:
+# plain text, long enough to give each folder a different size.
+
+[[setup]]
+path = "studio/notes/ep01.txt"
+contents = """Episode 1: Night markets. Guest: Omar.
+Recorded 2026-02-03. Final cut 41 minutes.
+"""
+
+[[setup]]
+path = "studio/notes/ep02.txt"
+contents = """Episode 2: Bread at 4am. Guest: Mei.
+Recorded 2026-02-17. Final cut 38 minutes.
+"""
+
+[[setup]]
+path = "studio/artwork/cover.png"
+contents = "Stand-in for the show's cover picture.\n"
+
+[[setup]]
+path = "studio/episodes/raw/ep01.wav"
+contents = "Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording...............................\n"
+
+[[setup]]
+path = "studio/episodes/raw/ep02.wav"
+contents = "Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording. Stand-in for a raw recording...............................\n"
+
+[[setup]]
+path = "studio/episodes/final/ep01.mp3"
+contents = "Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode........\n"
+
+[[setup]]
+path = "studio/episodes/final/ep02.mp3"
+contents = "Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode. Stand-in for a finished episode........\n"
+
+[[setup]]
+path = "studio/archive/2024/interviews.mp3"
+contents = "Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews..................\n"
+
+[[setup]]
+path = "studio/archive/2025/interviews.mp3"
+contents = "Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews...................\n"
+
+[[setup]]
+path = "studio/archive/2025/outtakes.wav"
+contents = "Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes. Stand-in for old outtakes...........................\n"
+
+[[setup]]
+path = "studio/archive/2026/interviews.mp3"
+contents = "Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews. Stand-in for old interviews............\n"
+
+[[setup]]
+path = "drive/README.txt"
+contents = "This folder plays an external drive. Old episodes can live here.\n"
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "Measuring folders"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+The disk is nearly full. Which folder is to blame?
+du (disk usage) measures folders.
+
+  du -sh FOLDER    one total, easy to read (K, M, G)
+  du -h FOLDER     every folder inside, then the total
+  du FOLDER        the same, as plain numbers
+
+-s means summary (just the total). -h means human-readable.
+Plain du prints whole numbers: kilobytes on Linux.
+
+One honest note: this practice sandbox adds up the bytes in
+each file. A real du counts the disk blocks files sit in,
+so on your own machine the numbers come out a little
+bigger. The biggest folder is still the biggest."""
+
+[[steps]]
+step_number = 2
+title = "One total"
+instruction = "The podcast's files live in the studio folder. How big is it altogether? Show one easy-to-read total."
+hints = ["du with -s for the total and -h for K and M.", "Type: du -sh studio"]
+solution = ["du -sh studio"]
+
+[steps.step_type.Task]
+goal = "Show the total size of studio"
+success_message = "One line, one number. The K means kilobytes."
+checks = [{ Used = "du" }, { OutputContains = "studio" }]
+
+[[steps]]
+step_number = 3
+title = "Folder by folder"
+instruction = "Now show every folder inside studio with its size, still easy to read. Drop the s."
+hints = ["Same command without -s.", "Type: du -h studio"]
+solution = ["du -h studio"]
+
+[steps.step_type.Task]
+goal = "Show each folder's size"
+success_message = "du lists the deepest folders first and the total last."
+checks = [{ Used = "du" }, { OutputContains = "studio/episodes/raw" }]
+
+[[steps]]
+step_number = 4
+title = "A sorting trap"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "du -h prints sizes like 512B, 9.8K and 1.2M. You pipe them into sort -n. Why is the order wrong?"
+options = [
+    "sort -n reads only the number, so 512 looks bigger than 9.8 and 1.2.",
+    "sort can't read lines that contain a tab.",
+    "du -h prints its lines in a random order.",
+]
+correct_index = 0
+explanation = "sort -n ignores the B, K and M. Sort plain du numbers instead: they are all in the same unit. (GNU sort has -h for exactly this, but the sandbox's sort doesn't, and plain numbers work everywhere.)"
+
+[[steps]]
+step_number = 5
+title = "Biggest first"
+instruction = "Pipe plain du studio (no -h) into sort, with -n for numbers and -r for biggest first."
+hints = ["du studio, a pipe, then sort -rn.", "Type: du studio | sort -rn"]
+solution = ["du studio | sort -rn"]
+
+[steps.step_type.Task]
+goal = "Sort the folders by size"
+success_message = "The top line is studio itself, the total. The line under it is the biggest folder: episodes."
+checks = [{ Used = "sort" }, { OutputContains = "studio/episodes" }]
+
+[[steps]]
+step_number = 6
+title = "Just the top three"
+instruction = "On a real disk that list can run to thousands of lines. Show only the top three lines this time."
+hints = ["Add one more pipe: head keeps the first lines.", "Type: du studio | sort -rn | head -n 3"]
+solution = ["du studio | sort -rn | head -n 3"]
+
+[steps.step_type.Task]
+goal = "Show the three biggest"
+success_message = "The total, then episodes, then archive. That's where to look."
+checks = [{ Used = "head" }, { OutputContains = "studio/archive" }]
+
+[[steps]]
+step_number = 7
+title = "Big files by type"
+instruction = "Raw recordings are usually the heaviest files. Use find to list every .wav file anywhere in studio."
+hints = ["find, the folder, then -name with a quoted pattern.", "Type: find studio -name '*.wav'"]
+solution = ["find studio -name '*.wav'"]
+
+[steps.step_type.Task]
+goal = "Find every .wav file"
+success_message = "Three .wav files: two in episodes/raw and one hiding in archive/2025."
+checks = [{ Used = "find" }, { OutputContains = "ep01.wav" }, { OutputContains = "outtakes.wav" }]
+
+[[steps]]
+step_number = 8
+title = "Measure what you found"
+instruction = "du measures files too. Measure all three .wav files with one du -h. A glob for each folder find showed saves typing."
+hints = ["du -h, then studio/episodes/raw/*.wav and studio/archive/2025/*.wav.", "Type: du -h studio/episodes/raw/*.wav studio/archive/2025/*.wav"]
+solution = ["du -h studio/episodes/raw/*.wav studio/archive/2025/*.wav"]
+
+[steps.step_type.Task]
+goal = "Measure the .wav files"
+success_message = "find tells you where things are; du tells you how big they are. Together they find the heavy files."
+checks = [{ Used = "du" }, { OutputContains = "ep02.wav" }, { OutputContains = "outtakes.wav" }]
+
+[[steps]]
+step_number = 9
+title = "Real numbers"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "On your own machine, du -sh says 4.0K for a file with one short line in it. Why?"
+options = [
+    "du counts the disk blocks a file sits in, and the smallest block is usually 4K.",
+    "du adds the size of the folder's name.",
+    "du is wrong; the file really is 4K of text.",
+]
+correct_index = 0
+explanation = "Disks hand out space in blocks, often 4K each. A one-line file still takes a whole block. That's why real du numbers come out a little bigger than the sandbox's."
+
+[[steps]]
+step_number = 10
+title = "On your own"
+instruction = "Free up some space. In studio/archive there are three year folders. Find the biggest one, and move it to the drive folder. Leave the other two years where they are."
+challenge = true
+solution = ["du studio/archive | sort -rn", "mv studio/archive/2025 drive/"]
+
+[steps.step_type.Task]
+goal = "Move the biggest year to drive"
+success_message = "2025 was the heavy one, thanks to its outtakes.wav. Neither the newest nor the oldest year was the biggest: measure first, then move."
+checks = [{ DirExists = "drive/2025" }, { Missing = "studio/archive/2025" }, { DirExists = "studio/archive/2024" }, { DirExists = "studio/archive/2026" }]
+
+[[steps]]
+step_number = 11
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  du -sh FOLDER                      one total
+  du -h FOLDER                       every folder inside
+  du FOLDER | sort -rn | head -n 5   the five biggest
+  find FOLDER -name '*.wav'          where files of one type are
+  du -h FILE...                      how big those files are
+
+Sort plain du numbers, not -h ones. Real du counts disk
+blocks, so its numbers are a little bigger than the bytes
+in the files."""
