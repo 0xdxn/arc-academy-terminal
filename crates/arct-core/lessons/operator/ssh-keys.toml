@@ -114,7 +114,7 @@ instruction = ""
 
 [steps.step_type.MultipleChoice]
 question = """On a real machine, ls -l ~/.ssh shows these lines. id_ed25519 and old_key are both private keys. Which one needs chmod 600?
-(The practice sandbox's ls -l shows the same letters for every file, so learn to read the real thing here.)"""
+(Your practice key shows up the same way: try ls -l laptop/.ssh after this.)"""
 options = [
     "-rw-------  id_ed25519",
     "-rw-r--r--  id_ed25519.pub",

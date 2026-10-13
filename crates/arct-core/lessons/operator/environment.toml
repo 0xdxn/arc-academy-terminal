@@ -97,7 +97,7 @@ instruction = ""
 question = "On a real system you type CITY=Millford (no export), then run sh forecast.sh. The script says echo $CITY. What does it print?"
 options = ["Millford", "An empty line", "An error: CITY is not set"]
 correct_index = 1
-explanation = "sh starts a new program, and a new program only gets the environment. CITY was never exported, so inside the script it is empty. (The practice shell here is more forgiving and lets scripts see every variable. Trust this answer for real systems.)"
+explanation = "sh starts a new program, and a new program only gets the environment. CITY was never exported, so inside the script it is empty."
 
 [[steps]]
 step_number = 7

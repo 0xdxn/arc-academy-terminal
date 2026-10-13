@@ -136,7 +136,7 @@ options = [
   "cat plots.txt seeds.txt 2>&1",
 ]
 correct_index = 1
-explanation = "2> picks the error stream, and /dev/null swallows it. The first line would do the reverse: bin the plots, keep the error. Only hide errors you've already read. (The safety guard here refuses every redirect into /dev, even this harmless one, so try /dev/null in a real terminal.)"
+explanation = "2> picks the error stream, and /dev/null swallows it. The first line would do the reverse: bin the plots, keep the error. Only hide errors you've already read."
 
 [[steps]]
 step_number = 9
@@ -179,10 +179,9 @@ content = """
 Output and errors are separate streams, and you can
 send each one somewhere different.
 
-Never redirect into the file you're reading: on a real
-system, sort plots.txt > plots.txt empties plots.txt
-before sort reads it. (The practice shell doesn't copy
-this trap. Real shells do.)
+Never redirect into the file you're reading:
+sort plots.txt > plots.txt empties plots.txt before sort
+reads it, and the list is gone. Write to a new file instead.
 
 Next: pipes. Instead of saving output to a file and
 reading it back, | hands it straight to the next command."""

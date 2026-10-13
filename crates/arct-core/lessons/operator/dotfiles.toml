@@ -55,8 +55,8 @@ Two special names live in every folder:
   .         this folder
   ..        the folder above it
 
-A real ls -a lists . and .. first. This practice shell
-leaves those two out."""
+ls -a lists . and .. first, then the hidden names.
+(ls -A shows the hidden names without those two.)"""
 
 [[steps]]
 step_number = 2

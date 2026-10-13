@@ -235,8 +235,8 @@ content = """
   No match: the pattern stays as typed (zsh says so).
   * skips hidden names.
 
-On a real system, cp and mv take a whole pattern too,
-as long as the last name is a folder:
+cp and mv take a whole pattern too, as long as the last
+name is a folder:
   cp *.csv backup/       mv cake-*.jpg photos/
-This practice shell's cp and mv still take one file at a
-time, so save those two for a real terminal."""
+If the last name isn't a folder, they refuse rather than
+copy files over each other."""
