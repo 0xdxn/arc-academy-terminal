@@ -7,7 +7,7 @@ It works for a ten-year-old meeting a terminal for the first time and for an adu
 - **Two tracks.** *Explorer* is a story for younger learners (about 8 to 12): you're the newest crew member on Arc Station, and the station computer only understands typed commands. *Operator* is the grown-up path: navigation, files, permissions, processes, pipes, packages, networking and git.
 - **You learn by doing.** Most steps check what actually happened (is the folder there? does the file say the right thing?), so any route that works counts. Hints arrive one at a time when you miss, and the answer only after the last hint. Each lesson ends with a challenge that has no hints at all.
 - **Safe by default.** The free shell runs inside `~/ArcAcademy/home`, and a guard keeps commands there. `rm -rf /` and friends are refused with an explanation of what they would have done. Lessons run in a simulated sandbox, or on real files in `~/ArcAcademy/playground` if you choose.
-- **Rewards that measure skill.** Levels, badges and streaks, earned by finishing lessons and challenges, not by grinding.
+- **Rewards that measure skill.** Levels and badges earned by finishing lessons and challenges, not by grinding; a badge for mastering each track without needing the answers; streaks that allow rest days; and a printable certificate when a track is done (`arct certificate`).
 - **Nothing leaves your computer.** No accounts. Progress is stored locally. Local-only usage stats are off unless you turn them on. The AI helper is optional and off by default; if you turn it on, your questions go to the AI you choose.
 
 ## Install

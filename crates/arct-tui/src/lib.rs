@@ -17,6 +17,7 @@ pub mod footer;
 pub mod level;
 pub mod celebrate;
 pub mod streak;
+pub mod certificate;
 
 pub use app::App;
 pub use theme::Theme;

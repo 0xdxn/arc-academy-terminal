@@ -18,6 +18,12 @@
 - Operator lessons use their own practice files instead of system files; `top` is explained rather than run; the curl example fetches example.com.
 - New badges: Safe Hands (the guard stopped you) and Station Crew (finish the Explorer track).
 
+### Rewards
+- Streaks count learning days, in your own time zone. Up to two rest days in between keep a run going; after a longer break a new run starts and your best one is kept. A day counts when you do something, not when you open the app.
+- Mastery: a lesson finished without needing the answer (hints are fine). Each track has a badge for finishing it and one for mastering it: Station Crew and Station Ace, Operator and Senior Operator. The progress screen (`Alt+P`) shows where each track stands.
+- `arct certificate` makes a printable certificate for a finished track: a single web page made on your computer, with no scripts and nothing downloaded, with lines for the date and a signature. `--text` prints it in the terminal instead.
+- The Night Owl badge (learning after 10 PM) is gone, and the streak and time-of-day badges now follow your local clock.
+
 ### Setup and privacy
 - The AI helper is off unless you choose it; onboarding says where questions go. The name is optional.
 - Esc goes back during setup. Plain one-cell icons by default (Nerd Font icons optional), so panels line up in any terminal.

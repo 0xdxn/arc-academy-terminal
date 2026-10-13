@@ -62,6 +62,40 @@ enum Commands {
         #[command(subcommand)]
         action: TelemetryAction,
     },
+
+    /// Make a printable certificate for a finished track
+    Certificate {
+        /// Track to certify (default: every finished track)
+        #[arg(long, value_enum)]
+        track: Option<TrackArg>,
+
+        /// Name to print (default: the name from setup; none leaves a line to write on)
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Where to write it: a folder or an .html file (default: ~/ArcAcademy/certificates)
+        #[arg(long)]
+        out: Option<PathBuf>,
+
+        /// Print a plain-text certificate instead of writing a page
+        #[arg(long)]
+        text: bool,
+    },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum TrackArg {
+    Explorer,
+    Operator,
+}
+
+impl From<TrackArg> for arct_core::Track {
+    fn from(t: TrackArg) -> Self {
+        match t {
+            TrackArg::Explorer => arct_core::Track::Explorer,
+            TrackArg::Operator => arct_core::Track::Operator,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -150,9 +184,89 @@ async fn main() -> Result<()> {
         Some(Commands::Telemetry { action }) => {
             handle_telemetry(action)?;
         }
+        Some(Commands::Certificate { track, name, out, text }) => {
+            let made = handle_certificate(track, name, out, text, cli.config.as_deref())?;
+            if !made {
+                std::process::exit(1);
+            }
+        }
     }
 
     Ok(())
+}
+
+/// Make certificates for finished tracks. Returns false when none could be made.
+fn handle_certificate(
+    track: Option<TrackArg>,
+    name: Option<String>,
+    out: Option<PathBuf>,
+    text: bool,
+    config_path: Option<&std::path::Path>,
+) -> Result<bool> {
+    use arct_core::Track;
+    use arct_tui::certificate::Certificate;
+
+    let session = arct_tui::persistence::load_session()?;
+    let mut library = arct_core::LessonLibrary::new();
+    if let Some(config_dir) = dirs::config_dir() {
+        // Same lesson packs the app loads, so totals match what the learner saw
+        let _ = library.load_from_dir(&config_dir.join("arct").join("lessons"));
+    }
+    let name = name.or_else(|| {
+        let config = match config_path {
+            Some(path) => arct_config::Config::load_from(path),
+            None => arct_config::Config::load(),
+        };
+        config.ok().and_then(|c| c.general.user_name)
+    });
+
+    let tracks: Vec<Track> = match track {
+        Some(t) => vec![t.into()],
+        None => vec![Track::Explorer, Track::Operator],
+    };
+    let mut certificates = Vec::new();
+    let mut not_yet = Vec::new();
+    for t in tracks {
+        match Certificate::for_track(&session.user_stats, &library, t, name.clone()) {
+            Ok(cert) => certificates.push(cert),
+            Err(why) => not_yet.push(why),
+        }
+    }
+
+    // Say what's left when asked for one track, or when nothing is finished
+    if track.is_some() || certificates.is_empty() {
+        for why in &not_yet {
+            eprint!("{why}");
+        }
+    }
+    if certificates.is_empty() {
+        return Ok(false);
+    }
+
+    for cert in &certificates {
+        if text {
+            print!("{}", cert.to_text());
+            continue;
+        }
+        let path = match &out {
+            Some(p) if p.extension().is_some_and(|e| e == "html") => p.clone(),
+            Some(dir) => dir.join(cert.file_name()),
+            None => dirs::home_dir()
+                .ok_or_else(|| anyhow::anyhow!("Could not find your home folder; use --out"))?
+                .join("ArcAcademy")
+                .join("certificates")
+                .join(cert.file_name()),
+        };
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&path, cert.to_html())?;
+        println!("Certificate saved: {}", path.display());
+    }
+    if !text {
+        println!("Open it in a web browser and print it. It was made on this computer; nothing was sent anywhere.");
+    }
+    Ok(true)
 }
 
 async fn run_tui(command: Option<Commands>, config_path: Option<PathBuf>) -> Result<()> {
