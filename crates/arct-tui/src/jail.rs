@@ -42,6 +42,15 @@ pub const SECRET_PATHS: &[&str] = &[
     ".docker",
     ".kube",
     ".npmrc",
+    ".pypirc",
+    ".git-credentials",
+    ".cargo/credentials",
+    ".cargo/credentials.toml",
+    ".local/share/keyrings",
+    ".password-store",
+    ".azure",
+    ".terraform.d",
+    ".mozilla",
     "Library/Keychains",
     "Library/Cookies",
     "Library/Mail",
@@ -78,18 +87,34 @@ const DELEGATING_PROGRAMS: &[&str] = &[
     "/usr/bin/automator",
 ];
 
-/// Environment variables that point a child at a session bus, display or
-/// agent outside the jail. Removed from every jailed command.
-const SESSION_ENV: &[&str] = &[
-    "DBUS_SESSION_BUS_ADDRESS",
-    "XDG_RUNTIME_DIR",
-    "DISPLAY",
-    "WAYLAND_DISPLAY",
-    "SSH_AUTH_SOCK",
-    "GPG_AGENT_INFO",
-    "TMUX",
-    "TMUX_PANE",
-];
+/// The only variables from the learner's session that jailed commands
+/// see, and that `$NAME` falls back to when a lesson hasn't set it (plus
+/// `LC_*`). Everything else is left out: API keys and tokens, and anything
+/// that points at a session bus, display or agent outside the jail.
+const INHERITED_ENV: &[&str] = &["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TERM", "LANG", "TZ"];
+
+/// Whether a variable from the learner's session is passed on
+pub fn inherited(name: &str) -> bool {
+    INHERITED_ENV.contains(&name) || name.starts_with("LC_")
+}
+
+/// A session variable's value as commands and `$NAME` see it, or `None`
+/// when it isn't passed on
+pub fn inherited_var(name: &str) -> Option<String> {
+    if inherited(name) {
+        std::env::var(name).ok()
+    } else {
+        None
+    }
+}
+
+/// The environment a command starts with: the inherited variables from
+/// `vars` (normally the learner's session)
+pub fn inherited_environment(
+    vars: impl Iterator<Item = (OsString, OsString)>,
+) -> Vec<(OsString, OsString)> {
+    vars.filter(|(name, _)| name.to_str().is_some_and(inherited)).collect()
+}
 
 /// The macOS sandbox profile. `ROOT`, `TMP` and `HOME` are passed with -D,
 /// as canonical paths (sandbox rules match real paths, so /var/... has to
@@ -258,17 +283,22 @@ impl Jail {
         (program, args)
     }
 
-    /// A std Command for `sh -c <command>` inside the jail, with TMPDIR
-    /// pointing at the private temp folder and nothing in the environment
-    /// that leads to a session bus, display or agent outside
+    /// A std Command for `sh -c <command>` inside the jail, starting from
+    /// [`Jail::environment`]
     pub fn command(&self, command: &str) -> Command {
         let (program, args) = self.wrap(command);
         let mut cmd = Command::new(program);
-        cmd.args(args).env("TMPDIR", &self.tmp);
-        for name in SESSION_ENV {
-            cmd.env_remove(name);
-        }
+        cmd.args(args).env_clear().envs(self.environment());
         cmd
+    }
+
+    /// What a jailed command's environment starts from: the inherited
+    /// session variables ([`inherited`]) and TMPDIR at the private temp
+    /// folder. Nothing else from the learner's session.
+    pub fn environment(&self) -> Vec<(OsString, OsString)> {
+        let mut env = inherited_environment(std::env::vars_os());
+        env.push(("TMPDIR".into(), self.tmp.clone().into()));
+        env
     }
 
     /// This system has a sandbox arct knows how to use (whether or not it
@@ -434,7 +464,7 @@ fn sh_quote(path: &Path) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A playground root inside a scratch folder whose other contents stand
@@ -453,6 +483,16 @@ mod tests {
         let root = scratch.join("home/ArcAcademy/playground");
         std::fs::create_dir_all(root.join("lesson/sub")).unwrap();
         (scratch, root)
+    }
+
+    /// Where no jail works: say so and let the test stop, unless
+    /// ARCT_REQUIRE_JAIL is set, where it fails instead
+    pub(crate) fn no_jail_here() {
+        assert!(
+            std::env::var_os("ARCT_REQUIRE_JAIL").is_none(),
+            "ARCT_REQUIRE_JAIL is set and no OS jail works on this machine"
+        );
+        eprintln!("skipped: no OS jail works on this machine");
     }
 
     fn run(jail: &Jail, cwd: &Path, line: &str) -> std::process::Output {
@@ -476,7 +516,8 @@ mod tests {
             Some(jail) => jail,
             None if cfg!(target_os = "macos") => panic!("macOS always has sandbox-exec"),
             None => {
-                eprintln!("no jail on this system; skipping");
+                no_jail_here();
+                std::fs::remove_dir_all(&scratch).unwrap();
                 return;
             }
         };
@@ -567,7 +608,7 @@ mod tests {
         let home = scratch.join("fake-home");
         for secret in SECRET_PATHS {
             let path = home.join(secret);
-            if secret.ends_with("rc") {
+            if secret.ends_with("rc") || secret.ends_with("credentials") || secret.ends_with(".toml") {
                 std::fs::create_dir_all(path.parent().unwrap()).unwrap();
                 std::fs::write(&path, "").unwrap();
             } else {
@@ -587,25 +628,65 @@ mod tests {
             let path = home.join(secret).into_os_string();
             assert!(args.contains(&path), "bubblewrap misses {secret}");
         }
-        for must in [".netrc", ".docker", ".kube", ".npmrc", "Library/Application Support", "Library/Group Containers"] {
+        for must in [
+            ".netrc", ".docker", ".kube", ".npmrc", "Library/Application Support", "Library/Group Containers",
+            ".pypirc", ".git-credentials", ".cargo/credentials", ".cargo/credentials.toml", ".local/share/keyrings",
+            ".password-store", ".azure", ".terraform.d", ".mozilla",
+        ] {
             assert!(SECRET_PATHS.contains(&must), "{must}");
         }
         std::fs::remove_dir_all(&scratch).unwrap();
     }
 
     #[test]
-    fn jailed_commands_get_no_session_bus_display_or_agent() {
-        let jail = Jail {
-            kind: Kind::Bwrap(PathBuf::from("/usr/bin/bwrap")),
-            root: PathBuf::from("/r"),
-            tmp: PathBuf::from("/t"),
-            home: PathBuf::from("/h"),
+    fn jailed_commands_inherit_only_the_allowlist() {
+        let planted = [
+            ("FAKE_SECRET_TOKEN", "s3cret"),
+            ("OPENAI_API_KEY", "sk-test"),
+            ("AWS_SECRET_ACCESS_KEY", "x"),
+            ("GITHUB_TOKEN", "x"),
+            ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1/bus"),
+            ("XDG_RUNTIME_DIR", "/run/user/1"),
+            ("DISPLAY", ":0"),
+            ("SSH_AUTH_SOCK", "/tmp/agent"),
+            ("TMUX", "/tmp/tmux"),
+            ("PATH", "/usr/bin:/bin"),
+            ("HOME", "/home/learner"),
+            ("LANG", "en_US.UTF-8"),
+            ("LC_ALL", "en_US.UTF-8"),
+        ];
+        let kept: Vec<String> = inherited_environment(planted.iter().map(|(k, v)| ((*k).into(), (*v).into())))
+            .into_iter()
+            .map(|(k, _)| k.into_string().unwrap())
+            .collect();
+        assert_eq!(kept, ["PATH", "HOME", "LANG", "LC_ALL"]);
+        assert_eq!(inherited_var("FAKE_SECRET_TOKEN"), None);
+    }
+
+    /// A variable really present in this process (cargo sets it for every
+    /// test run) never reaches a jailed command
+    #[test]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn a_jailed_env_shows_nothing_else_from_the_session() {
+        assert!(std::env::var_os("CARGO_MANIFEST_DIR").is_some(), "run under cargo test");
+        assert_eq!(inherited_var("CARGO_MANIFEST_DIR"), None);
+        let (scratch, root) = scratch("env");
+        let Some(jail) = Jail::for_root(&root) else {
+            no_jail_here();
+            std::fs::remove_dir_all(&scratch).unwrap();
+            return;
         };
-        let cmd = jail.command("true");
-        let removed: Vec<_> = cmd.get_envs().filter(|(_, v)| v.is_none()).map(|(k, _)| k.to_owned()).collect();
-        for name in ["DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR", "DISPLAY", "SSH_AUTH_SOCK", "TMUX"] {
-            assert!(removed.iter().any(|k| k == name), "{name} not removed");
+        let out = run(&jail, &root, "env");
+        let env = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success() && env.contains("TMPDIR="), "{env}");
+        for line in env.lines() {
+            let name = line.split('=').next().unwrap();
+            assert!(
+                inherited(name) || ["TMPDIR", "PWD", "OLDPWD", "SHLVL", "_"].contains(&name),
+                "{name} reached a jailed command"
+            );
         }
+        std::fs::remove_dir_all(&scratch).unwrap();
     }
 
     #[test]
@@ -642,7 +723,7 @@ mod tests {
         let (scratch, root) = scratch("weak");
         let strong = Jail::for_root(&root);
         if strong.is_none() && cfg!(target_os = "linux") {
-            eprintln!("no jail on this system; skipping");
+            no_jail_here();
             std::fs::remove_dir_all(&scratch).unwrap();
             return;
         }

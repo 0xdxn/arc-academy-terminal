@@ -138,7 +138,7 @@ impl ShellExecutor {
             Some(jail) => {
                 let (program, args) = jail.wrap(&command);
                 let mut cmd = Command::new(program);
-                cmd.args(args).env("TMPDIR", jail.tmp());
+                cmd.args(args).env_clear().envs(jail.environment());
                 cmd
             }
             None => {
@@ -299,6 +299,31 @@ mod tests {
         let mut executor = ShellExecutor::new().unwrap();
         let output = executor.execute_blocking("ls").unwrap();
         assert!(!output.is_empty());
+    }
+
+    /// The path the app uses for jailed commands starts from the jail's
+    /// environment too (cargo's own variables stand in for a secret)
+    #[tokio::test]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    async fn jailed_execute_keeps_session_variables_out() {
+        assert!(std::env::var_os("CARGO_MANIFEST_DIR").is_some(), "run under cargo test");
+        let root = std::env::temp_dir().join(format!("arct-shell-env-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let Some(jail) = crate::jail::Jail::for_root(&root) else {
+            crate::jail::tests::no_jail_here();
+            std::fs::remove_dir_all(&root).unwrap();
+            return;
+        };
+        let mut executor = ShellExecutor::new().unwrap();
+        let mut vars = std::collections::HashMap::new();
+        vars.insert("LESSON_WORD".to_string(), "kept".to_string());
+        let out = executor
+            .execute("env".to_string(), vars, std::time::Duration::from_secs(10), Some(root.clone()), Some(&jail))
+            .await
+            .unwrap();
+        assert!(out.contains("LESSON_WORD=kept"), "{out}");
+        assert!(!out.contains("CARGO_MANIFEST_DIR") && !out.contains("CARGO_PKG_NAME"), "{out}");
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[tokio::test]

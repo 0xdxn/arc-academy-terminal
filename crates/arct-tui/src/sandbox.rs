@@ -40,19 +40,19 @@ impl SandboxShell {
     /// A variable's value in real-files mode: set in this lesson, or from
     /// the real environment (see [`fresh_shell_lookup`])
     fn real_lookup(&self, name: &str, pwd: &str) -> Option<String> {
-        fresh_shell_lookup(name, pwd, &|n| self.real.get(n).cloned().or_else(|| std::env::var(n).ok()))
+        fresh_shell_lookup(name, pwd, &|n| self.real.get(n).cloned().or_else(|| crate::jail::inherited_var(n)))
     }
 
     /// Real-files mode: [`expand_real_line`] with this lesson's variables
     pub(crate) fn expand_for_real(&self, line: &str, cwd: &Path, root: &Path) -> Result<Option<String>, String> {
-        expand_real_line(line, cwd, root, &|n| self.real.get(n).cloned().or_else(|| std::env::var(n).ok()))
+        expand_real_line(line, cwd, root, &|n| self.real.get(n).cloned().or_else(|| crate::jail::inherited_var(n)))
     }
 
     /// Real-files mode: handle a line that only sets or clears variables
     /// (`NAME=value`, `export NAME=value`, `unset NAME`). Returns `None`
     /// for any other line, which then runs in a real shell.
     pub(crate) fn real_assignments(&mut self, line: &str, pwd: &str) -> Option<String> {
-        let real_value = |name: &str| std::env::var(name).ok();
+        let real_value = |name: &str| crate::jail::inherited_var(name);
         let lookup = |name: &str| match name {
             // a status from an earlier line isn't kept between real commands
             "?" => Some("0".to_string()),
@@ -617,6 +617,116 @@ mod tests {
         eprintln!("skipped: no OS jail works on this machine");
         let _ = std::fs::remove_dir_all(root);
         false
+    }
+
+    /// $NAME falls back only to the inherited session variables: a value
+    /// really in this process (cargo's own) expands to nothing
+    #[test]
+    fn real_files_expansion_sees_only_inherited_session_variables() {
+        let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("run under cargo test");
+        let home = std::env::var("HOME").expect("HOME is set");
+        let root = std::env::temp_dir().join(format!("arct-expand-env-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let shell = SandboxShell::new();
+        let line = shell.expand_for_real("echo \"[$CARGO_MANIFEST_DIR]\" \"$HOME\"", &root, &root).unwrap().unwrap();
+        assert!(!line.contains(&manifest), "{line}");
+        assert!(line.contains(&home), "{line}");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// The two other real-files lookups: a name a lesson hasn't set, and
+    /// `export NAME` with no value, which takes the session's value
+    #[test]
+    fn real_files_lookups_see_only_inherited_session_variables() {
+        assert!(std::env::var_os("CARGO_MANIFEST_DIR").is_some(), "run under cargo test");
+        let mut shell = SandboxShell::new();
+        assert_eq!(shell.real_lookup("CARGO_MANIFEST_DIR", "/"), None);
+        assert!(shell.real_lookup("HOME", "/").is_some());
+        shell.real_assignments("export CARGO_MANIFEST_DIR HOME", "/");
+        assert!(!shell.real.contains_key("CARGO_MANIFEST_DIR"), "{:?}", shell.real.keys());
+        assert!(shell.real.contains_key("HOME"), "{:?}", shell.real.keys());
+    }
+
+    /// The safe free shell expands $NAME before it runs anything, jail or
+    /// no jail; only inherited session variables can fill it
+    #[tokio::test]
+    async fn free_shell_expansion_sees_only_inherited_session_variables() {
+        // This reaches a real shell: read-only probes only (negjr11u)
+        let manifest = std::env::var("CARGO_MANIFEST_DIR").expect("run under cargo test");
+        let mut app = app("freeshellenv");
+        app.lesson_mode = false;
+        app.config.shell.safe_mode = true;
+        let root = std::env::temp_dir().join(format!("arct-freeshell-env-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        app.explore = Some(arct_core::Playground::open_with_display(root.clone(), "~/ArcAcademy/home").unwrap());
+        app.command_buffer = "echo \"[$CARGO_MANIFEST_DIR]\"".to_string();
+        app.execute_command().await.unwrap();
+        let out = app.last_output.clone();
+        assert!(out.contains("[]") && !out.contains(&manifest), "{out}");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// Source guard: outside jail.rs, nothing in this crate reads the
+    /// process environment except the named reads below, so a new lookup
+    /// written with std::env::var fails here, whoever writes it. Test
+    /// modules are skipped.
+    #[test]
+    fn only_jail_rs_reads_the_session_environment() {
+        const ALLOWED: &[(&str, &str)] = &[
+            ("autocomplete.rs", "env::var(\"PATH\")"),
+            ("first_keys.rs", "std::env::var_os(\"ARCT_NO_SPEECH\")"),
+            ("first_keys.rs", "std::env::var_os(\"PATH\")"),
+            ("persistence.rs", "std::env::var_os(\"ARCT_DATA_DIR\")"),
+        ];
+        const READS: &[&str] = &["env::var(", "env::var_os(", "env::vars(", "env::vars_os("];
+        fn product_lines(text: &str) -> Vec<&str> {
+            let mut out = Vec::new();
+            let mut lines = text.lines().peekable();
+            while let Some(line) = lines.next() {
+                let next_is_mod = lines.peek().is_some_and(|n| n.starts_with("mod ") || n.starts_with("pub(crate) mod "));
+                if line == "#[cfg(test)]" && next_is_mod {
+                    for inner in lines.by_ref() {
+                        if inner == "}" {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+                out.push(line);
+            }
+            out
+        }
+        fn files(dir: &Path, out: &mut Vec<PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    files(&path, out);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    out.push(path);
+                }
+            }
+        }
+        let mut all = Vec::new();
+        files(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut all);
+        assert!(all.len() > 10, "found the sources");
+        let mut used = vec![0; ALLOWED.len()];
+        for path in &all {
+            let name = path.file_name().unwrap().to_str().unwrap();
+            if name == "jail.rs" {
+                continue;
+            }
+            let text = std::fs::read_to_string(path).unwrap();
+            for line in product_lines(&text) {
+                if !READS.iter().any(|r| line.contains(r)) {
+                    continue;
+                }
+                match ALLOWED.iter().position(|(f, needle)| *f == name && line.contains(needle)) {
+                    Some(i) => used[i] += 1,
+                    None => panic!("{name} reads the environment outside jail.rs: {}", line.trim()),
+                }
+            }
+        }
+        assert!(used.iter().all(|n| *n == 1), "an allowed read is gone or repeated: {used:?}");
     }
 
     #[tokio::test]

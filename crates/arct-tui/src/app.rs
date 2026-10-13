@@ -1580,7 +1580,7 @@ impl App {
             }
             let home = self.explore.as_ref().expect("ensured above");
             let guard = arct_core::PlaygroundGuard::with_display(home.root(), EXPLORE_DISPLAY);
-            let vars = |n: &str| self.environment_vars.get(n).cloned().or_else(|| std::env::var(n).ok());
+            let vars = |n: &str| self.environment_vars.get(n).cloned().or_else(|| crate::jail::inherited_var(n));
             let verdict = match arct_core::PlaygroundGuard::check_catastrophic(&command_str) {
                 refused @ arct_core::GuardVerdict::Refuse { .. } => refused,
                 arct_core::GuardVerdict::Allow => {
