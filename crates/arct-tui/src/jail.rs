@@ -59,7 +59,6 @@ const MACH_SERVICES: &[&str] = &[
     "com.apple.system.opendirectoryd.libinfo",
     "com.apple.system.opendirectoryd.membership",
     "com.apple.sysmond",
-    "com.apple.system.notification_center",
     "com.apple.system.logger",
     "com.apple.logd",
     "com.apple.diagnosticd",
@@ -270,6 +269,12 @@ impl Jail {
             cmd.env_remove(name);
         }
         cmd
+    }
+
+    /// This system has a sandbox arct knows how to use (whether or not it
+    /// passes the self-test), to tell "none here" from "here but failing"
+    pub fn sandbox_installed() -> bool {
+        !Self::candidates().is_empty()
     }
 
     fn candidates() -> Vec<Kind> {
@@ -520,6 +525,13 @@ mod tests {
         }
         assert!(text.contains("reads-ok"), "{text}");
         std::fs::remove_dir_all(&scratch).unwrap();
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn macos_reports_its_sandbox_as_installed() {
+        // So a failing self-test reads as "report this", not "no sandbox"
+        assert!(Jail::sandbox_installed());
     }
 
     #[test]
