@@ -3,6 +3,7 @@
 use crate::events::{Action, Event, EventHandler, key_to_action};
 use crate::icons;
 use crate::panels::PanelId;
+use crate::transcript::Tone;
 use crate::shell::ShellExecutor;
 use crate::theme::Theme;
 use crate::ui;
@@ -58,11 +59,23 @@ pub struct App {
     /// Shell executor
     shell_executor: ShellExecutor,
 
-    /// Last command output
+    /// Output of the turn in progress: what the current key press
+    /// printed. Each turn's output lands in `transcript` when it ends.
     pub last_output: String,
 
-    /// Output panel scroll offset
+    /// Legacy output scroll offset (the transcript keeps its own scroll)
     pub output_scroll: usize,
+
+    /// Everything run this session, with its output, newest last
+    pub transcript: crate::transcript::Transcript,
+
+    /// The side panel (where you are, the lesson world) is showing
+    pub sidebar_visible: bool,
+
+    /// Rows a long command explanation is scrolled down, and the
+    /// furthest it could scroll at the last render
+    pub explanation_scroll: usize,
+    pub explanation_max_scroll: usize,
 
     /// Command history
     command_history: Vec<String>,
@@ -105,6 +118,13 @@ pub struct App {
 
     /// Onboarding wizard (shown on first run)
     pub onboarding: Option<crate::panels::onboarding::OnboardingWizard>,
+
+    /// First Keys, the pre-reader mode: while open it takes the whole
+    /// screen and every key
+    pub first_keys: Option<crate::first_keys::FirstKeys>,
+
+    /// Leaving First Keys quits arct (it was opened with `arct first-keys`)
+    pub first_keys_quits: bool,
 
     /// Settings panel (interactive)
     pub settings_panel: Option<crate::panels::settings::SettingsPanel>,
@@ -399,6 +419,10 @@ impl App {
             shell_executor: ShellExecutor::new()?,
             last_output: welcome_message,
             output_scroll: 0,
+            transcript: crate::transcript::Transcript::new(),
+            sidebar_visible: true,
+            explanation_scroll: 0,
+            explanation_max_scroll: 0,
             command_history,
             history_position: None,
             environment_vars,
@@ -413,6 +437,8 @@ impl App {
             ai_loading: false,
             ai_mode: false,
             onboarding,
+            first_keys: options.first_keys.then(Self::open_first_keys),
+            first_keys_quits: options.first_keys,
             settings_panel: None,
             analytics: crate::analytics::Analytics::new().ok(),
             session_id: uuid::Uuid::new_v4().to_string(),
@@ -453,6 +479,7 @@ impl App {
         if app.config.lessons.is_real() {
             app.real_files_jail();
         }
+        app.transcript.note(&app.last_output);
         Ok(app)
     }
 
@@ -587,8 +614,10 @@ impl App {
 
     /// Run the application
     pub async fn run(&mut self) -> Result<()> {
-        // Show splash screen
-        Self::show_splash_screen()?;
+        // Show splash screen (not in First Keys: the child sees their screen at once)
+        if self.first_keys.is_none() {
+            Self::show_splash_screen()?;
+        }
 
         // Safe mode: start the shell in ~/ArcAcademy/home
         if self.config.shell.safe_mode {
@@ -667,7 +696,24 @@ impl App {
             // Handle events; a closed channel means the event source is gone,
             // so exit instead of spinning
             match self.event_handler.next().await {
-                Some(event) => self.handle_event(event).await?,
+                Some(event) => {
+                    // A key or click is one turn: what it printed goes
+                    // into the transcript when it's done
+                    // (the pointer just moving is not a turn: it changes nothing)
+                    let turn = match &event {
+                        Event::Key(_) => true,
+                        Event::Mouse(m) => !matches!(m.kind, crossterm::event::MouseEventKind::Moved),
+                        _ => false,
+                    };
+                    if turn {
+                        self.transcript.begin_turn(&self.last_output);
+                    }
+                    let handled = self.handle_event(event).await;
+                    if turn {
+                        self.transcript.finish_turn(&self.last_output);
+                    }
+                    handled?
+                }
                 None => {
                     tracing::warn!("Event channel closed, exiting main loop");
                     break;
@@ -687,6 +733,28 @@ impl App {
     async fn handle_event(&mut self, event: Event) -> Result<()> {
         match event {
             Event::Key(key) => {
+                // First Keys takes every key; only the grown-up sequence leaves
+                if let Some(keys) = self.first_keys.as_mut() {
+                    let outcome = keys.handle_key(key);
+                    // Every magic word used: the First Keys badge (saved at once,
+                    // so it counts even if a grown-up quits right after)
+                    if keys.finished()
+                        && !self
+                            .user_stats
+                            .achievements
+                            .is_unlocked(crate::certificate::FIRST_KEYS_ACHIEVEMENT)
+                    {
+                        self.record_feature_event("first_keys_complete");
+                    }
+                    if outcome == crate::first_keys::KeyOutcome::Exit {
+                        self.first_keys = None;
+                        if self.first_keys_quits {
+                            self.should_quit = true;
+                        }
+                    }
+                    return Ok(());
+                }
+
                 // The welcome dashboard dismisses on the first keypress;
                 // the key still does whatever it normally does
                 self.show_dashboard = false;
@@ -793,8 +861,12 @@ impl App {
                 // If in shell panel and not a special action, handle as text input or history
                 if self.active_panel == PanelId::Shell && !self.show_help && !self.ai_mode {
                     match key.code {
+                        // ? on an empty line opens help (no command starts with it)
+                        KeyCode::Char('?') if self.command_buffer.is_empty() => {}
                         KeyCode::Char(c) if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT => {
                             self.command_buffer.push(c);
+                            // Typing brings a scrolled-back transcript to the end
+                            self.transcript.scroll_to_end();
                             // Reset history position when typing
                             self.history_position = None;
                             // Clear completion suggestions when typing
@@ -818,12 +890,12 @@ impl App {
                             }
                             // Empty buffer - let Tab fall through to cycle panels
                         }
-                        KeyCode::Up => {
+                        KeyCode::Up if key.modifiers == KeyModifiers::NONE => {
                             // Navigate backward in history (older commands)
                             self.history_previous();
                             return Ok(());
                         }
-                        KeyCode::Down => {
+                        KeyCode::Down if key.modifiers == KeyModifiers::NONE => {
                             // Navigate forward in history (newer commands)
                             self.history_next();
                             return Ok(());
@@ -837,7 +909,10 @@ impl App {
                 self.handle_action(action).await?;
             }
             Event::Mouse(mouse) => {
-                self.handle_mouse(mouse).await?;
+                // Clicks and wheel do nothing in First Keys
+                if self.first_keys.is_none() {
+                    self.handle_mouse(mouse).await?;
+                }
             }
             Event::Resize(_, _) => {
                 // Terminal will automatically redraw on next iteration
@@ -940,20 +1015,49 @@ impl App {
                     } else {
                         panel.scroll_up();
                     }
+                } else if self.panel_rects.panel_at(mouse.column, mouse.row) == Some(PanelId::Explanation) {
+                    // Wheel over the lesson step or explanation scrolls it
+                    self.scroll_top_panel(down, 2);
                 } else if down {
-                    // Wheel over the main view scrolls the output panel
-                    let total_lines = self.last_output.lines().count();
-                    if self.output_scroll < total_lines.saturating_sub(1) {
-                        self.output_scroll += 1;
-                    }
+                    // Wheel over the main view scrolls the transcript
+                    self.transcript.scroll_down(3);
                 } else {
-                    self.output_scroll = self.output_scroll.saturating_sub(1);
+                    self.transcript.scroll_up(3);
                 }
             }
             _ => {}
         }
 
         Ok(())
+    }
+
+    /// Open the lesson map
+    fn open_lesson_menu(&mut self) {
+        self.lesson_menu = Some(crate::panels::lesson_menu::LessonMenuPanel::for_learner(
+            self.lesson_library.clone(),
+            self.preferred_track(),
+            &self.completed_lessons,
+        ));
+        self.mark_panel_visited("lesson_menu");
+    }
+
+    /// Scroll the top panel: the lesson step in lessons, the command
+    /// explanation otherwise
+    fn scroll_top_panel(&mut self, down: bool, rows: usize) {
+        if self.lesson_mode {
+            if let Some(panel) = self.lesson_panel.as_mut() {
+                if down { panel.scroll_down(rows) } else { panel.scroll_up(rows) }
+            }
+        } else if down {
+            self.explanation_scroll = (self.explanation_scroll + rows).min(self.explanation_max_scroll);
+        } else {
+            self.explanation_scroll = self.explanation_scroll.saturating_sub(rows);
+        }
+    }
+
+    /// Rows one page of transcript scrolling moves
+    fn transcript_page_rows(&self) -> usize {
+        (self.panel_rects.output.height as usize).saturating_sub(3).max(1)
     }
 
     /// Start (or resume) the lesson currently selected in the lesson menu.
@@ -999,7 +1103,7 @@ impl App {
                     let resumed_at =
                         panel.resume_at(state.current_step_index, state.completed_steps);
                     self.last_output = format!(
-                        "{}Lesson loaded — resumed at step {}.\n\nUse Alt+R to restart from the beginning, Alt+Left to go back a step.\n",
+                        "{}Lesson loaded — resumed at step {}.\n\nCtrl+B goes back a step; Restart Lesson (Ctrl+K) starts it over.\n",
                         icons::lesson().content,
                         resumed_at + 1
                     );
@@ -1044,45 +1148,30 @@ impl App {
                     self.record_feature_event("use_context");
                 }
             }
-            Action::ScrollUp => {
-                // Only scroll when Output panel is focused
-                if self.active_panel == PanelId::Output {
-                    self.output_scroll = self.output_scroll.saturating_sub(1);
-                }
-            }
-            Action::ScrollDown => {
-                // Only scroll when Output panel is focused
-                if self.active_panel == PanelId::Output {
-                    let total_lines = self.last_output.lines().count();
-                    if self.output_scroll < total_lines.saturating_sub(1) {
-                        self.output_scroll += 1;
-                    }
-                }
-            }
-            Action::PageUp => {
-                // Only scroll when Output panel is focused
-                if self.active_panel == PanelId::Output {
-                    self.output_scroll = self.output_scroll.saturating_sub(10);
-                }
-            }
-            Action::PageDown => {
-                // Only scroll when Output panel is focused
-                if self.active_panel == PanelId::Output {
-                    let total_lines = self.last_output.lines().count();
-                    self.output_scroll = (self.output_scroll + 10).min(total_lines.saturating_sub(1));
+            Action::ScrollUp | Action::ScrollDown | Action::PageUp | Action::PageDown => {
+                // ↑↓ scroll the focused panel (the shell uses them for
+                // history); the page keys scroll the transcript from
+                // anywhere, or the lesson step when it has focus
+                let up = matches!(action, Action::ScrollUp | Action::PageUp);
+                let page = matches!(action, Action::PageUp | Action::PageDown);
+                let rows = if page { self.transcript_page_rows() } else { 1 };
+                if self.active_panel == PanelId::Explanation {
+                    self.scroll_top_panel(!up, rows);
+                } else if page || self.active_panel == PanelId::Output {
+                    if up { self.transcript.scroll_up(rows) } else { self.transcript.scroll_down(rows) }
                 }
             }
             Action::ScrollOutputUp => {
                 // Always scroll output regardless of which panel is focused
-                self.output_scroll = self.output_scroll.saturating_sub(1);
+                self.transcript.scroll_up(1);
             }
             Action::ScrollOutputDown => {
                 // Always scroll output regardless of which panel is focused
-                let total_lines = self.last_output.lines().count();
-                if self.output_scroll < total_lines.saturating_sub(1) {
-                    self.output_scroll += 1;
-                }
+                self.transcript.scroll_down(1);
             }
+            Action::ScrollOutputEnd => self.transcript.scroll_to_end(),
+            Action::ScrollOutputStart => self.transcript.scroll_to_start(),
+            Action::ToggleSidebar => self.sidebar_visible = !self.sidebar_visible,
             Action::Help => {
                 self.show_help = !self.show_help;
                 if self.show_help {
@@ -1108,7 +1197,20 @@ impl App {
                 }
             }
             Action::ToggleLesson => {
-                self.toggle_lesson_mode();
+                // In lessons, Ctrl+L opens the lesson map; from the map it
+                // leaves lessons
+                if self.lesson_mode && self.lesson_menu.is_none() {
+                    self.open_lesson_menu();
+                } else {
+                    self.lesson_menu = None;
+                    self.toggle_lesson_mode();
+                }
+            }
+            Action::ExitLessons => {
+                if self.lesson_mode {
+                    self.lesson_menu = None;
+                    self.toggle_lesson_mode();
+                }
             }
             Action::ShowLessonMenu => {
                 if self.lesson_mode {
@@ -1116,14 +1218,7 @@ impl App {
                     if self.lesson_menu.is_some() {
                         self.lesson_menu = None;
                     } else {
-                        self.lesson_menu = Some(
-                            crate::panels::lesson_menu::LessonMenuPanel::for_learner(
-                                self.lesson_library.clone(),
-                                self.preferred_track(),
-                                &self.completed_lessons,
-                            ),
-                        );
-                        self.mark_panel_visited("lesson_menu");
+                        self.open_lesson_menu();
                     }
                 } else {
                     // Outside lesson mode, 'm' enters lesson mode, which
@@ -1142,6 +1237,12 @@ impl App {
             }
             Action::ResetPlayground => {
                 self.reset_playground();
+            }
+            Action::StartFirstKeys => {
+                self.command_palette = None;
+                self.first_keys = Some(Self::open_first_keys());
+                self.first_keys_quits = false;
+                self.record_feature_event("first_keys");
             }
             Action::CommandPalette => {
                 if self.command_palette.is_some() {
@@ -1203,15 +1304,6 @@ impl App {
         Ok(())
     }
 
-    /// Helper: Check if a flag exists in the command
-    fn has_flag(cmd: &arct_core::Command, flag: &str) -> bool {
-        cmd.flags.iter().any(|f| {
-            f.raw == flag ||
-            f.short == Some(flag.chars().nth(1).unwrap_or(' ')) ||
-            f.long.as_ref().map(|l| l == flag.trim_start_matches("--")).unwrap_or(false)
-        })
-    }
-
     /// Whether command output reports a failure: an error line, a guard
     /// refusal, a timeout, or a non-zero exit from the real shell
     pub(crate) fn output_reports_failure(output: &str) -> bool {
@@ -1224,553 +1316,6 @@ impl App {
         })
     }
 
-    /// `ls -l` style permissions (drwxr-xr-x) for a sandbox path, from the
-    /// file's real mode bits, so chmod changes show up
-    fn mode_string(real: &std::path::Path) -> String {
-        let Ok(meta) = std::fs::symlink_metadata(real) else {
-            return "----------".to_string();
-        };
-        #[cfg(unix)]
-        let bits = {
-            use std::os::unix::fs::PermissionsExt;
-            meta.permissions().mode()
-        };
-        #[cfg(not(unix))]
-        let bits: u32 = if meta.is_dir() { 0o755 } else { 0o644 };
-        let mut out = String::from(if meta.is_dir() { "d" } else { "-" });
-        for shift in [6, 3, 0] {
-            let part = (bits >> shift) & 0o7;
-            out.push(if part & 4 != 0 { 'r' } else { '-' });
-            out.push(if part & 2 != 0 { 'w' } else { '-' });
-            out.push(if part & 1 != 0 { 'x' } else { '-' });
-        }
-        out
-    }
-
-    /// Apply a chmod mode to a sandbox file for the modes lessons rely on:
-    /// octal numbers and adding/removing execute (`+x`, `u+x`, `a-x`...).
-    /// Returns false for modes it leaves simulated.
-    #[cfg(unix)]
-    fn apply_sandbox_mode(real: &std::path::Path, mode: &str) -> bool {
-        use std::os::unix::fs::PermissionsExt;
-        let Ok(meta) = std::fs::metadata(real) else {
-            return false;
-        };
-        let current = meta.permissions().mode() & 0o7777;
-        let new_mode = if mode.chars().all(|c| c.is_digit(8)) && (3..=4).contains(&mode.len()) {
-            u32::from_str_radix(mode, 8).ok()
-        } else if let Some((who, perm)) = mode.split_once(['+', '-']) {
-            if perm != "x" || !who.chars().all(|c| "ugoa".contains(c)) {
-                None
-            } else {
-                let mut bits = 0;
-                if who.is_empty() || who.contains('a') || who.contains('u') {
-                    bits |= 0o100;
-                }
-                if who.is_empty() || who.contains('a') || who.contains('g') {
-                    bits |= 0o010;
-                }
-                if who.is_empty() || who.contains('a') || who.contains('o') {
-                    bits |= 0o001;
-                }
-                Some(if mode.contains('+') { current | bits } else { current & !bits })
-            }
-        } else {
-            None
-        };
-        match new_mode {
-            // Never lock the learner out of their own sandbox file
-            Some(m) => std::fs::set_permissions(real, std::fs::Permissions::from_mode(m | 0o600)).is_ok(),
-            None => false,
-        }
-    }
-
-    #[cfg(not(unix))]
-    fn apply_sandbox_mode(_real: &std::path::Path, _mode: &str) -> bool {
-        false
-    }
-
-    /// Execute command against virtual filesystem and return output
-    pub(crate) fn execute_virtual_fs_command(&mut self, cmd: &arct_core::Command) -> Option<String> {
-        if !self.lesson_mode {
-            return None;
-        }
-
-        // Pipes, redirection, variables and scripts are handled before
-        // this point by the sandbox shell (sandbox.rs)
-        let vfs = self.virtual_fs.as_mut()?;
-        let program = cmd.program.as_str();
-
-        // Operands are the non-flag arguments: `rm -rf notes` removes
-        // "notes", never a file called "-rf"
-        let operands: Vec<String> = cmd
-            .args
-            .iter()
-            .filter(|a| !(a.starts_with('-') && a.len() > 1))
-            .cloned()
-            .collect();
-
-        match program {
-            "pwd" => {
-                let current = vfs.get_current_dir().display().to_string();
-                Some(format!("{}\n", current))
-            }
-
-            "ls" => {
-                let show_hidden = Self::has_flag(cmd, "-a") || Self::has_flag(cmd, "--all");
-                let long = Self::has_flag(cmd, "-l");
-                let human = Self::has_flag(cmd, "-h");
-                let size_text = |bytes: u64| -> String {
-                    if human && bytes >= 1024 {
-                        format!("{:.1}K", bytes as f64 / 1024.0)
-                    } else {
-                        bytes.to_string()
-                    }
-                };
-
-                let targets: Vec<Option<&str>> = if operands.is_empty() {
-                    vec![None]
-                } else {
-                    operands.iter().map(|o| Some(o.as_str())).collect()
-                };
-                let mut output = String::new();
-                for target in &targets {
-                    // `ls file` prints the file itself
-                    if let Some(name) = target {
-                        match vfs.resolve_path(name) {
-                            Ok(real) if real.is_file() => {
-                                let size = std::fs::metadata(&real).map(|m| m.len()).unwrap_or(0);
-                                if long {
-                                    output.push_str(&format!("{}  {:>6}  {}\n", Self::mode_string(&real), size_text(size), name));
-                                } else {
-                                    output.push_str(&format!("{}\n", name));
-                                }
-                                continue;
-                            }
-                            Ok(real) if !real.exists() => {
-                                output.push_str(&format!(
-                                    "{}ls: {}: No such file or directory\n",
-                                    icons::error().content,
-                                    name
-                                ));
-                                continue;
-                            }
-                            Err(e) => {
-                                output.push_str(&format!("{}ls: {}\n", icons::error().content, e));
-                                continue;
-                            }
-                            _ => {}
-                        }
-                    }
-                    if targets.len() > 1 {
-                        output.push_str(&format!("{}:\n", target.unwrap_or(".")));
-                    }
-                    match vfs.list_directory(*target) {
-                        Ok(mut entries) => {
-                            if !show_hidden {
-                                entries.retain(|e| !e.name.starts_with('.'));
-                            }
-                            // -a also lists . (this folder) and .. (the one above); -A doesn't
-                            if show_hidden && !Self::has_flag(cmd, "-A") {
-                                for dot in ["..", "."] {
-                                    entries.insert(0, arct_core::DirEntry { name: dot.to_string(), is_dir: true, size: 0 });
-                                }
-                            }
-                            if entries.is_empty() {
-                                output.push_str("(empty folder)\n");
-                            }
-                            for entry in entries {
-                                let shown = if entry.is_dir {
-                                    format!("{}/", entry.name)
-                                } else {
-                                    entry.name.clone()
-                                };
-                                if long {
-                                    let real = vfs
-                                        .resolve_path(&match target {
-                                            Some(dir) => format!("{}/{}", dir.trim_end_matches('/'), entry.name),
-                                            None => entry.name.clone(),
-                                        })
-                                        .unwrap_or_default();
-                                    let mode = Self::mode_string(&real);
-                                    output.push_str(&format!("{}  {:>6}  {}\n", mode, size_text(entry.size), shown));
-                                } else {
-                                    output.push_str(&format!("{}\n", shown));
-                                }
-                            }
-                        }
-                        Err(e) => output.push_str(&format!("{}ls: {}\n", icons::error().content, e)),
-                    }
-                }
-                Some(output)
-            }
-
-            "cd" => {
-                let target = cmd.args.first().map(|s| s.as_str()).unwrap_or("~");
-                match vfs.change_directory(target) {
-                    Ok(new_path) => {
-                        Some(format!("{}Changed to: {}\n", icons::folder().content, new_path))
-                    }
-                    Err(e) => Some(format!("{}cd: {}\n", icons::error().content, e)),
-                }
-            }
-
-            "cat" => {
-                if operands.is_empty() {
-                    return Some(format!("{}cat: missing file argument\n", icons::error().content));
-                }
-
-                let mut output = String::new();
-                for file in &operands {
-                    match vfs.read_file(file) {
-                        Ok(content) => output.push_str(&content),
-                        Err(e) => output.push_str(&format!("{}cat: {}\n", icons::error().content, e)),
-                    }
-                }
-                Some(output)
-            }
-
-            "mkdir" => {
-                if operands.is_empty() {
-                    return Some(format!("{}mkdir: missing directory name\n", icons::error().content));
-                }
-
-                let parents = Self::has_flag(cmd, "-p") || Self::has_flag(cmd, "--parents");
-                let mut output = String::new();
-
-                for dir in &operands {
-                    match vfs.create_directory(dir, parents) {
-                        Ok(_) => output.push_str(&format!("{}Created directory: {}\n", icons::folder().content, dir)),
-                        Err(e) => output.push_str(&format!("{}mkdir: {}\n", icons::error().content, e)),
-                    }
-                }
-                Some(output)
-            }
-
-            "touch" => {
-                if operands.is_empty() {
-                    return Some(format!("{}touch: missing file argument\n", icons::error().content));
-                }
-
-                let mut output = String::new();
-                for file in &operands {
-                    match vfs.touch_file(file) {
-                        Ok(_) => output.push_str(&format!("{}Created/updated file: {}\n", icons::file().content, file)),
-                        Err(e) => output.push_str(&format!("{}touch: {}\n", icons::error().content, e)),
-                    }
-                }
-                Some(output)
-            }
-
-            "rm" => {
-                if operands.is_empty() {
-                    return Some(format!("{}rm: missing file argument\n", icons::error().content));
-                }
-
-                let recursive = Self::has_flag(cmd, "-r") || Self::has_flag(cmd, "-R") || Self::has_flag(cmd, "--recursive");
-                let force = Self::has_flag(cmd, "-f") || Self::has_flag(cmd, "--force");
-                let mut output = String::new();
-
-                for item in &operands {
-                    match vfs.remove(item, recursive, force) {
-                        Ok(_) => output.push_str(&format!("{}Removed: {}\n", icons::success().content, item)),
-                        Err(e) => output.push_str(&format!("{}rm: {}\n", icons::error().content, e)),
-                    }
-                }
-                Some(output)
-            }
-
-            "mv" => {
-                if operands.len() < 2 {
-                    return Some(format!("{}mv: missing source or destination\n", icons::error().content));
-                }
-
-                let (sources, dest) = operands.split_at(operands.len() - 1);
-                let dest = &dest[0];
-                // Several files go into a folder, never over each other
-                if sources.len() > 1 && !vfs.resolve_path(dest).is_ok_and(|p| p.is_dir()) {
-                    return Some(format!("{}mv: '{}' is not a folder (moving several files needs a folder at the end)\n", icons::error().content, dest));
-                }
-                let mut output = String::new();
-                for source in sources {
-                    match vfs.move_item(source, dest) {
-                        Ok(_) => output.push_str(&format!("{}Moved {} to {}\n", icons::success().content, source, dest)),
-                        Err(e) => output.push_str(&format!("{}mv: {}\n", icons::error().content, e)),
-                    }
-                }
-                Some(output)
-            }
-
-            "cp" => {
-                if operands.len() < 2 {
-                    return Some(format!("{}cp: missing source or destination\n", icons::error().content));
-                }
-
-                let recursive = Self::has_flag(cmd, "-r") || Self::has_flag(cmd, "-R") || Self::has_flag(cmd, "--recursive");
-                let (sources, dest) = operands.split_at(operands.len() - 1);
-                let dest = &dest[0];
-                // Several files go into a folder, never over each other
-                if sources.len() > 1 && !vfs.resolve_path(dest).is_ok_and(|p| p.is_dir()) {
-                    return Some(format!("{}cp: '{}' is not a folder (copying several files needs a folder at the end)\n", icons::error().content, dest));
-                }
-                let mut output = String::new();
-                for source in sources {
-                    match vfs.copy(source, dest, recursive) {
-                        Ok(_) => output.push_str(&format!("{}Copied {} to {}\n", icons::success().content, source, dest)),
-                        Err(e) => output.push_str(&format!("{}cp: {}\n", icons::error().content, e)),
-                    }
-                }
-                Some(output)
-            }
-
-            "grep" => {
-                // Same grep as after a pipe (-i -n -v -c -E), applied per file
-                let flags: Vec<String> =
-                    cmd.args.iter().filter(|a| a.starts_with('-') && a.len() > 1).cloned().collect();
-                let positional: Vec<&String> =
-                    cmd.args.iter().filter(|a| !(a.starts_with('-') && a.len() > 1)).collect();
-                let Some(pattern) = positional.first() else {
-                    return Some(format!("{}grep: usage: grep [-i] [-n] PATTERN FILE...\n", icons::error().content));
-                };
-                let files = &positional[1..];
-                if files.is_empty() {
-                    return Some(format!("{}(lesson sandbox) grep needs a file here — try: grep {} <file>\n", icons::hint().content, pattern));
-                }
-                let mut grep_args = flags.clone();
-                grep_args.push((*pattern).clone());
-
-                let mut output = String::new();
-                let multiple = files.len() > 1;
-                for file in files {
-                    let content = match vfs.read_file(file) {
-                        Ok(content) => content,
-                        Err(e) => {
-                            output.push_str(&format!("{}grep: {}\n", icons::error().content, e));
-                            continue;
-                        }
-                    };
-                    match arct_core::text_filter::apply("grep", &grep_args, &content) {
-                        Ok(found) => {
-                            for line in found.lines() {
-                                if multiple {
-                                    output.push_str(&format!("{}:", file));
-                                }
-                                output.push_str(line);
-                                output.push('\n');
-                            }
-                        }
-                        Err(message) => output.push_str(&format!("{}{}\n", icons::error().content, message)),
-                    }
-                }
-                if output.is_empty() {
-                    output = format!("(no lines matched '{}')\n", pattern);
-                }
-                Some(output)
-            }
-
-            "head" | "tail" => {
-                let (count, files) = Self::parse_line_count_args(&cmd.args);
-                if files.is_empty() {
-                    return Some(format!("{}(lesson sandbox) {} needs a file here — try: {} -n {} <file>\n", icons::hint().content, program, program, count));
-                }
-
-                let mut output = String::new();
-                let multiple = files.len() > 1;
-                for file in &files {
-                    let result = if program == "head" {
-                        vfs.head_file(file, count)
-                    } else if arct_core::text_filter::tail_from_start(&cmd.args) {
-                        // tail -n +N: from line N on
-                        let flags: Vec<String> =
-                            cmd.args.iter().filter(|a| !files.contains(a)).cloned().collect();
-                        vfs.read_file(file).and_then(|text| {
-                            arct_core::text_filter::apply("tail", &flags, &text)
-                                .map_err(|e| anyhow::anyhow!(e))
-                        })
-                    } else {
-                        vfs.tail_file(file, count)
-                    };
-                    match result {
-                        Ok(content) => {
-                            if multiple {
-                                output.push_str(&format!("==> {} <==\n", file));
-                            }
-                            output.push_str(&content);
-                        }
-                        Err(e) => output.push_str(&format!("{}{}: {}\n", icons::error().content, program, e)),
-                    }
-                }
-                Some(output)
-            }
-
-            "wc" => {
-                let want_lines = Self::has_flag(cmd, "-l") || Self::has_flag(cmd, "--lines");
-                let want_words = Self::has_flag(cmd, "-w") || Self::has_flag(cmd, "--words");
-                let want_bytes = Self::has_flag(cmd, "-c") || Self::has_flag(cmd, "--bytes");
-                let want_all = !want_lines && !want_words && !want_bytes;
-
-                let files: Vec<&String> = cmd.args.iter().filter(|a| !a.starts_with('-')).collect();
-                if files.is_empty() {
-                    return Some(format!("{}(lesson sandbox) wc needs a file here — try: wc -l <file>\n", icons::hint().content));
-                }
-
-                let mut output = String::new();
-                for file in &files {
-                    match vfs.wc_file(file) {
-                        Ok((lines, words, bytes)) => {
-                            let mut parts = Vec::new();
-                            if want_all || want_lines {
-                                parts.push(format!("{:8}", lines));
-                            }
-                            if want_all || want_words {
-                                parts.push(format!("{:8}", words));
-                            }
-                            if want_all || want_bytes {
-                                parts.push(format!("{:8}", bytes));
-                            }
-                            output.push_str(&format!("{} {}\n", parts.join(""), file));
-                        }
-                        Err(e) => output.push_str(&format!("{}wc: {}\n", icons::error().content, e)),
-                    }
-                }
-                Some(output)
-            }
-
-            "echo" => {
-                // Redirection (> and >>) is applied by the sandbox shell
-                let no_newline = cmd.args.first().is_some_and(|a| a == "-n");
-                let words = if no_newline { &cmd.args[1..] } else { &cmd.args[..] };
-                let mut text = words.join(" ");
-                if !no_newline {
-                    text.push('\n');
-                }
-                Some(text)
-            }
-
-            "chmod" => {
-                let positional: Vec<&String> = cmd.args.iter().filter(|a| !a.starts_with('-') || a.chars().skip(1).all(|c| "rwxugoa+-=,0123456789".contains(c))).collect();
-                // chmod modes like "-w" also start with '-'; treat the first
-                // positional as the mode and the rest as files
-                let Some(mode) = positional.first() else {
-                    return Some(format!("{}chmod: missing operand\n  Usage: chmod MODE FILE...\n", icons::error().content));
-                };
-                let files = &positional[1..];
-                if files.is_empty() {
-                    return Some(format!("{}chmod: missing file operand after '{}'\n", icons::error().content, mode));
-                }
-
-                let mut output = String::new();
-                for file in files {
-                    match vfs.resolve_path(file) {
-                        Ok(real) if real.exists() => {
-                            if Self::apply_sandbox_mode(&real, mode) {
-                                output.push_str(&format!(
-                                    "{}Mode of '{}' set to '{}'\n",
-                                    icons::success().content, file, mode
-                                ));
-                            } else {
-                                output.push_str(&format!(
-                                    "{}Mode of '{}' set to '{}' (simulated: the sandbox only applies +x, -x and number modes)\n",
-                                    icons::success().content, file, mode
-                                ));
-                            }
-                        }
-                        Ok(_) => output.push_str(&format!("{}chmod: cannot access '{}': No such file or directory\n", icons::error().content, file)),
-                        Err(e) => output.push_str(&format!("{}chmod: {}\n", icons::error().content, e)),
-                    }
-                }
-                Some(output)
-            }
-
-            // Common commands lessons mention but that can't be meaningfully
-            // simulated against a sandbox filesystem: return an instructional
-            // message instead of silent nothing (the lesson step still
-            // validates the command syntax)
-            "ps" | "top" | "htop" | "kill" | "killall" | "git" | "apt" | "apt-get" | "yum"
-            | "dnf" | "brew" | "ping" | "curl" | "wget" | "ssh" | "scp" | "sudo" | "man"
-            | "df" | "free" | "uname" | "whoami" | "zip" | "unzip"
-            | "nano" | "vim" | "vi" | "less" | "more" | "netstat" | "ifconfig" | "ip" | "ss"
-            | "lsof" | "systemctl" | "journalctl"
-            | "awk" | "ln" | "python" | "python3" | "pip"
-            | "npm" | "node" => {
-                Some(format!(
-                    "(lesson sandbox) '{}' isn't simulated here — this step checks your command syntax.\n",
-                    program
-                ))
-            }
-
-            // Commands that don't manipulate the filesystem
-            "sort" | "uniq" | "cut" => {
-                let files = arct_core::text_filter::operands(program, &cmd.args);
-                if files.is_empty() {
-                    return Some(format!(
-                        "{}{} needs a file here, or use it after a pipe: cat file.txt | {}\n",
-                        icons::error().content,
-                        program,
-                        program
-                    ));
-                }
-                let mut input = String::new();
-                for file in &files {
-                    match vfs.read_file(file) {
-                        Ok(content) => input.push_str(&content),
-                        Err(e) => {
-                            return Some(format!("{}{}: {}\n", icons::error().content, program, e))
-                        }
-                    }
-                }
-                let flags: Vec<String> =
-                    cmd.args.iter().filter(|a| !files.contains(a)).cloned().collect();
-                Some(match arct_core::text_filter::apply(program, &flags, &input) {
-                    Ok(out) => out,
-                    Err(message) => format!("{}{}\n", icons::error().content, message),
-                })
-            }
-
-            // A real command the sandbox doesn't run: say so, and let the
-            // step check what was typed
-            other if cmd.category != arct_core::CommandCategory::Unknown => Some(format!(
-                "{}{} doesn't run in the simulated sandbox, so this only checks what you typed. \
-                 To see real output, switch lesson practice to real files in settings (Ctrl+S).\n",
-                icons::info().content,
-                other
-            )),
-
-            // Not a command at all (a typo, or a script that isn't on PATH)
-            other => Some(format!("{}{}: command not found\n", icons::error().content, other)),
-        }
-    }
-
-    /// Parse `head`/`tail` style arguments: `-n N`, `-nN`, `-N`, plus file
-    /// operands. Returns (line count, files); the count defaults to 10.
-    fn parse_line_count_args(args: &[String]) -> (usize, Vec<String>) {
-        let mut count = 10usize;
-        let mut files = Vec::new();
-
-        let mut iter = args.iter().peekable();
-        while let Some(arg) = iter.next() {
-            if arg == "-n" || arg == "--lines" {
-                if let Some(n) = iter.peek().and_then(|v| v.parse::<usize>().ok()) {
-                    count = n;
-                    iter.next();
-                }
-            } else if let Some(n) = arg
-                .strip_prefix("-n")
-                .or_else(|| arg.strip_prefix("--lines="))
-                .and_then(|v| v.parse::<usize>().ok())
-            {
-                count = n;
-            } else if let Some(n) = arg.strip_prefix('-').and_then(|v| v.parse::<usize>().ok()) {
-                // Classic `head -5` form
-                count = n;
-            } else if !arg.starts_with('-') {
-                files.push(arg.clone());
-            }
-        }
-
-        (count, files)
-    }
-
     /// Execute the current command
     pub(crate) async fn execute_command(&mut self) -> Result<()> {
         // In lesson mode, allow empty commands (for Information steps that just need Enter)
@@ -1779,9 +1324,20 @@ impl App {
         }
 
         let mut command_str = self.command_buffer.clone();
+        if !command_str.is_empty() {
+            self.begin_command_entry(&command_str);
+        }
 
         // If in lesson mode with empty command, skip parsing and go to validation
         if self.lesson_mode && command_str.is_empty() {
+            // No lesson yet: nothing to continue
+            if self.lesson_panel.as_ref().is_none_or(|p| p.current_lesson.is_none()) {
+                return Ok(());
+            }
+            // Step text below the fold: Enter reads on before moving on
+            if self.lesson_panel.as_mut().is_some_and(|p| p.read_on()) {
+                return Ok(());
+            }
             // Extract lesson completion info outside the borrow scope
             let mut lesson_completed_info: Option<(String, arct_core::Difficulty, u32, u64, usize, bool)> =
                 None;
@@ -1791,15 +1347,7 @@ impl App {
                 let validation = lesson_panel.validate_current_step(&command_str);
 
                 if validation.is_success() {
-                    // Success! Move to next step
-                    self.last_output = format!("{}{}\n\nMoving to next step...\n",
-                        icons::success().content,
-                        match &validation {
-                            arct_core::ValidationResult::Success { message } => message,
-                            _ => "Success!",
-                        }
-                    );
-
+                    // Success! Move to next step (the lesson panel shows it)
                     if !lesson_panel.next_step() {
                         // Lesson complete! Extract info for later processing
                         if let Some(lesson) = lesson_panel.current_lesson.as_ref() {
@@ -1812,13 +1360,12 @@ impl App {
                                 lesson_panel.mastered_run(),
                             ));
                         }
-                        self.last_output.push_str(&format!("\n{}Congratulations! You've completed this lesson!\n\nPress Ctrl+L to exit lesson mode or 'm' to select another lesson.\n", icons::celebration().content));
                     } else {
                         step_advanced = true;
                     }
                 } else {
-                    // Information steps should always succeed with Enter
-                    self.last_output = "Press Enter to continue...\n".to_string();
+                    // Enter with nothing typed on a step that needs a command
+                    self.transcript.feedback_for(&validation);
                 }
 
                 self.command_buffer.clear();
@@ -1899,26 +1446,13 @@ impl App {
                     world,
                 );
 
-                // Build output: virtual FS output FIRST, then validation feedback
-                let mut output = String::new();
+                // The command's output, then the lesson's feedback on it
+                // (shown under the output as quieter lines)
+                let output = vfs_output.unwrap_or_default();
+                self.transcript.feedback_for(&validation);
 
-                // Show the command output from virtual filesystem
-                if let Some(vfs_out) = vfs_output {
-                    output.push_str(&vfs_out);
-                    output.push('\n');
-                }
-
-                // Then show validation feedback
                 if validation.is_success() {
                     // Success! Move to next step
-                    output.push_str(&format!("{}{}\n\n",
-                        icons::success().content,
-                        match &validation {
-                            arct_core::ValidationResult::Success { message } => message,
-                            _ => "Correct!",
-                        }
-                    ));
-
                     if !lesson_panel.next_step() {
                         // Lesson complete! Extract info for later processing
                         if let Some(lesson) = lesson_panel.current_lesson.as_ref() {
@@ -1931,27 +1465,9 @@ impl App {
                                 lesson_panel.mastered_run(),
                             ));
                         }
-                        output.push_str(&format!("{}Congratulations! You've completed this lesson!\n\nPress Ctrl+L to exit lesson mode or 'm' to select another lesson.\n", icons::celebration().content));
                     } else {
                         step_advanced = true;
-                        output.push_str("Moving to next step...\n");
                     }
-                } else {
-                    // Show validation failure
-                    output.push_str(&match validation {
-                        arct_core::ValidationResult::Failure { message, hint } => {
-                            let mut fail_output = format!("{}{}\n", icons::error().content, message);
-                            if let Some(h) = hint {
-                                fail_output.push_str(&format!("\n{}Hint: {}\n", icons::hint().content, h));
-                            }
-                            fail_output.push_str("\nTry again!\n");
-                            fail_output
-                        }
-                        arct_core::ValidationResult::Partial { message, progress } => {
-                            format!("{}{} ({:.0}% correct)\n\nKeep trying!\n", icons::warning().content, message, progress)
-                        }
-                        _ => "Try again!\n".to_string(),
-                    });
                 }
 
                 self.last_output = output;
@@ -1994,6 +1510,7 @@ impl App {
         // Generate explanation
         let explanation = self.educator.explain(&cmd)?;
         self.last_explanation = Some(explanation);
+        self.explanation_scroll = 0;
 
         // Check if this is a shell builtin command
         match cmd.program.as_str() {
@@ -2286,6 +1803,66 @@ impl App {
                 Ok(())
             }
         }
+    }
+
+    /// The folder a command typed now would run in, as the prompt shows
+    /// it: the lesson folder in simulated lessons, the playground folder
+    /// in real-files lessons, the safe-mode home in the free shell
+    pub fn prompt_folder(&self) -> String {
+        if self.lesson_mode {
+            if self.lesson_runs_real() {
+                if let Some(playground) = &self.playground {
+                    let shown = playground.display_cwd();
+                    return shown
+                        .strip_prefix("~/ArcAcademy/")
+                        .map(str::to_string)
+                        .unwrap_or(shown);
+                }
+            } else if let Some(vfs) = &self.virtual_fs {
+                return vfs.get_current_dir().display().to_string();
+            }
+        } else if self.config.shell.safe_mode {
+            return self
+                .explore
+                .as_ref()
+                .map(|home| home.display_cwd())
+                .unwrap_or_else(|| EXPLORE_DISPLAY.to_string());
+        }
+        let cwd = &self.session.state.working_directory;
+        match dirs::home_dir().and_then(|home| cwd.strip_prefix(home).ok().map(|p| p.to_path_buf())) {
+            Some(rel) if rel.as_os_str().is_empty() => "~".to_string(),
+            Some(rel) => format!("~/{}", rel.display()),
+            None => cwd.display().to_string(),
+        }
+    }
+
+    /// The real folder behind the prompt, when commands run on real files
+    pub fn prompt_real_dir(&self) -> Option<std::path::PathBuf> {
+        if self.lesson_mode {
+            return self
+                .lesson_runs_real()
+                .then(|| self.playground.as_ref().map(|p| p.cwd().to_path_buf()))
+                .flatten();
+        }
+        if self.config.shell.safe_mode {
+            return self.explore.as_ref().map(|home| home.cwd().to_path_buf());
+        }
+        Some(self.session.state.working_directory.clone())
+    }
+
+    /// The learner pressed Enter on `command`: open its transcript entry
+    /// (the prompt line) before it runs, so it shows where it ran
+    fn begin_command_entry(&mut self, command: &str) {
+        let answering = self.lesson_mode
+            && self.lesson_panel.as_ref().is_some_and(|p| p.expects_answer());
+        if answering {
+            // A quiz answer isn't run, so it gets no prompt
+            self.transcript.begin_answer(command);
+        } else {
+            let folder = self.prompt_folder();
+            self.transcript.begin_command(&folder, command);
+        }
+        self.last_output.clear();
     }
 
     /// Update context (e.g., when directory changes)
@@ -2595,7 +2172,7 @@ impl App {
                 match self.ensure_playground() {
                     Ok(()) => {
                         let mut msg = format!(
-                            "{}Lesson mode activated in REAL practice mode.\n\nCommands run for real inside ~/ArcAcademy/playground.\n\nPress Ctrl+L again to return to normal mode.\n",
+                            "{}Lessons on, with REAL files: commands run inside ~/ArcAcademy/playground.\n\nCtrl+L opens the lesson map; Ctrl+L in the map leaves lessons.\n",
                             icons::lesson().content
                         );
                         if let Some(intro) = self.real_mode_intro_if_needed() {
@@ -2620,7 +2197,7 @@ impl App {
                     Ok(vfs) => {
                         self.virtual_fs = Some(vfs);
                         self.sandbox = crate::sandbox::SandboxShell::new();
-                        self.last_output = format!("{}Lesson mode activated! You're now in a safe virtual filesystem.\n\nPress Ctrl+L again to return to normal mode.\n\nNavigate through lessons using the Learning panel on the right.\n", icons::lesson().content);
+                        self.last_output = format!("{}Lessons on. Commands run in a practice world, so nothing on your computer changes.\n\nCtrl+L opens the lesson map; Ctrl+L in the map leaves lessons.\n", icons::lesson().content);
                     }
                     Err(e) => {
                         self.last_output = format!("{}Failed to initialize lesson environment: {}\n", icons::error().content, e);
@@ -2648,7 +2225,7 @@ impl App {
             // Clean up virtual filesystem (playground dirs are real files the
             // learner owns — they persist until an explicit reset)
             self.virtual_fs = None;
-            self.last_output = format!("{}Lesson mode deactivated. Back to normal shell mode and real filesystem.\n", icons::learning().content);
+            self.last_output = format!("{}Lessons off. Back to the free shell.\n", icons::learning().content);
         }
     }
 
@@ -2899,17 +2476,15 @@ impl App {
             // same lesson is re-entered in the same session
             self.virtual_fs = None;
 
-            let lesson_id = lesson_info
-                .as_ref()
-                .map(|(id, _)| id.as_str())
-                .unwrap_or("lesson");
-            match arct_core::VirtualFileSystem::new(lesson_id, &self.session_id) {
+            // The lesson's own setup files; Operator lessons also get the
+            // generic practice home
+            let lesson = self.lesson_panel.as_ref().and_then(|p| p.current_lesson.as_ref());
+            let made = match lesson {
+                Some(lesson) => arct_core::VirtualFileSystem::for_lesson(lesson, &self.session_id),
+                None => arct_core::VirtualFileSystem::new("lesson", &self.session_id),
+            };
+            match made {
                 Ok(vfs) => {
-                    if let Some((_, setup)) = &lesson_info {
-                        if let Err(e) = vfs.seed_setup(setup) {
-                            tracing::warn!("Failed to seed lesson setup files: {}", e);
-                        }
-                    }
                     self.virtual_fs = Some(vfs);
                     self.sandbox = crate::sandbox::SandboxShell::new();
                 }
@@ -3727,12 +3302,10 @@ impl App {
             .map(|l| l.title.clone())
             .unwrap_or_else(|| lesson_id.clone());
         let xp = crate::level::lesson_xp(difficulty);
-        self.last_output = format!(
-            "{}\n{}",
+        self.transcript.feedback(
+            Tone::Success,
             crate::celebrate::banner("LESSON COMPLETE!", &lesson_title, xp),
-            self.last_output
         );
-        self.output_scroll = 0;
 
         // Track badges: finished every lesson, and finished them all
         // without needing the answer
@@ -3751,10 +3324,13 @@ impl App {
             self.record_feature_event(&format!("{key}_complete"));
         }
         if progress.is_complete() && first_time {
-            self.last_output.push_str(&format!(
-                "\nYou finished the {} track. Print your certificate with: arct certificate --track {key}\n",
-                crate::streak::track_name(track)
-            ));
+            self.transcript.feedback(
+                Tone::Info,
+                format!(
+                    "You finished the {} track. Print your certificate with: arct certificate --track {key}",
+                    crate::streak::track_name(track)
+                ),
+            );
         }
         if progress.is_mastered() {
             self.record_feature_event(&format!("{key}_mastered"));
@@ -3784,13 +3360,11 @@ impl App {
             &self.user_stats,
             1,
         );
-        if let Some(rec) = recommendations.first() {
-            self.last_output.push_str(&format!(
-                "\n{}Next up: {} — press m for the menu\n",
-                icons::target().content,
-                rec.lesson.title
-            ));
-        }
+        let next = match recommendations.first() {
+            Some(rec) => format!("Next up: {}. Ctrl+L opens the lesson map.", rec.lesson.title),
+            None => "Ctrl+L opens the lesson map.".to_string(),
+        };
+        self.transcript.feedback(Tone::Info, next);
     }
 
     /// Persist the current lesson's step position for step-level resume
@@ -3896,6 +3470,12 @@ impl App {
                 }
             }
         }
+    }
+
+    /// A fresh First Keys session, speaking through the system voice
+    /// (silent when ARCT_NO_SPEECH is set or no voice is installed)
+    fn open_first_keys() -> crate::first_keys::FirstKeys {
+        crate::first_keys::FirstKeys::new(Box::new(crate::first_keys::SystemVoice::new()))
     }
 
     /// Execute a command selected from the command palette.
@@ -4130,5 +3710,162 @@ mod playthrough_tests {
         }
         assert!(played > 0);
         assert!(failures.is_empty(), "{} of {played} lessons stuck on real files:\n\n{}", failures.len(), failures.join("\n\n"));
+    }
+}
+
+#[cfg(test)]
+mod first_keys_wiring_tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn app(name: &str, first_keys: bool) -> (App, std::path::PathBuf) {
+        // Never let a test run talk out loud
+        std::env::set_var("ARCT_NO_SPEECH", "1");
+        let dir = std::env::temp_dir().join(format!("arct-firstkeys-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("ARCT_DATA_DIR", &dir);
+        let config = dir.join("config.toml");
+        std::fs::write(&config, "[general]\nsetup_complete = true\n").unwrap();
+        let app = App::new_with_options(crate::RunOptions {
+            config_path: Some(config),
+            first_keys,
+            ..Default::default()
+        })
+        .unwrap();
+        (app, dir)
+    }
+
+    async fn press(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+        app.handle_event(Event::Key(KeyEvent::new(code, modifiers))).await.unwrap();
+    }
+
+    async fn type_word(app: &mut App, word: &str) {
+        for c in word.chars() {
+            press(app, KeyCode::Char(c), KeyModifiers::NONE).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn keys_that_quit_or_open_things_elsewhere_do_nothing_in_first_keys() {
+        let (mut app, dir) = app("mash", true);
+        assert!(app.first_keys.is_some());
+        press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL).await;
+        press(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL).await;
+        press(&mut app, KeyCode::Char('k'), KeyModifiers::CONTROL).await;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::F(1), KeyModifiers::NONE).await;
+        type_word(&mut app, "quit").await;
+        assert!(!app.should_quit, "a child's keys must never quit");
+        assert!(app.first_keys.is_some());
+        assert!(app.command_palette.is_none());
+        assert!(!app.show_help);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn the_grown_up_sequence_quits_when_started_from_the_command_line() {
+        let (mut app, dir) = app("cli-exit", true);
+        press(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+        type_word(&mut app, "quit").await;
+        assert!(app.first_keys.is_none());
+        assert!(app.should_quit);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn from_the_palette_the_grown_up_sequence_returns_to_arct() {
+        let (mut app, dir) = app("palette", false);
+        assert!(app.first_keys.is_none());
+        app.execute_palette_command(crate::panels::command_palette::PaletteCommand::Action(
+            Action::StartFirstKeys,
+        ))
+        .await
+        .unwrap();
+        assert!(app.first_keys.is_some());
+        press(&mut app, KeyCode::Char('g'), KeyModifiers::CONTROL).await;
+        type_word(&mut app, "quit").await;
+        assert!(app.first_keys.is_none());
+        assert!(!app.should_quit, "leaving First Keys from the palette goes back to arct");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn using_every_magic_word_earns_the_badge() {
+        let (mut app, dir) = app("badge", true);
+        assert!(!app.user_stats.achievements.is_unlocked("first_keys"));
+        // Stage 1: any keys; stage 2: find each letter shown; stage 3: the words
+        let at_words =
+            |app: &App| app.first_keys.as_ref().unwrap().stage() == crate::first_keys::Stage::MagicWords;
+        'outer: for _ in 0..200 {
+            for c in 'a'..='z' {
+                if at_words(&app) {
+                    break 'outer;
+                }
+                press(&mut app, KeyCode::Char(c), KeyModifiers::NONE).await;
+            }
+        }
+        assert!(at_words(&app));
+        for word in ["ls", "cd", "pwd"] {
+            type_word(&mut app, word).await;
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        }
+        assert!(app.first_keys.as_ref().unwrap().finished());
+        assert!(app.user_stats.achievements.is_unlocked("first_keys"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn focus_never_stays_on_a_panel_that_is_not_on_screen() {
+        let (mut app, dir) = app("focus", false);
+        app.active_panel = PanelId::Context;
+        // 60 columns: the side panel is hidden
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 30)).unwrap();
+        terminal.draw(|f| crate::ui::draw(f, &mut app)).unwrap();
+        assert_eq!(app.active_panel, PanelId::Shell);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn enter_never_reads_on_into_a_lesson_panel_that_is_not_drawn() {
+        let (mut app, dir) = app("readon", false);
+        app.lesson_mode = true;
+        let library = arct_core::LessonLibrary::new();
+        let lesson = library
+            .all()
+            .into_iter()
+            .max_by_key(|l| l.steps.first().map(|s| s.instruction.len()).unwrap_or(0))
+            .unwrap()
+            .clone();
+        app.lesson_panel.as_mut().unwrap().load_lesson(lesson);
+        // a short terminal: long step text runs past the panel
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 20)).unwrap();
+        terminal.draw(|f| crate::ui::draw(f, &mut app)).unwrap();
+        assert!(app.lesson_panel.as_ref().unwrap().has_more_below(), "test needs a step that overflows");
+        // then too small to draw it at all
+        let mut tiny = ratatui::Terminal::new(ratatui::backend::TestBackend::new(30, 8)).unwrap();
+        tiny.draw(|f| crate::ui::draw(f, &mut app)).unwrap();
+        assert!(!app.lesson_panel.as_mut().unwrap().read_on());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn first_keys_takes_the_whole_screen() {
+        let (mut app, dir) = app("draw", true);
+        // Smaller than the normal minimum size too
+        for (w, h) in [(120, 36), (40, 12)] {
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(w, h)).unwrap();
+            terminal.draw(|f| crate::ui::draw(f, &mut app)).unwrap();
+            let screen: String = terminal
+                .backend()
+                .buffer()
+                .content()
+                .iter()
+                .map(|c| c.symbol().to_string())
+                .collect();
+            assert!(!screen.contains("Terminal too small"), "{w}x{h}");
+            assert!(!screen.contains("Ctrl+K"), "normal key hints leaked into First Keys at {w}x{h}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

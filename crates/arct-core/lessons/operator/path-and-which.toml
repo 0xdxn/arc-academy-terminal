@@ -5,6 +5,8 @@ difficulty = "Advanced"
 estimated_minutes = 15
 prerequisites = ["environment", "first-scripts"]
 tags = ["operator", "path", "which", "type", "export", "scripts"]
+# ~/bin is outside the real-files playground
+simulated_only = true
 
 [[setup]]
 path = "pathlab/todo.txt"

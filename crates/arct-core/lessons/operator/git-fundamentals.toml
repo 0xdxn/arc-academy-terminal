@@ -12,6 +12,8 @@ tags = [
     "git",
     "version-control",
 ]
+# The lesson explains git init without running it, so real files have no repository yet
+simulated_only = true
 
 [[steps]]
 step_number = 1

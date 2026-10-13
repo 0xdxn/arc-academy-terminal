@@ -14,11 +14,21 @@ thiserror.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 shellwords.workspace = true
-chrono.workspace = true
+# Without default features, so the browser build (arct-web) gets no
+# JavaScript glue; the "progress" feature turns local time back on
+chrono = { version = "0.4", default-features = false, features = ["serde", "std", "now"] }
 tracing.workspace = true
 dirs.workspace = true
-uuid.workspace = true
+uuid = { workspace = true, optional = true }
 regex.workspace = true
 tar.workspace = true
 flate2.workspace = true
 toml.workspace = true
+
+[features]
+default = ["progress"]
+# The terminal app's records: shell sessions (random ids), and stats,
+# streaks, challenges and recommendations (local time). The browser build
+# (arct-web) leaves them out: on wasm32-unknown-unknown, randomness and
+# the time zone need JavaScript glue.
+progress = ["dep:uuid", "chrono/clock"]

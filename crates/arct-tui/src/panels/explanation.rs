@@ -18,7 +18,125 @@ impl ExplanationPanel {
         Self
     }
 
-    /// Render the explanation panel
+    /// The explanation of a command, as lines (wrapped when rendered)
+    pub fn lines(exp: &Explanation, theme: &Theme) -> Vec<Line<'static>> {
+        let mut lines = vec![Line::from(vec![
+            icons::learning(),
+            Span::styled(exp.summary.clone(), theme.style_accent()),
+        ])];
+
+        // Detailed description (plain English explanation)
+        if !exp.description.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(exp.description.clone(), theme.style_normal())));
+        }
+
+        if !exp.flag_explanations.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled("Flags:", theme.style_header())));
+            for flag_exp in &exp.flag_explanations {
+                lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(flag_exp.flag.clone(), theme.style_accent()),
+                    Span::raw(" → "),
+                    Span::styled(flag_exp.description.clone(), theme.style_normal()),
+                ]));
+            }
+        }
+
+        if !exp.warnings.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                icons::warning(),
+                Span::styled("Warnings:", theme.style_warning()),
+            ]));
+            for warning in &exp.warnings {
+                lines.push(Line::from(vec![
+                    Span::raw("  • "),
+                    Span::styled(warning.message.clone(), theme.style_error()),
+                ]));
+            }
+        }
+
+        if !exp.tips.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![icons::hint(), Span::styled("Tips:", theme.style_header())]));
+            for tip in &exp.tips {
+                lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(tip.title.clone(), theme.style_accent()),
+                ]));
+                lines.push(Line::from(vec![
+                    Span::raw("    "),
+                    Span::styled(tip.content.clone(), theme.style_dim()),
+                ]));
+            }
+        }
+
+        if !exp.related_commands.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("Related: ", theme.style_secondary()),
+                Span::styled(exp.related_commands.join(", "), theme.style_dim()),
+            ]));
+        }
+        lines
+    }
+
+    /// Rows (borders included) the explanation needs at `width` columns
+    pub fn wanted_height(exp: &Explanation, theme: &Theme, width: u16) -> u16 {
+        let rows = Paragraph::new(Self::lines(exp, theme))
+            .wrap(Wrap { trim: false })
+            .line_count(width.saturating_sub(2));
+        (rows as u16).saturating_add(2)
+    }
+
+    /// Draw `lines` into `inner` scrolled down `scroll` rows; when they
+    /// don't fit, the last row says how much more there is. Returns the
+    /// furthest it can scroll.
+    fn render_scrolled(
+        frame: &mut Frame,
+        inner: Rect,
+        lines: Vec<Line<'static>>,
+        scroll: usize,
+        theme: &Theme,
+    ) -> usize {
+        if inner.height == 0 || inner.width == 0 {
+            return 0;
+        }
+        let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+        let total = paragraph.line_count(inner.width);
+        let rows = inner.height as usize;
+        if total <= rows {
+            frame.render_widget(paragraph, inner);
+            return 0;
+        }
+        let view = rows.saturating_sub(1).max(1);
+        let max_scroll = total - view;
+        let scroll = scroll.min(max_scroll);
+        let below = total - view - scroll;
+        frame.render_widget(
+            paragraph.scroll((scroll as u16, 0)),
+            Rect { height: view as u16, ..inner },
+        );
+        let cue = if below > 0 {
+            format!(
+                "▼ {below} more line{} below: scroll with the wheel, or Tab to here and press ↓",
+                if below == 1 { "" } else { "s" }
+            )
+        } else {
+            "▲ more above: scroll up to reread".to_string()
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(cue, theme.style_accent()))),
+            Rect { y: inner.y + view as u16, height: 1, ..inner },
+        );
+        max_scroll
+    }
+
+    /// Render the explanation panel. `scroll` moves a long explanation
+    /// down; returns the furthest it can scroll.
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &self,
         frame: &mut Frame,
@@ -28,7 +146,8 @@ impl ExplanationPanel {
         theme: &Theme,
         ai_mode: bool,
         ai_response: Option<&str>,
-    ) {
+        scroll: usize,
+    ) -> usize {
         let border_style = if focused {
             theme.style_border_focused()
         } else {
@@ -93,111 +212,9 @@ impl ExplanationPanel {
                 frame.render_widget(paragraph, area);
             }
         } else if let Some(exp) = explanation {
-            let mut items = Vec::new();
-
-            // Summary
-            items.push(ListItem::new(Line::from(vec![
-                icons::learning(),
-                Span::styled(&exp.summary, theme.style_accent()),
-            ])));
-            items.push(ListItem::new(Line::from("")));
-
-            // Detailed description (plain English explanation)
-            if !exp.description.is_empty() {
-                // Word wrap the description for better readability
-                let max_width = (area.width.saturating_sub(4)) as usize; // Account for padding
-                let words: Vec<&str> = exp.description.split_whitespace().collect();
-                let mut current_line = String::new();
-
-                for word in words {
-                    if current_line.len() + word.len() + 1 > max_width {
-                        if !current_line.is_empty() {
-                            items.push(ListItem::new(Line::from(vec![
-                                Span::styled(current_line.clone(), theme.style_normal()),
-                            ])));
-                            current_line.clear();
-                        }
-                    }
-                    if !current_line.is_empty() {
-                        current_line.push(' ');
-                    }
-                    current_line.push_str(word);
-                }
-
-                if !current_line.is_empty() {
-                    items.push(ListItem::new(Line::from(vec![
-                        Span::styled(current_line, theme.style_normal()),
-                    ])));
-                }
-
-                items.push(ListItem::new(Line::from("")));
-            }
-
-            // Flag explanations
-            if !exp.flag_explanations.is_empty() {
-                items.push(ListItem::new(Line::from(vec![
-                    Span::styled("", theme.style_warning()),
-                    Span::styled("Flag Explanations:", theme.style_header()),
-                ])));
-
-                for flag_exp in &exp.flag_explanations {
-                    items.push(ListItem::new(Line::from(vec![
-                        Span::raw("  "),
-                        Span::styled(&flag_exp.flag, theme.style_accent()),
-                        Span::raw(" → "),
-                        Span::styled(&flag_exp.description, theme.style_normal()),
-                    ])));
-                }
-                items.push(ListItem::new(Line::from("")));
-            }
-
-            // Warnings
-            if !exp.warnings.is_empty() {
-                items.push(ListItem::new(Line::from(vec![
-                    icons::warning(),
-                    Span::styled("Warnings:", theme.style_warning()),
-                ])));
-
-                for warning in &exp.warnings {
-                    items.push(ListItem::new(Line::from(vec![
-                        Span::raw("  • "),
-                        Span::styled(&warning.message, theme.style_error()),
-                    ])));
-                }
-                items.push(ListItem::new(Line::from("")));
-            }
-
-            // Tips
-            if !exp.tips.is_empty() {
-                items.push(ListItem::new(Line::from(vec![
-                    icons::hint(),
-                    Span::styled("Tips:", theme.style_header()),
-                ])));
-
-                for tip in &exp.tips {
-                    items.push(ListItem::new(Line::from(vec![
-                        Span::raw("  "),
-                        Span::styled(&tip.title, theme.style_accent()),
-                    ])));
-                    items.push(ListItem::new(Line::from(vec![
-                        Span::raw("    "),
-                        Span::styled(&tip.content, theme.style_dim()),
-                    ])));
-                }
-                items.push(ListItem::new(Line::from("")));
-            }
-
-            // Related commands
-            if !exp.related_commands.is_empty() {
-                items.push(ListItem::new(Line::from(vec![
-                    Span::styled("", theme.style_success()),
-                    Span::styled("Related: ", theme.style_secondary()),
-                    Span::styled(exp.related_commands.join(", "), theme.style_dim()),
-                ])));
-            }
-
-            let list = List::new(items).block(block);
-            frame.render_widget(list, area);
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+            return Self::render_scrolled(frame, inner, Self::lines(exp, theme), scroll, theme);
         } else {
             // No explanation yet
             let paragraph = Paragraph::new(vec![
@@ -229,6 +246,7 @@ impl ExplanationPanel {
 
             frame.render_widget(paragraph, area);
         }
+        0
     }
 }
 

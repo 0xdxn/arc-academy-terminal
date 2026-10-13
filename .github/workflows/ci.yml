@@ -49,3 +49,11 @@ jobs:
 
       - name: Test
         run: cargo test --workspace
+
+      - name: Core without the app's records (what the browser build uses)
+        run: cargo test -p arct-core --no-default-features
+
+      - name: Browser lesson engine (wasm)
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build --locked --profile web -p arct-web --target wasm32-unknown-unknown

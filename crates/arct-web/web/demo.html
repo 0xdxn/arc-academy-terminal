@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Test page only. Nothing leaves the page: the engine is fetched from
+     here and nothing else is. -->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; connect-src 'self'; style-src 'unsafe-inline'">
+<title>arct lessons in the browser (test page)</title>
+<style>
+  body { font: 15px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 1.5rem; max-width: 60rem; }
+  #step { white-space: pre-wrap; border: 1px solid #999; padding: .75rem; }
+  #log { white-space: pre-wrap; }
+  .prompt { font-weight: bold; }
+  .success { color: #137333; }
+  .failure, .error { color: #b3261e; }
+  .partial, .done { color: #8a5a00; }
+  form { display: flex; gap: .5rem; margin-top: .5rem; }
+  #line { flex: 1; font: inherit; }
+</style>
+</head>
+<body>
+<p>
+  <label>Lesson <select id="lesson"></select></label>
+  <button id="reset" type="button">Start again</button>
+</p>
+<div id="step">Loading the lesson engine...</div>
+<div id="log"></div>
+<form id="form" autocomplete="off">
+  <span class="prompt" id="prompt">~ $</span>
+  <input id="line" spellcheck="false" autofocus>
+  <button>Enter</button>
+</form>
+<script type="module">
+import { load } from "./arct-web.js";
+
+const $ = (id) => document.getElementById(id);
+const arct = await load();
+
+function line(text, cls) {
+  const div = document.createElement("div");
+  if (cls) div.className = cls;
+  div.textContent = text;
+  $("log").append(div);
+}
+
+function show(state) {
+  if (state.error) {
+    line(state.error, "error");
+    return;
+  }
+  for (const e of state.entries) {
+    line(`${e.prompt_cwd} $ ${e.command}`, "prompt");
+    if (e.output) line(e.output.replace(/\n$/, ""));
+    line(e.feedback_text, e.feedback_kind);
+    if (e.hint) line(`Hint: ${e.hint}`, e.feedback_kind);
+  }
+  const s = state.step;
+  let text = `${state.lesson.title}: step ${s.index + 1} of ${s.total}\n${s.title}\n\n${s.body}`;
+  if (s.options.length) text += "\n" + s.options.map((o, i) => `  ${i}. ${o}`).join("\n");
+  if (s.kind === "info") text += "\n\n(press Enter to continue)";
+  if (state.done) text = `${state.lesson.title}: finished.` +
+    (state.certificate_ready ? "\nEvery lesson of this track is done." : "");
+  $("step").textContent = text;
+  $("prompt").textContent = `${state.cwd} $`;
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+function start(id) {
+  $("log").textContent = "";
+  show(arct.start(id));
+}
+
+for (const lesson of arct.listLessons()) {
+  const option = new Option(`${lesson.track}: ${lesson.title}`, lesson.id);
+  $("lesson").append(option);
+}
+$("lesson").value = "explorer-look-around";
+$("lesson").onchange = () => start($("lesson").value);
+$("reset").onclick = () => { $("log").textContent = ""; show(arct.reset()); };
+$("form").onsubmit = (event) => {
+  event.preventDefault();
+  const state = arct.submit($("line").value);
+  $("line").value = "";
+  show(state);
+};
+start("explorer-look-around");
+</script>
+</body>
+</html>

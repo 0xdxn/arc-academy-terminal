@@ -1,14 +1,14 @@
 //! More sandbox commands that walk the practice files: glob expansion,
 //! `find`, `du`, `tar`, `gzip`, and practice SSH keys.
 //!
-//! Every path goes through [`VirtualFileSystem::resolve_path`], so nothing
-//! here can reach outside the lesson sandbox. Symbolic links are never
-//! followed or created.
+//! Every path goes through the sandbox's containment check (the one
+//! [`VirtualFileSystem::resolve_path`] uses), so nothing here can reach
+//! outside the lesson sandbox. Symbolic links are never followed or
+//! created. All of it works the same on disk and in memory.
 
 use crate::shell_syntax::{fnmatch, glob_match};
 use crate::virtual_fs::VirtualFileSystem;
 use anyhow::{bail, Context, Result};
-use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
@@ -86,24 +86,6 @@ impl FindQuery {
     }
 }
 
-/// Sorted names in a real directory (no symlinks followed)
-fn sorted_children(dir: &Path) -> Vec<(String, PathBuf, bool)> {
-    let mut out: Vec<(String, PathBuf, bool)> = fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| {
-            let meta = fs::symlink_metadata(e.path()).ok()?;
-            if meta.file_type().is_symlink() {
-                return None;
-            }
-            Some((e.file_name().to_string_lossy().to_string(), e.path(), meta.is_dir()))
-        })
-        .collect();
-    out.sort_by(|a, b| a.0.cmp(&b.0));
-    out
-}
-
 /// Join a path as typed with a child name: "." + "a" -> "./a", "docs/" + "a" -> "docs/a"
 fn join_display(base: &str, name: &str) -> String {
     format!("{}/{}", base.trim_end_matches('/'), name)
@@ -156,19 +138,20 @@ impl VirtualFileSystem {
     /// `find`: walk each start path and list what matches, as paths
     /// written from the start path the way it was typed
     pub fn find(&self, start: &str, query: &FindQuery) -> Result<Vec<String>> {
-        let real = self.resolve_path(start)?;
-        let meta = fs::symlink_metadata(&real)
+        let at = self.virtual_path(start)?;
+        let meta = self
+            .prim_lstat(&at)
             .with_context(|| format!("'{start}': No such file or directory"))?;
         let mut out = Vec::new();
         let start_name = Path::new(start)
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| start.to_string());
-        if query.matches(&start_name, meta.is_dir()) {
+        if query.matches(&start_name, meta.is_dir) {
             out.push(start.to_string());
         }
-        if meta.is_dir() {
-            self.find_in(&real, start, 1, query, &mut out);
+        if meta.is_dir {
+            self.find_in(&at, start, 1, query, &mut out);
         }
         Ok(out)
     }
@@ -177,7 +160,7 @@ impl VirtualFileSystem {
         if query.max_depth.is_some_and(|max| depth > max) {
             return;
         }
-        for (name, path, is_dir) in sorted_children(dir) {
+        for (name, path, is_dir) in self.walk_children(dir) {
             let shown = join_display(display, &name);
             if query.matches(&name, is_dir) {
                 out.push(shown.clone());
@@ -191,30 +174,31 @@ impl VirtualFileSystem {
     /// `du`: size in bytes of each folder under `path` (deepest first),
     /// or only `path` itself when `summarize`
     pub fn disk_usage(&self, path: &str, summarize: bool) -> Result<Vec<(String, u64)>> {
-        let real = self.resolve_path(path)?;
-        let meta = fs::symlink_metadata(&real)
+        let at = self.virtual_path(path)?;
+        let meta = self
+            .prim_lstat(&at)
             .with_context(|| format!("cannot access '{path}': No such file or directory"))?;
-        if !meta.is_dir() {
-            return Ok(vec![(path.to_string(), meta.len())]);
+        if !meta.is_dir {
+            return Ok(vec![(path.to_string(), meta.len)]);
         }
         let mut out = Vec::new();
-        let total = Self::du_walk(&real, path, summarize, &mut out);
+        let total = self.du_walk(&at, path, summarize, &mut out);
         out.push((path.to_string(), total));
         Ok(out)
     }
 
-    fn du_walk(dir: &Path, display: &str, summarize: bool, out: &mut Vec<(String, u64)>) -> u64 {
+    fn du_walk(&self, dir: &Path, display: &str, summarize: bool, out: &mut Vec<(String, u64)>) -> u64 {
         let mut total = 0;
-        for (name, path, is_dir) in sorted_children(dir) {
+        for (name, path, is_dir) in self.walk_children(dir) {
             if is_dir {
                 let shown = join_display(display, &name);
-                let size = Self::du_walk(&path, &shown, summarize, out);
+                let size = self.du_walk(&path, &shown, summarize, out);
                 if !summarize {
                     out.push((shown, size));
                 }
                 total += size;
             } else {
-                total += fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                total += self.prim_stat(&path).map(|m| m.len).unwrap_or(0);
             }
         }
         total
@@ -234,13 +218,14 @@ impl VirtualFileSystem {
             for input in inputs {
                 let rel = safe_relative(Path::new(input))
                     .with_context(|| format!("tar: pack files from here down ({input})"))?;
-                let real = self.resolve_path(input)?;
-                let meta = fs::symlink_metadata(&real)
+                let at = self.virtual_path(input)?;
+                let meta = self
+                    .prim_lstat(&at)
                     .with_context(|| format!("tar: {input}: No such file or directory"))?;
-                if meta.is_dir() {
-                    Self::tar_dir(&mut builder, &real, &rel, &mut names)?;
-                } else if meta.is_file() {
-                    builder.append_path_with_name(&real, &rel)?;
+                if meta.is_dir {
+                    self.tar_dir(&mut builder, &at, &rel, &mut names)?;
+                } else {
+                    self.tar_append_file(&mut builder, &at, &rel)?;
                     names.push(rel.to_string_lossy().to_string());
                 }
             }
@@ -253,25 +238,26 @@ impl VirtualFileSystem {
         } else {
             buffer
         };
-        fs::write(self.resolve_path(archive)?, bytes)
+        self.prim_write(&self.virtual_path(archive)?, &bytes, false)
             .with_context(|| format!("tar: can't write {archive}"))?;
         Ok(names)
     }
 
     fn tar_dir<W: std::io::Write>(
+        &self,
         builder: &mut tar::Builder<W>,
-        real: &Path,
+        at: &Path,
         rel: &Path,
         names: &mut Vec<String>,
     ) -> Result<()> {
-        builder.append_dir(rel, real)?;
+        self.tar_append_dir(builder, at, rel)?;
         names.push(format!("{}/", rel.to_string_lossy()));
-        for (name, path, is_dir) in sorted_children(real) {
+        for (name, path, is_dir) in self.walk_children(at) {
             let child = rel.join(&name);
             if is_dir {
-                Self::tar_dir(builder, &path, &child, names)?;
+                self.tar_dir(builder, &path, &child, names)?;
             } else {
-                builder.append_path_with_name(&path, &child)?;
+                self.tar_append_file(builder, &path, &child)?;
                 names.push(child.to_string_lossy().to_string());
             }
         }
@@ -279,7 +265,8 @@ impl VirtualFileSystem {
     }
 
     fn tar_bytes(&self, archive: &str) -> Result<Vec<u8>> {
-        let raw = fs::read(self.resolve_path(archive)?)
+        let raw = self
+            .prim_read(&self.virtual_path(archive)?)
             .with_context(|| format!("tar: {archive}: No such file"))?;
         // Unpack gzip whenever the file is gzip, as GNU tar does
         if raw.starts_with(&[0x1f, 0x8b]) {
@@ -322,22 +309,20 @@ impl VirtualFileSystem {
         {
             let mut entry = entry?;
             let rel = safe_relative(&entry.path()?)?;
-            let target = self.resolve_path(&join_display(dest, &rel.to_string_lossy()))?;
+            let target = self.virtual_path(&join_display(dest, &rel.to_string_lossy()))?;
             let kind = entry.header().entry_type();
             if kind.is_dir() {
-                fs::create_dir_all(&target)?;
+                self.prim_create_dir_all(&target)?;
                 names.push(format!("{}/", rel.to_string_lossy()));
             } else if kind.is_file() {
                 if let Some(parent) = target.parent() {
-                    fs::create_dir_all(parent)?;
+                    self.prim_create_dir_all(parent)?;
                 }
                 let mut data = Vec::new();
                 entry.read_to_end(&mut data)?;
-                fs::write(&target, data)?;
-                #[cfg(unix)]
+                self.prim_write(&target, &data, false)?;
                 if let Ok(mode) = entry.header().mode() {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = fs::set_permissions(&target, fs::Permissions::from_mode(mode & 0o755));
+                    let _ = self.prim_set_mode(&target, mode & 0o755);
                 }
                 names.push(rel.to_string_lossy().to_string());
             }
@@ -348,16 +333,16 @@ impl VirtualFileSystem {
 
     /// `gzip FILE`: compress to FILE.gz and remove FILE
     pub fn gzip(&self, path: &str) -> Result<String> {
-        let real = self.resolve_path(path)?;
+        let at = self.virtual_path(path)?;
         if path.ends_with(".gz") {
             bail!("gzip: {path} already has the .gz suffix");
         }
-        let data = fs::read(&real).with_context(|| format!("gzip: {path}: No such file"))?;
+        let data = self.prim_read(&at).with_context(|| format!("gzip: {path}: No such file"))?;
         let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
         std::io::Write::write_all(&mut encoder, &data)?;
         let out = format!("{path}.gz");
-        fs::write(self.resolve_path(&out)?, encoder.finish()?)?;
-        fs::remove_file(&real)?;
+        self.prim_write(&self.virtual_path(&out)?, &encoder.finish()?, false)?;
+        self.prim_remove_file(&at)?;
         Ok(out)
     }
 
@@ -366,14 +351,14 @@ impl VirtualFileSystem {
         let Some(out) = path.strip_suffix(".gz") else {
             bail!("gunzip: {path}: the name doesn't end in .gz");
         };
-        let real = self.resolve_path(path)?;
-        let raw = fs::read(&real).with_context(|| format!("gunzip: {path}: No such file"))?;
+        let at = self.virtual_path(path)?;
+        let raw = self.prim_read(&at).with_context(|| format!("gunzip: {path}: No such file"))?;
         let mut data = Vec::new();
         flate2::read::GzDecoder::new(&raw[..])
             .read_to_end(&mut data)
             .with_context(|| format!("gunzip: {path} isn't gzip data"))?;
-        fs::write(self.resolve_path(out)?, data)?;
-        fs::remove_file(&real)?;
+        self.prim_write(&self.virtual_path(out)?, &data, false)?;
+        self.prim_remove_file(&at)?;
         Ok(out.to_string())
     }
 
@@ -383,12 +368,13 @@ impl VirtualFileSystem {
     pub fn practice_ssh_key(&self, path: &str, kind: &str, comment: &str) -> Result<(String, String)> {
         let public = format!("{path}.pub");
         for p in [path, public.as_str()] {
-            if self.resolve_path(p)?.exists() {
+            if self.prim_stat(&self.virtual_path(p)?).is_some() {
                 bail!("{p} already exists. Remove it first, or pick another name with -f");
             }
         }
-        if let Some(parent) = self.resolve_path(path)?.parent() {
-            fs::create_dir_all(parent)?;
+        let private_at = self.virtual_path(path)?;
+        if let Some(parent) = private_at.parent() {
+            self.prim_create_dir_all(parent)?;
         }
         let private_text = format!(
             "-----BEGIN OPENSSH PRIVATE KEY-----\n\
@@ -397,14 +383,9 @@ impl VirtualFileSystem {
         );
         let algo = if kind == "rsa" { "ssh-rsa" } else { "ssh-ed25519" };
         let public_text = format!("{algo} AAAAPRACTICEKEYxARCTxSANDBOXxNOTxREAL {comment}\n");
-        let private_real = self.resolve_path(path)?;
-        fs::write(&private_real, private_text)?;
-        fs::write(self.resolve_path(&public)?, public_text)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&private_real, fs::Permissions::from_mode(0o600))?;
-        }
+        self.prim_write(&private_at, private_text.as_bytes(), false)?;
+        self.prim_write(&self.virtual_path(&public)?, public_text.as_bytes(), false)?;
+        self.prim_set_mode(&private_at, 0o600)?;
         Ok((path.to_string(), public))
     }
 }
@@ -413,13 +394,19 @@ impl VirtualFileSystem {
 mod tests {
     use super::*;
 
-    fn vfs(name: &str) -> VirtualFileSystem {
-        let vfs = VirtualFileSystem::new("tools", name).unwrap();
-        vfs.create_directory("proj/src", true).unwrap();
-        vfs.write_file("proj/README.md", "hello\n", false).unwrap();
-        vfs.write_file("proj/src/main.txt", "abcdef\n", false).unwrap();
-        vfs.write_file("proj/src/.hidden.txt", "x\n", false).unwrap();
-        vfs
+    /// The same practice files on disk and in memory
+    fn both(name: &str) -> [VirtualFileSystem; 2] {
+        let filled = |vfs: VirtualFileSystem| {
+            vfs.create_directory("proj/src", true).unwrap();
+            vfs.write_file("proj/README.md", "hello\n", false).unwrap();
+            vfs.write_file("proj/src/main.txt", "abcdef\n", false).unwrap();
+            vfs.write_file("proj/src/.hidden.txt", "x\n", false).unwrap();
+            vfs
+        };
+        [
+            filled(VirtualFileSystem::new("tools", name).unwrap()),
+            filled(VirtualFileSystem::in_memory()),
+        ]
     }
 
     fn strings(v: &[&str]) -> Vec<String> {
@@ -428,119 +415,147 @@ mod tests {
 
     #[test]
     fn glob_expands_in_folders() {
-        let v = vfs("glob");
-        assert_eq!(v.glob("proj/src/*.txt"), ["proj/src/main.txt"]);
-        assert_eq!(v.glob("proj/src/.*.txt"), ["proj/src/.hidden.txt"]);
-        assert!(v.glob("proj/*.nothing").is_empty());
-        assert!(v.glob("p*/src/*.txt").is_empty(), "patterns only in the last part");
+        for v in both("glob") {
+            assert_eq!(v.glob("proj/src/*.txt"), ["proj/src/main.txt"]);
+            assert_eq!(v.glob("proj/src/.*.txt"), ["proj/src/.hidden.txt"]);
+            assert!(v.glob("proj/*.nothing").is_empty());
+            assert!(v.glob("p*/src/*.txt").is_empty(), "patterns only in the last part");
+        }
     }
 
     #[test]
     fn find_by_name_type_and_depth() {
-        let v = vfs("find");
-        let (paths, q) = FindQuery::parse(&strings(&["proj", "-name", "*.txt"])).unwrap();
-        assert_eq!(paths, ["proj"]);
-        assert_eq!(v.find("proj", &q).unwrap(), ["proj/src/.hidden.txt", "proj/src/main.txt"]);
+        for v in both("find") {
+            let (paths, q) = FindQuery::parse(&strings(&["proj", "-name", "*.txt"])).unwrap();
+            assert_eq!(paths, ["proj"]);
+            assert_eq!(v.find("proj", &q).unwrap(), ["proj/src/.hidden.txt", "proj/src/main.txt"]);
 
-        let (_, q) = FindQuery::parse(&strings(&["-type", "d"])).unwrap();
-        v.create_directory("solo", false).unwrap();
-        let found = v.find("proj", &q).unwrap();
-        assert_eq!(found, ["proj", "proj/src"]);
+            let (_, q) = FindQuery::parse(&strings(&["-type", "d"])).unwrap();
+            v.create_directory("solo", false).unwrap();
+            let found = v.find("proj", &q).unwrap();
+            assert_eq!(found, ["proj", "proj/src"]);
 
-        let (_, q) = FindQuery::parse(&strings(&["-maxdepth", "1"])).unwrap();
-        assert_eq!(v.find("proj", &q).unwrap(), ["proj", "proj/README.md", "proj/src"]);
+            let (_, q) = FindQuery::parse(&strings(&["-maxdepth", "1"])).unwrap();
+            assert_eq!(v.find("proj", &q).unwrap(), ["proj", "proj/README.md", "proj/src"]);
 
-        let (_, q) = FindQuery::parse(&strings(&["-iname", "readme*"])).unwrap();
-        assert_eq!(v.find("proj", &q).unwrap(), ["proj/README.md"]);
+            let (_, q) = FindQuery::parse(&strings(&["-iname", "readme*"])).unwrap();
+            assert_eq!(v.find("proj", &q).unwrap(), ["proj/README.md"]);
 
-        assert!(FindQuery::parse(&strings(&["-exec", "rm"])).is_err());
-        assert!(v.find("nowhere", &FindQuery::default()).is_err());
+            assert!(FindQuery::parse(&strings(&["-exec", "rm"])).is_err());
+            assert!(v.find("nowhere", &FindQuery::default()).is_err());
+        }
     }
 
     #[test]
     fn find_from_dot_lists_everything_under_it() {
-        let mut v = vfs("finddot");
-        v.change_directory("proj").unwrap();
-        let found = v.find(".", &FindQuery::default()).unwrap();
-        assert_eq!(found[0], ".");
-        assert!(found.contains(&"./src/main.txt".to_string()));
+        for mut v in both("finddot") {
+            v.change_directory("proj").unwrap();
+            let found = v.find(".", &FindQuery::default()).unwrap();
+            assert_eq!(found[0], ".");
+            assert!(found.contains(&"./src/main.txt".to_string()));
+        }
     }
 
     #[test]
     fn du_counts_bytes() {
-        let v = vfs("du");
-        let all = v.disk_usage("proj", false).unwrap();
-        assert_eq!(all.last().unwrap(), &("proj".to_string(), 6 + 7 + 2));
-        assert_eq!(all[0], ("proj/src".to_string(), 9));
-        assert_eq!(v.disk_usage("proj", true).unwrap().len(), 1);
+        for v in both("du") {
+            let all = v.disk_usage("proj", false).unwrap();
+            assert_eq!(all.last().unwrap(), &("proj".to_string(), 6 + 7 + 2));
+            assert_eq!(all[0], ("proj/src".to_string(), 9));
+            assert_eq!(v.disk_usage("proj", true).unwrap().len(), 1);
+        }
     }
 
     #[test]
     fn tar_round_trip() {
-        let v = vfs("tar");
-        let packed = v.tar_create("proj.tar.gz", &strings(&["proj"]), true).unwrap();
-        assert!(packed.contains(&"proj/src/main.txt".to_string()));
-        assert!(v.tar_list("proj.tar.gz").unwrap().contains(&"proj/README.md".to_string()));
+        for v in both("tar") {
+            let packed = v.tar_create("proj.tar.gz", &strings(&["proj"]), true).unwrap();
+            assert!(packed.contains(&"proj/src/main.txt".to_string()));
+            assert!(v.tar_list("proj.tar.gz").unwrap().contains(&"proj/README.md".to_string()));
 
-        v.create_directory("restore", false).unwrap();
-        v.tar_extract("proj.tar.gz", "restore").unwrap();
-        assert_eq!(v.read_file("restore/proj/src/main.txt").unwrap(), "abcdef\n");
+            v.create_directory("restore", false).unwrap();
+            v.tar_extract("proj.tar.gz", "restore").unwrap();
+            assert_eq!(v.read_file("restore/proj/src/main.txt").unwrap(), "abcdef\n");
 
-        // Plain (not gzipped) archives too
-        v.tar_create("plain.tar", &strings(&["proj/README.md"]), false).unwrap();
-        assert_eq!(v.tar_list("plain.tar").unwrap(), ["proj/README.md"]);
+            // Plain (not gzipped) archives too
+            v.tar_create("plain.tar", &strings(&["proj/README.md"]), false).unwrap();
+            assert_eq!(v.tar_list("plain.tar").unwrap(), ["proj/README.md"]);
+        }
+    }
+
+    #[test]
+    fn tar_keeps_modes_across_backends() {
+        let [disk, memory] = both("tarmodes");
+        for v in [&disk, &memory] {
+            v.write_file("proj/run.sh", "echo hi\n", false).unwrap();
+            v.set_mode("proj/run.sh", 0o755).unwrap();
+        }
+        // An archive made in memory unpacks on disk, and the other way round
+        memory.tar_create("m.tar", &strings(&["proj"]), false).unwrap();
+        disk.write_bytes("m.tar", &memory.read_bytes("m.tar").unwrap()).unwrap();
+        disk.tar_create("d.tar.gz", &strings(&["proj"]), true).unwrap();
+        memory.write_bytes("d.tar.gz", &disk.read_bytes("d.tar.gz").unwrap()).unwrap();
+        for (v, archive) in [(&disk, "m.tar"), (&memory, "d.tar.gz")] {
+            assert_eq!(v.tar_list(archive).unwrap(), memory.tar_list("m.tar").unwrap());
+            v.create_directory("out", false).unwrap();
+            v.tar_extract(archive, "out").unwrap();
+            assert_eq!(v.read_file("out/proj/run.sh").unwrap(), "echo hi\n");
+            if let Some(mode) = v.metadata("out/proj/run.sh").unwrap().mode {
+                assert_eq!(mode & 0o777, 0o755);
+            }
+        }
     }
 
     #[test]
     fn tar_refuses_paths_that_climb_out() {
-        let v = vfs("tarclimb");
-        assert!(v.tar_create("x.tar", &strings(&["../proj"]), false).is_err());
-        assert!(v.tar_create("x.tar", &strings(&["/lesson-home/proj"]), false).is_err());
+        for v in both("tarclimb") {
+            assert!(v.tar_create("x.tar", &strings(&["../proj"]), false).is_err());
+            assert!(v.tar_create("x.tar", &strings(&["/lesson-home/proj"]), false).is_err());
 
-        // A hand-made archive with ../ in an entry is refused on extract
-        let mut raw = Vec::new();
-        {
-            let mut b = tar::Builder::new(&mut raw);
-            let mut header = tar::Header::new_gnu();
-            header.set_size(3);
-            header.set_mode(0o644);
-            header.set_entry_type(tar::EntryType::Regular);
+            // A hand-made archive with ../ in an entry is refused on extract
+            let mut raw = Vec::new();
             {
-                let name = b"../escape.txt";
-                let gnu = header.as_gnu_mut().unwrap();
-                gnu.name[..name.len()].copy_from_slice(name);
+                let mut b = tar::Builder::new(&mut raw);
+                let mut header = tar::Header::new_gnu();
+                header.set_size(3);
+                header.set_mode(0o644);
+                header.set_entry_type(tar::EntryType::Regular);
+                {
+                    let name = b"../escape.txt";
+                    let gnu = header.as_gnu_mut().unwrap();
+                    gnu.name[..name.len()].copy_from_slice(name);
+                }
+                header.set_cksum();
+                b.append(&header, &b"bad"[..]).unwrap();
+                b.finish().unwrap();
             }
-            header.set_cksum();
-            b.append(&header, &b"bad"[..]).unwrap();
-            b.finish().unwrap();
+            v.write_bytes("evil.tar", &raw).unwrap();
+            assert!(v.tar_extract("evil.tar", "proj").is_err());
+            assert!(!v.exists("escape.txt"));
         }
-        std::fs::write(v.resolve_path("evil.tar").unwrap(), raw).unwrap();
-        assert!(v.tar_extract("evil.tar", "proj").is_err());
-        assert!(!v.resolve_path("escape.txt").unwrap().exists());
     }
 
     #[test]
     fn gzip_round_trip() {
-        let v = vfs("gzip");
-        assert_eq!(v.gzip("proj/README.md").unwrap(), "proj/README.md.gz");
-        assert!(!v.resolve_path("proj/README.md").unwrap().exists());
-        assert_eq!(v.gunzip("proj/README.md.gz").unwrap(), "proj/README.md");
-        assert_eq!(v.read_file("proj/README.md").unwrap(), "hello\n");
+        for v in both("gzip") {
+            assert_eq!(v.gzip("proj/README.md").unwrap(), "proj/README.md.gz");
+            assert!(!v.exists("proj/README.md"));
+            assert_eq!(v.gunzip("proj/README.md.gz").unwrap(), "proj/README.md");
+            assert_eq!(v.read_file("proj/README.md").unwrap(), "hello\n");
+        }
     }
 
     #[test]
     fn practice_keys_have_the_real_shape() {
-        let v = vfs("ssh");
-        let (private, public) = v.practice_ssh_key(".ssh/id_ed25519", "ed25519", "me@laptop").unwrap();
-        assert_eq!(public, ".ssh/id_ed25519.pub");
-        assert!(v.read_file(&private).unwrap().contains("PRIVATE KEY"));
-        assert!(v.read_file(&public).unwrap().starts_with("ssh-ed25519 "));
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(v.resolve_path(&private).unwrap()).unwrap().permissions().mode();
-            assert_eq!(mode & 0o777, 0o600);
+        for v in both("ssh") {
+            let (private, public) = v.practice_ssh_key(".ssh/id_ed25519", "ed25519", "me@laptop").unwrap();
+            assert_eq!(public, ".ssh/id_ed25519.pub");
+            assert!(v.read_file(&private).unwrap().contains("PRIVATE KEY"));
+            assert!(v.read_file(&public).unwrap().starts_with("ssh-ed25519 "));
+            if let Some(mode) = v.metadata(&private).unwrap().mode {
+                assert_eq!(mode & 0o777, 0o600);
+            }
+            assert!(v.practice_ssh_key(".ssh/id_ed25519", "ed25519", "x").is_err(), "never overwrites");
         }
-        assert!(v.practice_ssh_key(".ssh/id_ed25519", "ed25519", "x").is_err(), "never overwrites");
     }
 }

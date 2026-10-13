@@ -9,6 +9,8 @@ tags = [
     "processes",
     "system",
 ]
+# ps and top can't run inside the operating system's sandbox on macOS
+simulated_only = true
 
 [[steps]]
 step_number = 1

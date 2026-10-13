@@ -35,6 +35,12 @@ pub enum Action {
     PageDown,
     ScrollOutputUp,    // Always scrolls output regardless of focus
     ScrollOutputDown,  // Always scrolls output regardless of focus
+    /// Jump to the newest output
+    ScrollOutputEnd,
+    /// Jump to the oldest output kept
+    ScrollOutputStart,
+    /// Show or hide the side panel
+    ToggleSidebar,
     Enter,
     Escape,
     Help,
@@ -43,6 +49,8 @@ pub enum Action {
     ToggleAI,
     ToggleSettings,
     ToggleLesson,
+    /// Leave lesson mode (Ctrl+L from the lesson map, or the palette)
+    ExitLessons,
     ShowLessonMenu,
     LessonPreviousStep,
     LessonRestart,
@@ -54,6 +62,8 @@ pub enum Action {
     ShowAchievements,
     ShowProgress,
     ShowChallenges,
+    /// Open First Keys, the full-screen mode for pre-readers
+    StartFirstKeys,
     DismissNotification,
     None,
 }
@@ -179,9 +189,12 @@ pub fn key_to_action(key: KeyEvent) -> Action {
         (KeyCode::Tab, KeyModifiers::NONE) => Action::NextPanel,
         (KeyCode::BackTab, KeyModifiers::SHIFT) => Action::PreviousPanel,
 
-        // Output scrolling (works from any panel - Ctrl+Arrow or Ctrl+J/K)
-        (KeyCode::Up, KeyModifiers::CONTROL) => Action::ScrollOutputUp,
-        (KeyCode::Down, KeyModifiers::CONTROL) => Action::ScrollOutputDown,
+        // Output scrolling from any panel. Ctrl+U/D work in every
+        // terminal; macOS can claim Ctrl+arrows and the page keys.
+        (KeyCode::Up, KeyModifiers::CONTROL) | (KeyCode::Up, KeyModifiers::SHIFT) => Action::ScrollOutputUp,
+        (KeyCode::Down, KeyModifiers::CONTROL) | (KeyCode::Down, KeyModifiers::SHIFT) => Action::ScrollOutputDown,
+        (KeyCode::End, _) => Action::ScrollOutputEnd,
+        (KeyCode::Home, _) => Action::ScrollOutputStart,
         (KeyCode::Char('j'), KeyModifiers::CONTROL) => Action::ScrollOutputDown,
         // Note: Ctrl+K is CommandPalette, so use Alt+J/K as alternative
         (KeyCode::Char('j'), KeyModifiers::ALT) => Action::ScrollOutputDown,
@@ -195,7 +208,7 @@ pub fn key_to_action(key: KeyEvent) -> Action {
 
         // Actions
         (KeyCode::Enter, _) => Action::Enter,
-        (KeyCode::Char('?'), KeyModifiers::NONE) => Action::Help,
+        (KeyCode::Char('?'), KeyModifiers::NONE | KeyModifiers::SHIFT) | (KeyCode::F(1), _) => Action::Help,
         (KeyCode::Char('k'), KeyModifiers::CONTROL) => Action::CommandPalette,
         (KeyCode::Char('t'), KeyModifiers::CONTROL) => Action::ToggleTheme,
         (KeyCode::Char('a'), KeyModifiers::CONTROL) => Action::ToggleAI,
@@ -203,15 +216,41 @@ pub fn key_to_action(key: KeyEvent) -> Action {
         (KeyCode::Char('l'), KeyModifiers::CONTROL) => Action::ToggleLesson,
         (KeyCode::Char('m'), KeyModifiers::NONE) => Action::ShowLessonMenu,
 
-        // Lesson step navigation (Alt modifier so plain typing is unaffected)
+        (KeyCode::Char('f'), KeyModifiers::CONTROL) => Action::ToggleSidebar,
+
+        // Lesson step navigation. Ctrl keys work in every terminal; the
+        // Alt keys only where Option/Alt is sent as Meta (on a Mac it
+        // usually types a character instead)
+        (KeyCode::Char('b'), KeyModifiers::CONTROL) => Action::LessonPreviousStep,
         (KeyCode::Left, KeyModifiers::ALT) => Action::LessonPreviousStep,
         (KeyCode::Char('r'), KeyModifiers::ALT) => Action::LessonRestart,
 
-        // Gamification panels (Alt modifier to avoid conflicts with typing)
+        // Gamification panels (also in the Ctrl+K palette)
+        (KeyCode::Char('p'), KeyModifiers::CONTROL) => Action::ShowProgress,
         (KeyCode::Char('a'), KeyModifiers::ALT) => Action::ShowAchievements,
         (KeyCode::Char('p'), KeyModifiers::ALT) => Action::ShowProgress,
         (KeyCode::Char('c'), KeyModifiers::ALT) => Action::ShowChallenges,
 
         _ => Action::None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctrl(c: char) -> Action {
+        key_to_action(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL))
+    }
+
+    #[test]
+    fn everyday_actions_have_ctrl_keys_that_work_in_any_terminal() {
+        assert_eq!(ctrl('l'), Action::ToggleLesson);
+        assert_eq!(ctrl('b'), Action::LessonPreviousStep);
+        assert_eq!(ctrl('p'), Action::ShowProgress);
+        assert_eq!(ctrl('f'), Action::ToggleSidebar);
+        assert_eq!(ctrl('u'), Action::PageUp);
+        assert_eq!(ctrl('d'), Action::PageDown);
+        assert_eq!(ctrl('k'), Action::CommandPalette);
     }
 }

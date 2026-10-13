@@ -209,8 +209,17 @@ dependencies = [
  "tokio",
  "tracing",
  "tui-textarea",
+ "unicode-width 0.1.14",
  "uuid",
  "vte",
+]
+
+[[package]]
+name = "arct-web"
+version = "1.1.0"
+dependencies = [
+ "arct-core",
+ "serde_json",
 ]
 
 [[package]]

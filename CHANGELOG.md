@@ -25,10 +25,19 @@
 - Sandbox: `ls` with folders, `-l` and `-h`; pipes into grep, head, tail, wc, sort, uniq and cut; scripts with `sh`, `bash` and `./`; `chmod +x` works.
 - Operator lessons use their own practice files instead of system files; `top` is explained rather than run; the curl example fetches example.com.
 - New badges: Safe Hands (the guard stopped you) and Station Crew (finish the Explorer track).
+- Explorer lessons start with only their own files on Arc Station; Operator lessons also get the sample home folders.
+- The lessons can run in a web browser: `crates/arct-web` is the same lesson engine compiled to WebAssembly, with the practice files in memory. It saves nothing and sends nothing. `scripts/build-web.sh` builds it, with a plain test page.
+
+### The screen
+- The output area is a transcript, like a terminal: each command shows the folder it ran in and the command, then its output, then any lesson feedback in quieter lines. Newest is at the bottom; scroll back with `Ctrl+U` / `Ctrl+D` or the mouse wheel, and typing brings you back to the end. The input line shows the same folder.
+- Command errors show as the terminal prints them.
+- Lesson steps show in full, with what to do next after the text. A step longer than the panel says how much more there is, and Enter reads on.
+- The side panel shows where you are and what's in that folder (in lessons, the lesson world as a tree) and a line of progress, and `Ctrl+F` hides it. The header is a single line; keys live in the footer and the help.
+- Keys that work in any terminal: `Ctrl+B` goes back a lesson step, `Ctrl+P` opens progress, `?` on an empty line or `F1` opens help. In a lesson `Ctrl+L` opens the lesson map, and `Ctrl+L` in the map leaves lessons. The `Alt` keys still work where the terminal sends them.
 
 ### Rewards
 - Streaks count learning days, in your own time zone. Up to two rest days in between keep a run going; after a longer break a new run starts and your best one is kept. A day counts when you do something, not when you open the app.
-- Mastery: a lesson finished without needing the answer (hints are fine). Each track has a badge for finishing it and one for mastering it: Station Crew and Station Ace, Operator and Senior Operator. The progress screen (`Alt+P`) shows where each track stands.
+- Mastery: a lesson finished without needing the answer (hints are fine). Each track has a badge for finishing it and one for mastering it: Station Crew and Station Ace, Operator and Senior Operator. The progress screen (`Ctrl+P`) shows where each track stands.
 - `arct certificate` makes a printable certificate for a finished track: a single web page made on your computer, with no scripts and nothing downloaded, with lines for the date and a signature. `--text` prints it in the terminal instead.
 - The Night Owl badge (learning after 10 PM) is gone, and the streak and time-of-day badges now follow your local clock.
 

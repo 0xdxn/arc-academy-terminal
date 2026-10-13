@@ -4,13 +4,14 @@ use crate::app::App;
 use crate::footer::{self, FooterMode};
 use crate::icons;
 use crate::panels::{
-    context::ContextPanel,
+    context::{ContextPanel, SidebarData},
     dashboard,
     explanation::ExplanationPanel,
     help::HelpPanel,
     PanelId,
 };
 use crate::theme::Theme;
+use crate::transcript::Transcript;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::Modifier,
@@ -90,12 +91,22 @@ pub fn footer_mode(app: &App) -> FooterMode {
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let size = frame.size();
 
+    // First Keys owns the whole screen, at any size
+    if let Some(keys) = app.first_keys.as_ref() {
+        keys.render(frame, size, &app.theme);
+        return;
+    }
+
     // Check minimum terminal size
     if size.width < MIN_WIDTH || size.height < MIN_HEIGHT {
         let msg = format!(
             "Terminal too small ({} x {})\nMinimum: {} x {}",
             size.width, size.height, MIN_WIDTH, MIN_HEIGHT
         );
+        if let Some(panel) = app.lesson_panel.as_ref() {
+            panel.not_shown();
+        }
+        app.active_panel = PanelId::Shell;
         let paragraph = Paragraph::new(msg)
             .style(app.theme.style_warning())
             .wrap(Wrap { trim: false });
@@ -107,7 +118,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Header
+            Constraint::Length(1), // Header
             Constraint::Min(0),    // Content
             Constraint::Length(1), // Footer hint bar
         ])
@@ -186,121 +197,87 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
 }
 
-/// Draw the header
+/// Draw the header: one calm line, the name and the mode (keys live in
+/// the footer)
 fn draw_header(frame: &mut Frame, area: Rect, app: &App) {
     let width = area.width as usize;
-
-    // Responsive title - shorter on narrow terminals
-    let title = if width >= 60 {
-        format!("  {}ARC ACADEMY TERMINAL ", icons::lightning().content)
-    } else if width >= 40 {
-        format!(" {}ARCT ", icons::lightning().content)
-    } else {
-        format!("{}A", icons::lightning().content)
-    };
-
-    let mode_indicator = if app.lesson_mode {
-        if width >= 50 { format!(" {}LESSON ", icons::lesson().content) } else { String::new() }
+    let title = if width >= 40 { " ARC ACADEMY TERMINAL" } else { " ARCT" };
+    let mode = if app.lesson_mode {
+        "  lessons"
     } else if app.ai_mode {
-        if width >= 50 { format!(" {}AI ", icons::ai().content) } else { String::new() }
-    } else {
-        String::new()
-    };
-
-    // Responsive version info
-    let version = if width >= 80 {
-        format!("v{} | {} ", env!("CARGO_PKG_VERSION"), app.theme.name)
-    } else if width >= 50 {
-        format!("v{} ", env!("CARGO_PKG_VERSION"))
-    } else {
-        String::new()
-    };
-
-    // Responsive help text - progressively shorter
-    let help_text = if width >= 120 {
-        " [? help] [^L lessons] [^A AI] [^T theme] [q quit] "
-    } else if width >= 80 {
-        " [?] [^L] [^A] [^T] [q] "
-    } else if width >= 50 {
-        " [? help] "
+        "  AI assistant"
     } else {
         ""
     };
+    let version = format!("v{} ", env!("CARGO_PKG_VERSION"));
 
-    let title_len = title.chars().count();
-    let version_len = version.chars().count();
-    let mode_len = mode_indicator.chars().count();
-    let help_len = help_text.chars().count();
-
-    let used_width = title_len + mode_len + version_len + help_len;
-    let padding = width.saturating_sub(used_width + 2); // +2 for borders
-
+    let used = title.chars().count() + mode.chars().count() + version.chars().count();
     let mut spans = vec![
-        Span::styled(&title, app.theme.style_accent().add_modifier(Modifier::BOLD)),
+        Span::styled(title, app.theme.style_accent().add_modifier(Modifier::BOLD)),
+        Span::styled(mode, app.theme.style_secondary()),
     ];
-
-    if !mode_indicator.is_empty() {
-        spans.push(Span::styled(&mode_indicator, app.theme.style_success().add_modifier(Modifier::BOLD)));
+    if width > used {
+        spans.push(Span::raw(" ".repeat(width - used)));
+        spans.push(Span::styled(version, app.theme.style_dim()));
     }
 
-    if !version.is_empty() {
-        spans.push(Span::styled(&version, app.theme.style_info()));
+    frame.render_widget(
+        Paragraph::new(Line::from(spans)).style(app.theme.style_block()),
+        area,
+    );
+}
+
+/// Side panel width for a terminal `width` columns wide (0: hidden)
+pub fn sidebar_width(width: u16, visible: bool) -> u16 {
+    if !visible || width < 80 {
+        0
+    } else if width >= 110 {
+        30
+    } else {
+        26
     }
+}
 
-    if padding > 0 {
-        spans.push(Span::raw(" ".repeat(padding)));
+/// Rows the shell input box needs (the input line, plus any suggestions)
+fn shell_height(completions: usize) -> u16 {
+    match completions {
+        0 => 3,
+        n => 3 + 1 + n.min(5) as u16 + u16::from(n > 5),
     }
+}
 
-    if !help_text.is_empty() {
-        spans.push(Span::styled(help_text, app.theme.style_dim()));
+/// Height of the top panel (lesson step or explanation) in a right-hand
+/// column `height` rows tall. A lesson step gets the rows its text needs,
+/// leaving the transcript a few rows; a step longer than that scrolls.
+fn top_panel_height(app: &App, width: u16, height: u16, shell: u16) -> u16 {
+    if height < 15 {
+        return 0;
     }
-
-    let header_text = Line::from(spans);
-
-    let header = Paragraph::new(header_text)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(app.theme.style_border_focused())
-                .style(app.theme.style_block()),  // Set background for light themes
-        );
-
-    frame.render_widget(header, area);
+    let room = height.saturating_sub(shell);
+    if app.lesson_mode {
+        let Some(panel) = app.lesson_panel.as_ref() else {
+            return 0;
+        };
+        let min_transcript = if panel.is_reading_step() { 4 } else { 8 };
+        let cap = room.saturating_sub(min_transcript).max(5);
+        panel.wanted_height(&app.theme, width).clamp(5, cap)
+    } else {
+        // An explanation gets the rows it needs, up to about a third
+        let cap = if height < 25 { (room / 3).max(5) } else { height * 35 / 100 };
+        match (&app.last_explanation, app.ai_mode) {
+            (Some(exp), false) => ExplanationPanel::wanted_height(exp, &app.theme, width).clamp(5, cap),
+            _ => cap,
+        }
+    }
 }
 
 /// Draw the main content area
 fn draw_content(frame: &mut Frame, area: Rect, app: &mut App) {
-    let width = area.width;
-
-    // Responsive layout: hide context panel on very narrow terminals
-    let main_chunks = if width < 60 {
-        // Single column - no context panel
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(0), // Hide context panel
-                Constraint::Min(0),    // Shell + Explanation takes all
-            ])
-            .split(area)
-    } else if width < 100 {
-        // Narrower split for medium terminals
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Min(20),   // Context panel min 20
-                Constraint::Min(40),   // Shell + Explanation min 40
-            ])
-            .split(area)
-    } else {
-        // Standard split for wide terminals
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(30), // Context panel
-                Constraint::Percentage(70), // Shell + Explanation
-            ])
-            .split(area)
-    };
+    let side = sidebar_width(area.width, app.sidebar_visible);
+    let main_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(side), Constraint::Min(0)])
+        .split(area);
 
     // Remember panel geometry for mouse hit-testing (right side rects are
     // filled in below once the vertical split is computed)
@@ -309,67 +286,68 @@ fn draw_content(frame: &mut Frame, area: Rect, app: &mut App) {
         ..Default::default()
     };
 
-    // Left: Context panel (only render if visible)
+    let folder = app.prompt_folder();
+
+    // Left: where you are (only render if visible)
     if main_chunks[0].width > 0 {
-        let context_panel = ContextPanel::new();
-
-        // Get analytics summary if available
-        let analytics_summary = app.analytics.as_ref()
-            .and_then(|a| a.get_summary().ok());
-
-        context_panel.render(
+        let real_dir = app.prompt_real_dir();
+        let lessons_done = app.completed_lessons.len();
+        let lessons_total = app.lesson_library.all().len();
+        let progress = vec![
+            format!("{lessons_done} of {lessons_total} lessons done"),
+            crate::streak::short(app.user_stats.streak_status(arct_core::local_today())),
+        ];
+        let data = SidebarData {
+            folder: &folder,
+            virtual_fs: if app.lesson_mode { app.virtual_fs.as_ref() } else { None },
+            real_dir: real_dir.as_deref(),
+            progress,
+        };
+        ContextPanel::new().render(
             frame,
             main_chunks[0],
             app.active_panel == PanelId::Context,
-            &app.context,
             &app.theme,
-            app.config.ai.enabled,
-            analytics_summary.as_ref(),
-            app.lesson_mode,
-            app.virtual_fs.as_ref(),
-            &app.user_stats,
-            &app.challenge_manager,
+            &data,
         );
     }
 
-    // Right side: Classic terminal layout (Explanation → Output → Shell at bottom)
-    // This follows traditional terminal UX where input is at the bottom
-    let height = main_chunks[1].height;
-    let right_chunks = if height < 15 {
-        // Very short terminal - minimal layout (hide explanation)
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(0),  // Hide explanation
-                Constraint::Min(0),     // Everything else to output
-                Constraint::Length(3),  // Shell input at bottom
-            ])
-            .split(main_chunks[1])
-    } else if height < 25 {
-        // Short terminal - compact layout
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(5),     // Explanation (smaller but visible)
-                Constraint::Percentage(50), // Command output
-                Constraint::Length(3),  // Shell input at bottom
-            ])
-            .split(main_chunks[1])
-    } else {
-        // Standard layout - explanation prominent for learning
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Percentage(35), // Explanation (learning focus)
-                Constraint::Percentage(40), // Command output
-                Constraint::Length(3),  // Shell input at bottom
-            ])
-            .split(main_chunks[1])
-    };
+    // Right side: lesson step or explanation, the transcript, and the
+    // input line at the bottom like a terminal
+    let right = main_chunks[1];
+    let shell = shell_height(if app.ai_mode { 0 } else { app.completion_suggestions.len() });
+    let top = top_panel_height(app, right.width, right.height, shell);
+    let right_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(top),
+            Constraint::Min(0),
+            Constraint::Length(shell),
+        ])
+        .split(right);
 
     app.panel_rects.explanation = right_chunks[0];
     app.panel_rects.output = right_chunks[1];
     app.panel_rects.shell = right_chunks[2];
+
+    // A panel that isn't on screen can't hold focus (keys typed there would
+    // go nowhere), and a lesson step that isn't drawn has nothing below
+    // to read on to
+    let hidden = |r: Rect| r.width == 0 || r.height == 0;
+    let focused_rect = match app.active_panel {
+        PanelId::Shell => app.panel_rects.shell,
+        PanelId::Output => app.panel_rects.output,
+        PanelId::Context => app.panel_rects.context,
+        PanelId::Explanation => app.panel_rects.explanation,
+    };
+    if hidden(focused_rect) {
+        app.active_panel = PanelId::Shell;
+    }
+    if hidden(right_chunks[0]) {
+        if let Some(panel) = app.lesson_panel.as_ref() {
+            panel.not_shown();
+        }
+    }
 
     // Explanation panel OR Lesson panel (top - high visibility for learning)
     if right_chunks[0].height > 0 {
@@ -387,7 +365,7 @@ fn draw_content(frame: &mut Frame, area: Rect, app: &mut App) {
         } else {
             // Normal mode - show explanations
             let explanation_panel = ExplanationPanel::new();
-            explanation_panel.render(
+            app.explanation_max_scroll = explanation_panel.render(
                 frame,
                 right_chunks[0],
                 app.active_panel == PanelId::Explanation,
@@ -395,12 +373,13 @@ fn draw_content(frame: &mut Frame, area: Rect, app: &mut App) {
                 &app.theme,
                 app.ai_mode,
                 app.ai_response.as_deref(),
+                app.explanation_scroll,
             );
         }
     }
 
-    // Output panel (middle - shows command results), or the welcome
-    // dashboard until the user's first keypress
+    // Transcript (middle), or the welcome dashboard until the user's
+    // first keypress
     if app.show_dashboard {
         let data = dashboard::DashboardData {
             user_name: app.config.general.user_name.clone(),
@@ -421,8 +400,7 @@ fn draw_content(frame: &mut Frame, area: Rect, app: &mut App) {
             frame,
             right_chunks[1],
             app.active_panel == PanelId::Output,
-            &app.last_output,
-            app.output_scroll,
+            &app.transcript,
             &app.theme,
         );
     }
@@ -432,6 +410,7 @@ fn draw_content(frame: &mut Frame, area: Rect, app: &mut App) {
         frame,
         right_chunks[2],
         app.active_panel == PanelId::Shell,
+        &folder,
         &app.command_buffer,
         &app.completion_suggestions,
         &app.theme,
@@ -441,11 +420,13 @@ fn draw_content(frame: &mut Frame, area: Rect, app: &mut App) {
     );
 }
 
-/// Draw the shell panel
+/// Draw the shell input box: the same folder prompt as the transcript
+#[allow(clippy::too_many_arguments)]
 fn draw_shell_panel(
     frame: &mut Frame,
     area: Rect,
     focused: bool,
+    folder: &str,
     command: &str,
     completions: &[String],
     theme: &Theme,
@@ -459,17 +440,7 @@ fn draw_shell_panel(
         theme.style_border()
     };
 
-    let title = if ai_mode {
-        if focused {
-            format!(" {}AI Assistant (Active - Ctrl+A to exit, Enter to ask) ", icons::ai().content)
-        } else {
-            format!(" {}AI Assistant ", icons::ai().content)
-        }
-    } else if focused {
-        format!(" {}Shell (Active - Ctrl+A for AI, Tab to complete, ↑↓ for history) ", icons::shell().content)
-    } else {
-        format!(" {}Shell ", icons::shell().content)
-    };
+    let title = if ai_mode { " AI Assistant " } else { " Shell " };
 
     let block = Block::default()
         .title(title)
@@ -483,7 +454,7 @@ fn draw_shell_panel(
 
     // First line: prompt and command (or AI input)
     if ai_mode {
-        let prompt = icons::ai();
+        let prompt = Span::styled("ask: ", theme.style_accent());
         let input_text = if ai_loading {
             Span::styled(format!("{}Thinking...", icons::loading().content), theme.style_dim())
         } else {
@@ -499,10 +470,11 @@ fn draw_shell_panel(
 
         lines.push(Line::from(input_line));
     } else {
-        let prompt = Span::styled("$ ", theme.style_accent());
-        let command_text = Span::styled(command, theme.style_normal());
-
-        let mut command_line = vec![prompt, command_text];
+        let mut command_line = vec![
+            Span::styled(folder.to_string(), theme.style_accent()),
+            Span::styled(" $ ", theme.style_accent()),
+            Span::styled(command, theme.style_normal()),
+        ];
 
         // Add cursor if focused
         if focused {
@@ -514,15 +486,11 @@ fn draw_shell_panel(
 
     // Add completion suggestions if any (only in shell mode)
     if !ai_mode && !completions.is_empty() {
-        lines.push(Line::from(""));  // Empty line
-        lines.push(Line::from(vec![
-            icons::hint(),
-            Span::styled("Suggestions:", theme.style_dim()),
-        ]));
+        lines.push(Line::from(Span::styled("Suggestions (Tab):", theme.style_dim())));
 
         for completion in completions.iter().take(5) {
             lines.push(Line::from(vec![
-                Span::styled("  • ", theme.style_dim()),
+                Span::styled("  ", theme.style_dim()),
                 Span::styled(completion, theme.style_success()),
             ]));
         }
@@ -541,87 +509,60 @@ fn draw_shell_panel(
     frame.render_widget(paragraph, area);
 }
 
-/// Draw the output panel
+/// Draw the transcript: every command with its output, newest at the
+/// bottom, scrolled back when the learner has scrolled
 fn draw_output_panel(
     frame: &mut Frame,
     area: Rect,
     focused: bool,
-    output: &str,
-    scroll_offset: usize,
+    transcript: &Transcript,
     theme: &Theme,
 ) {
+    use ratatui::widgets::block::Title;
+
     let border_style = if focused {
         theme.style_border_focused()
     } else {
         theme.style_border()
     };
 
-    let title = if focused {
-        format!(" {}Output (↑↓ scroll) ", icons::output().content)
+    let inner_width = area.width.saturating_sub(2) as usize;
+    let inner_height = area.height.saturating_sub(2) as usize;
+
+    let (rows, below) = if transcript.is_empty() {
+        (
+            vec![Line::from(vec![
+                Span::styled("Type a command below and press ", theme.style_dim()),
+                Span::styled("Enter", theme.style_accent()),
+                Span::styled(". What you run, and what it prints, shows up here.", theme.style_dim()),
+            ])],
+            0,
+        )
     } else {
-        format!(" {}Output (^↑↓ scroll) ", icons::output().content)
+        transcript.view(theme, inner_width, inner_height)
     };
 
-    let block = Block::default()
-        .title(title)
+    let mut block = Block::default()
+        .title(" Terminal ")
         .title_style(theme.style_title(focused))
         .borders(Borders::ALL)
         .border_style(border_style)
         .style(theme.style_block());  // Set background for light themes
+    if below > 0 {
+        block = block.title(
+            Title::from(Span::styled(
+                format!(" {below} more line{} below: Ctrl+D or type to return ", if below == 1 { "" } else { "s" }),
+                theme.style_accent(),
+            ))
+            .position(ratatui::widgets::block::Position::Bottom)
+            .alignment(ratatui::layout::Alignment::Right),
+        );
+    }
 
-    let inner_height = area.height.saturating_sub(2) as usize; // Subtract borders
-
-    let text = if output.is_empty() {
-        vec![
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  Ready to execute commands!", theme.style_dim()),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  Type a command above and press ", theme.style_dim()),
-                Span::styled("Enter", theme.style_accent()),
-            ]),
-        ]
-    } else {
-        // Parse ANSI codes for colored output!
-        let all_lines: Vec<Line> = crate::ansi::parse_ansi(output);
-        let total_lines = all_lines.len();
-
-        // Show scroll indicator if there are more lines than can fit
-        let mut visible_lines: Vec<Line> = all_lines
-            .into_iter()
-            .skip(scroll_offset)
-            .take(inner_height)
-            .collect();
-
-        // Add scroll indicator at bottom if not at end
-        if scroll_offset + inner_height < total_lines {
-            let remaining = total_lines - (scroll_offset + inner_height);
-            visible_lines.push(Line::from(vec![
-                Span::styled(
-                    format!("  ↓ {} more lines (press ↓ or j to scroll)", remaining),
-                    theme.style_dim(),
-                ),
-            ]));
-        }
-
-        // Add scroll indicator at top if not at beginning
-        if scroll_offset > 0 {
-            visible_lines.insert(0, Line::from(vec![
-                Span::styled(
-                    format!("  ↑ {} lines above (press ↑ or k to scroll)", scroll_offset),
-                    theme.style_dim(),
-                ),
-            ]));
-        }
-
-        visible_lines
-    };
-
-    let paragraph = Paragraph::new(text)
-        .block(block)
-        .wrap(Wrap { trim: false });
-
+    let wrap = transcript.is_empty();
+    let mut paragraph = Paragraph::new(rows).block(block);
+    if wrap {
+        paragraph = paragraph.wrap(Wrap { trim: false });
+    }
     frame.render_widget(paragraph, area);
 }
