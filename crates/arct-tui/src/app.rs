@@ -128,6 +128,10 @@ pub struct App {
     /// used when lessons.practice_mode = "real"
     pub playground: Option<arct_core::Playground>,
 
+    /// Safe-mode home for the free shell (~/ArcAcademy/home), opened on
+    /// first use when shell.safe_mode is on
+    pub explore: Option<arct_core::Playground>,
+
     /// Lesson menu for selecting lessons
     pub lesson_menu: Option<crate::panels::lesson_menu::LessonMenuPanel>,
 
@@ -200,6 +204,25 @@ const ALL_VISITABLE_PANELS: [&str; 6] = [
     "help",
 ];
 
+/// How the safe-mode home is shown to the learner
+const EXPLORE_DISPLAY: &str = "~/ArcAcademy/home";
+
+/// Starter files written the first time the safe-mode home is created
+const EXPLORE_STARTER_FILES: &[(&str, &str)] = &[
+    (
+        "README.txt",
+        "Welcome to your Arc Academy home.\n\n\
+         This folder is real: files you make here are saved on your computer.\n\
+         Safe mode keeps every command inside this folder, so explore freely.\n\n\
+         Try: ls, cd notes, cat todo.txt, mkdir art, touch art/robot.txt\n",
+    ),
+    ("notes/todo.txt", "- learn ls\n- learn cd\n- make a folder\n"),
+    ("notes/ideas.txt", "A robot that waters the plants.\nA map of the stars.\n"),
+    ("projects/hello.sh", "#!/bin/sh\necho \"Hello from your first script!\"\n"),
+    ("photos/README.txt", "Pretend this folder is full of photos.\n"),
+    (".secret.txt", "You found a hidden file! Files starting with a dot hide from plain ls.\nTry ls -a.\n"),
+];
+
 impl App {
     /// Create a new application
     pub fn new() -> Result<Self> {
@@ -220,6 +243,8 @@ impl App {
                 arct_config::Config::default()
             }),
         };
+
+        crate::icons::set_nerd_fonts(config.theme.nerd_fonts);
 
         // Load session data (history, stats, progress) from disk
         let session_data = match crate::persistence::load_session() {
@@ -378,6 +403,7 @@ impl App {
             lesson_mode: false,
             virtual_fs: None,
             playground: None,
+            explore: None,
             lesson_menu: None,
             completed_lessons,
             user_stats,
@@ -538,6 +564,13 @@ impl App {
     pub async fn run(&mut self) -> Result<()> {
         // Show splash screen
         Self::show_splash_screen()?;
+
+        // Safe mode: start the shell in ~/ArcAcademy/home
+        if self.config.shell.safe_mode {
+            if let Err(e) = self.ensure_explore() {
+                tracing::warn!("Could not open ~/ArcAcademy/home: {}", e);
+            }
+        }
 
         // Panic safety: restore the terminal (raw mode, alternate screen,
         // mouse capture) before the default panic handler prints, so a crash
@@ -921,7 +954,7 @@ impl App {
                 })
                 .unwrap_or_default();
             if let Some(ref mut menu) = self.lesson_menu {
-                menu.set_status(format!("🔒 Locked — complete {} first", missing));
+                menu.set_status(format!("Locked: complete {} first", missing));
             }
             return;
         }
@@ -1115,9 +1148,13 @@ impl App {
                 }
             }
             Action::Enter => {
-                if self.showing_notification.is_some() {
+                // Enter closes a popup; if a command is waiting underneath,
+                // it runs too, so a fast typist never loses a command
+                let had_notification = self.showing_notification.is_some();
+                if had_notification {
                     self.dismiss_notification();
-                } else if !self.ai_mode {
+                }
+                if !self.ai_mode && (!had_notification || !self.command_buffer.is_empty()) {
                     self.execute_command().await?;
                 }
             }
@@ -1148,6 +1185,18 @@ impl App {
         })
     }
 
+    /// Whether command output reports a failure: an error line, a guard
+    /// refusal, a timeout, or a non-zero exit from the real shell
+    fn output_reports_failure(output: &str) -> bool {
+        let error = icons::error().content;
+        let warning = icons::warning().content;
+        output.lines().any(|line| {
+            line.starts_with(error.as_ref())
+                || line.starts_with(warning.as_ref())
+                || line.contains("timed out")
+        })
+    }
+
     /// Execute command against virtual filesystem and return output
     fn execute_virtual_fs_command(&mut self, cmd: &arct_core::Command) -> Option<String> {
         if !self.lesson_mode {
@@ -1156,6 +1205,15 @@ impl App {
 
         let vfs = self.virtual_fs.as_mut()?;
         let program = cmd.program.as_str();
+
+        // Operands are the non-flag arguments: `rm -rf notes` removes
+        // "notes", never a file called "-rf"
+        let operands: Vec<String> = cmd
+            .args
+            .iter()
+            .filter(|a| !(a.starts_with('-') && a.len() > 1))
+            .cloned()
+            .collect();
 
         match program {
             "pwd" => {
@@ -1204,12 +1262,12 @@ impl App {
             }
 
             "cat" => {
-                if cmd.args.is_empty() {
+                if operands.is_empty() {
                     return Some(format!("{}cat: missing file argument\n", icons::error().content));
                 }
 
                 let mut output = String::new();
-                for file in &cmd.args {
+                for file in &operands {
                     match vfs.read_file(file) {
                         Ok(content) => output.push_str(&content),
                         Err(e) => output.push_str(&format!("{}cat: {}\n", icons::error().content, e)),
@@ -1219,14 +1277,14 @@ impl App {
             }
 
             "mkdir" => {
-                if cmd.args.is_empty() {
+                if operands.is_empty() {
                     return Some(format!("{}mkdir: missing directory name\n", icons::error().content));
                 }
 
                 let parents = Self::has_flag(cmd, "-p") || Self::has_flag(cmd, "--parents");
                 let mut output = String::new();
 
-                for dir in &cmd.args {
+                for dir in &operands {
                     match vfs.create_directory(dir, parents) {
                         Ok(_) => output.push_str(&format!("{}Created directory: {}\n", icons::folder().content, dir)),
                         Err(e) => output.push_str(&format!("{}mkdir: {}\n", icons::error().content, e)),
@@ -1236,12 +1294,12 @@ impl App {
             }
 
             "touch" => {
-                if cmd.args.is_empty() {
+                if operands.is_empty() {
                     return Some(format!("{}touch: missing file argument\n", icons::error().content));
                 }
 
                 let mut output = String::new();
-                for file in &cmd.args {
+                for file in &operands {
                     match vfs.touch_file(file) {
                         Ok(_) => output.push_str(&format!("{}Created/updated file: {}\n", icons::file().content, file)),
                         Err(e) => output.push_str(&format!("{}touch: {}\n", icons::error().content, e)),
@@ -1251,7 +1309,7 @@ impl App {
             }
 
             "rm" => {
-                if cmd.args.is_empty() {
+                if operands.is_empty() {
                     return Some(format!("{}rm: missing file argument\n", icons::error().content));
                 }
 
@@ -1259,7 +1317,7 @@ impl App {
                 let force = Self::has_flag(cmd, "-f") || Self::has_flag(cmd, "--force");
                 let mut output = String::new();
 
-                for item in &cmd.args {
+                for item in &operands {
                     match vfs.remove(item, recursive, force) {
                         Ok(_) => output.push_str(&format!("{}Removed: {}\n", icons::success().content, item)),
                         Err(e) => output.push_str(&format!("{}rm: {}\n", icons::error().content, e)),
@@ -1269,12 +1327,12 @@ impl App {
             }
 
             "mv" => {
-                if cmd.args.len() < 2 {
+                if operands.len() < 2 {
                     return Some(format!("{}mv: missing source or destination\n", icons::error().content));
                 }
 
-                let source = &cmd.args[0];
-                let dest = &cmd.args[1];
+                let source = &operands[0];
+                let dest = &operands[1];
 
                 match vfs.move_item(source, dest) {
                     Ok(_) => Some(format!("{}Moved {} to {}\n", icons::success().content, source, dest)),
@@ -1283,13 +1341,13 @@ impl App {
             }
 
             "cp" => {
-                if cmd.args.len() < 2 {
+                if operands.len() < 2 {
                     return Some(format!("{}cp: missing source or destination\n", icons::error().content));
                 }
 
                 let recursive = Self::has_flag(cmd, "-r") || Self::has_flag(cmd, "-R") || Self::has_flag(cmd, "--recursive");
-                let source = &cmd.args[0];
-                let dest = &cmd.args[1];
+                let source = &operands[0];
+                let dest = &operands[1];
 
                 match vfs.copy(source, dest, recursive) {
                     Ok(_) => Some(format!("{}Copied {} to {}\n", icons::success().content, source, dest)),
@@ -1599,11 +1657,28 @@ impl App {
             // Execute the command in the active practice environment:
             // real shell inside ~/ArcAcademy/playground (guard-checked) when
             // practice_mode = "real", simulated virtual filesystem otherwise
+            let mut guard_refused = false;
             let vfs_output = if self.practice_mode_is_real() {
                 Some(self.execute_playground_command(&cmd, &command_str).await)
+            } else if let arct_core::GuardVerdict::Refuse { reason } =
+                arct_core::PlaygroundGuard::check_catastrophic(&command_str)
+            {
+                guard_refused = true;
+                Some(format!(
+                    "{}Blocked. Nothing ran.\n\n{}\n",
+                    icons::warning().content,
+                    reason
+                ))
             } else {
                 self.execute_virtual_fs_command(&cmd)
             };
+            if guard_refused {
+                self.record_feature_event("guard_refusal");
+            }
+            let command_failed = vfs_output
+                .as_deref()
+                .map(|out| Self::output_reports_failure(out))
+                .unwrap_or(false);
 
             // Extract lesson completion info outside the borrow scope
             let mut lesson_completed_info: Option<(String, arct_core::Difficulty, u32, u64, usize)> =
@@ -1611,7 +1686,18 @@ impl App {
             let mut step_advanced = false;
 
             if let Some(ref mut lesson_panel) = self.lesson_panel {
-                let validation = lesson_panel.validate_current_step(&command_str);
+                let mut validation = lesson_panel.validate_current_step(&command_str);
+                if validation.is_success() && command_failed {
+                    validation = arct_core::ValidationResult::Failure {
+                        message: "That's the right command, but it didn't work here. \
+                                  Read the error above, then try again."
+                            .to_string(),
+                        hint: Some(
+                            "Check the spelling of names and where you are (pwd)."
+                                .to_string(),
+                        ),
+                    };
+                }
 
                 // Build output: virtual FS output FIRST, then validation feedback
                 let mut output = String::new();
@@ -1712,7 +1798,11 @@ impl App {
             "cd" => {
                 // Add to history before clearing buffer
                 self.add_to_history(command_str.clone());
-                self.handle_cd_command(&cmd)?;
+                if self.config.shell.safe_mode {
+                    self.handle_safe_cd(&cmd);
+                } else {
+                    self.handle_cd_command(&cmd)?;
+                }
                 self.command_buffer.clear();
                 return Ok(());
             }
@@ -1751,6 +1841,43 @@ impl App {
             }
         }
 
+        // Safety guard, checked after alias expansion so an alias can't hide
+        // a destructive command. Safe mode keeps the free shell inside
+        // ~/ArcAcademy/home; with it off, catastrophic patterns are still
+        // refused everywhere.
+        let (verdict, run_cwd) = if self.config.shell.safe_mode {
+            if let Err(e) = self.ensure_explore() {
+                self.last_output = format!(
+                    "{}Could not open your Arc Academy home: {}\n",
+                    icons::error().content,
+                    e
+                );
+                self.command_buffer.clear();
+                return Ok(());
+            }
+            let home = self.explore.as_ref().expect("ensured above");
+            let guard = arct_core::PlaygroundGuard::with_display(home.root(), EXPLORE_DISPLAY);
+            (
+                guard.check(&command_str, home.cwd()),
+                Some(home.cwd().to_path_buf()),
+            )
+        } else {
+            (arct_core::PlaygroundGuard::check_catastrophic(&command_str), None)
+        };
+        if let arct_core::GuardVerdict::Refuse { reason } = verdict {
+            self.last_output = format!(
+                "{}Blocked. Nothing ran.\n\n{}\n\n{}The safety guard turns dangerous commands into lessons.\n",
+                icons::warning().content,
+                reason,
+                icons::hint().content
+            );
+            self.output_scroll = 0;
+            self.add_to_history(command_str.clone());
+            self.command_buffer.clear();
+            self.record_feature_event("guard_refusal");
+            return Ok(());
+        }
+
         // Show executing status
         self.last_output = format!("{}Executing: {}\n", icons::loading().content, command_str);
 
@@ -1763,7 +1890,7 @@ impl App {
         let env_vars = self.environment_vars.clone();
         let output_result = self
             .shell_executor
-            .execute(command_str.clone(), env_vars, timeout_duration, None)
+            .execute(command_str.clone(), env_vars, timeout_duration, run_cwd)
             .await;
 
         let output = match output_result {
@@ -1780,7 +1907,7 @@ impl App {
         self.last_output = output.clone();
 
         // Determine if command was successful
-        let success = !output.starts_with(icons::error().content.as_ref()) && !output.contains("timed out");
+        let success = !Self::output_reports_failure(&output);
 
         // Reset scroll to top for new output
         self.output_scroll = 0;
@@ -2307,6 +2434,77 @@ impl App {
             .ok_or_else(|| anyhow::anyhow!("Could not find home directory"))
     }
 
+    /// Safe-mode home root: ~/ArcAcademy/home
+    fn explore_root() -> Result<std::path::PathBuf> {
+        dirs::home_dir()
+            .map(|home| home.join("ArcAcademy").join("home"))
+            .ok_or_else(|| anyhow::anyhow!("Could not find home directory"))
+    }
+
+    /// Open the safe-mode home on demand (idempotent). The first time, it is
+    /// created with a few starter files so there is something to explore.
+    fn ensure_explore(&mut self) -> Result<()> {
+        if self.explore.is_none() {
+            let root = Self::explore_root()?;
+            if !root.exists() {
+                std::fs::create_dir_all(&root)?;
+                for (path, contents) in EXPLORE_STARTER_FILES {
+                    let file = root.join(path);
+                    if let Some(parent) = file.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::write(file, contents)?;
+                }
+            }
+            let home = arct_core::Playground::open_with_display(root, EXPLORE_DISPLAY)?;
+            self.session.state.working_directory = home.cwd().to_path_buf();
+            self.explore = Some(home);
+            self.update_context()?;
+        }
+        Ok(())
+    }
+
+    /// `cd` in safe mode: move within ~/ArcAcademy/home, never out of it
+    fn handle_safe_cd(&mut self, cmd: &arct_core::Command) {
+        self.output_scroll = 0;
+        if let Err(e) = self.ensure_explore() {
+            self.last_output = format!(
+                "{}Could not open your Arc Academy home: {}\n",
+                icons::error().content,
+                e
+            );
+            return;
+        }
+        let target = cmd.args.first().map(String::as_str).unwrap_or("");
+        let home = self.explore.as_mut().expect("ensured above");
+        let result = home.change_directory(target);
+        let cwd = home.cwd().to_path_buf();
+        match result {
+            Ok(new_path) => {
+                self.session.state.working_directory = cwd;
+                let _ = self.update_context();
+                self.last_output = format!(
+                    "{}Changed directory to:\n  {}\n",
+                    icons::success().content,
+                    new_path
+                );
+                self.session
+                    .record_command(format!("cd {}", cmd.args.join(" ")), Some(0), Some(0));
+            }
+            Err(e) => {
+                self.last_output = format!(
+                    "{}cd: {}\n\n{}Safe mode keeps you inside {}. Adults can turn it off in settings (shell.safe_mode).\n",
+                    icons::error().content,
+                    e,
+                    icons::hint().content,
+                    EXPLORE_DISPLAY
+                );
+                self.session
+                    .record_command(format!("cd {}", cmd.args.join(" ")), Some(1), Some(0));
+            }
+        }
+    }
+
     /// Open the playground on demand (idempotent)
     fn ensure_playground(&mut self) -> Result<()> {
         if self.playground.is_none() {
@@ -2689,9 +2887,12 @@ impl App {
                 KeyCode::Up => {
                     wizard.handle_up();
                 }
+                KeyCode::Esc => {
+                    wizard.handle_back();
+                }
                 KeyCode::Down => {
                     let max_options = match wizard.step {
-                        crate::panels::onboarding::OnboardingStep::AskAI => 3,
+                        crate::panels::onboarding::OnboardingStep::AskAI => 2,
                         crate::panels::onboarding::OnboardingStep::AskAIProvider => 3,
                         _ => 1,
                     };
@@ -2726,19 +2927,24 @@ impl App {
 
             if ai_enabled {
                 // Configure AI provider based on user selection
-                if wizard.ai_provider.as_deref() == Some("claude-code") {
-                    // Claude Code CLI for Max subscribers
-                    self.config.ai.provider = "claude-cli".to_string();
-                    self.config.ai.model = Some("claude-sonnet-4".to_string());
-                    // No API key needed - uses Claude Code authentication
-                } else if wizard.ai_provider.as_deref() == Some("own") {
-                    // User has their own API key - default to local LLM
-                    self.config.ai.provider = "local".to_string();
-                    self.config.ai.endpoint = Some("http://localhost:11434".to_string());
-                    self.config.ai.model = Some("llama3.2".to_string());
-                } else if wizard.ai_provider.as_deref() == Some("managed") {
-                    // Arc Academy managed service
-                    self.config.ai.provider = "managed".to_string();
+                match wizard.ai_provider.as_deref() {
+                    Some("claude-code") => {
+                        // Uses the signed-in Claude Code CLI; no API key here
+                        self.config.ai.provider = "claude-cli".to_string();
+                    }
+                    Some("own-key") => {
+                        // Needs a key before it can work: stays off until set
+                        self.config.ai.provider = "anthropic".to_string();
+                        if self.config.ai.api_key.is_none() {
+                            self.config.ai.enabled = false;
+                        }
+                    }
+                    _ => {
+                        // Local model via Ollama: questions stay on this machine
+                        self.config.ai.provider = "local".to_string();
+                        self.config.ai.endpoint = Some("http://localhost:11434".to_string());
+                        self.config.ai.model = Some("llama3.2".to_string());
+                    }
                 }
             }
         }
@@ -2766,12 +2972,27 @@ impl App {
         self.onboarding = None;
 
         // Show greeting in output
-        let name = self.config.general.user_name.as_deref().unwrap_or("there");
+        let name = self
+            .config
+            .general
+            .user_name
+            .as_deref()
+            .filter(|n| !n.is_empty())
+            .unwrap_or("explorer");
         let mut welcome_msg = format!(
             "{}Welcome, {}!\n\n\
              You're all set to start learning shell commands!\n\n",
             icons::celebration().content, name
         );
+
+        if wizard.ai_provider.as_deref() == Some("own-key") && !self.config.ai.enabled {
+            welcome_msg.push_str(&format!(
+                "{}AI stays off until you add a key: set ARCT_AI_API_KEY, or put\n\
+                 api_key in your config (arct info shows where), then turn AI on\n\
+                 in settings (Ctrl+S).\n\n",
+                icons::note().content
+            ));
+        }
 
         // Add provider-specific setup notes if AI is enabled
         if self.config.ai.enabled {
@@ -2871,6 +3092,21 @@ impl App {
                         && self.config.lessons.practice_mode != practice_mode_before
                     {
                         practice_mode_changed = true;
+                    }
+
+                    // Safe mode toggled: move the shell into or out of
+                    // ~/ArcAcademy/home
+                    if selected_field == crate::panels::settings::SettingField::SafeMode {
+                        if self.config.shell.safe_mode {
+                            self.explore = None;
+                            let _ = self.ensure_explore();
+                        } else {
+                            self.explore = None;
+                            if let Ok(dir) = std::env::current_dir() {
+                                self.session.state.working_directory = dir;
+                            }
+                            let _ = self.update_context();
+                        }
                     }
 
                     // If theme was changed, reload it

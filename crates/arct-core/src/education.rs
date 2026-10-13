@@ -188,7 +188,7 @@ impl Educator {
             && command.flags.iter().any(|f| f.short == Some('f'))
         {
             warnings.push(Warning {
-                message: "⚠️  'rm -rf' is extremely dangerous! This will permanently delete everything without confirmation.".to_string(),
+                message: "Careful: 'rm -rf' is extremely dangerous! This will permanently delete everything without confirmation.".to_string(),
                 severity: Severity::Critical,
                 suggestion: Some("Remove the -f flag and use -i for safety, or specify the exact path you want to delete.".to_string()),
             });
@@ -222,7 +222,7 @@ impl Educator {
         match command.danger_level {
             DangerLevel::Dangerous | DangerLevel::Critical => {
                 Some(format!(
-                    "⚠️  This command can modify or delete data. Use with caution!"
+                    "Careful: This command can modify or delete data. Use with caution!"
                 ))
             }
             _ => None,

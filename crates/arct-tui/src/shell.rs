@@ -201,8 +201,19 @@ impl ShellExecutor {
             result.push_str(&stderr);
         }
 
-        if result.is_empty() {
-            result = format!("✓ Command completed (exit code: {})", status.code().unwrap_or(-1));
+        let code = status.code().unwrap_or(-1);
+        if status.success() {
+            if result.is_empty() {
+                result = "✓ Command completed".to_string();
+            }
+        } else {
+            if !result.is_empty() && !result.ends_with('\n') {
+                result.push('\n');
+            }
+            result.push_str(&format!(
+                "{}The command failed (exit code {code})",
+                crate::icons::error().content
+            ));
         }
 
         Ok(result)

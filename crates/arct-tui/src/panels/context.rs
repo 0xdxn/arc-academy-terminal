@@ -161,7 +161,7 @@ impl ContextPanel {
                         }
 
                         // Add the node
-                        let icon = if node.is_dir { icons::FOLDER } else { icons::FILE };
+                        let icon = if node.is_dir { icons::folder_glyph() } else { icons::file_glyph() };
                         let name_style = if node.is_current {
                             theme.style_accent()
                         } else if node.is_dir {
@@ -349,7 +349,7 @@ impl ContextPanel {
             if summary.streak > 0 {
                 items.push(ListItem::new(Line::from(vec![
                     Span::styled("  Streak: ", theme.style_normal()),
-                    Span::styled(format!("🔥 {} days", summary.streak), theme.style_warning()),
+                    Span::styled(format!("{} day streak", summary.streak), theme.style_warning()),
                 ])));
             }
 
@@ -378,7 +378,7 @@ impl ContextPanel {
 
         // Session info
         items.push(ListItem::new(Line::from(vec![
-            Span::styled("💾 Session", theme.style_header()),
+            Span::styled("Session", theme.style_header()),
         ])));
         items.push(ListItem::new(Line::from("")));
 
@@ -427,7 +427,7 @@ impl ContextPanel {
             Span::styled("━━━━━━━━━━━━━━━", theme.style_dim()),
         ])));
         items.push(ListItem::new(Line::from(vec![
-            Span::styled("  🌐 ", theme.style_accent()),
+            Span::styled("  ", theme.style_accent()),
             Span::styled("arcacademy.sh", theme.style_accent()),
         ])));
 

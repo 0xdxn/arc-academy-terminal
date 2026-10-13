@@ -464,23 +464,23 @@ impl LessonPanel {
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("🎓 ", theme.style_accent()),
+                Span::styled("", theme.style_accent()),
                 Span::styled("10 comprehensive lessons", theme.style_normal()),
                 Span::styled(" available", theme.style_dim()),
             ]),
             Line::from(vec![
-                Span::styled("🏆 ", theme.style_accent()),
+                Span::styled("", theme.style_accent()),
                 Span::styled("Track progress & earn achievements", theme.style_normal()),
             ]),
             Line::from(vec![
-                Span::styled("🛡️  ", theme.style_accent()),
+                Span::styled("", theme.style_accent()),
                 Span::styled("Safe virtual filesystem", theme.style_normal()),
                 Span::styled(" for hands-on practice", theme.style_dim()),
             ]),
             Line::from(""),
             Line::from(""),
             Line::from(vec![
-                Span::styled("📚 Select a lesson:", theme.style_header()),
+                Span::styled("Select a lesson:", theme.style_header()),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -503,7 +503,7 @@ impl LessonPanel {
             Line::from(""),
             Line::from(""),
             Line::from(vec![
-                Span::styled("💡 Tip: ", theme.style_accent()),
+                Span::styled("Tip: ", theme.style_accent()),
                 Span::styled("Complete lessons to unlock achievements", theme.style_dim()),
             ]),
             Line::from(vec![

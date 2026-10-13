@@ -17,6 +17,7 @@ pub enum SettingField {
     AIEnabled,
     AIProvider,
     PracticeMode,
+    SafeMode,
     Theme,
 }
 
@@ -27,7 +28,8 @@ impl SettingField {
             Self::UserName => Self::AIEnabled,
             Self::AIEnabled => Self::AIProvider,
             Self::AIProvider => Self::PracticeMode,
-            Self::PracticeMode => Self::Theme,
+            Self::PracticeMode => Self::SafeMode,
+            Self::SafeMode => Self::Theme,
             Self::Theme => Self::UserName,
         }
     }
@@ -39,7 +41,8 @@ impl SettingField {
             Self::AIEnabled => Self::UserName,
             Self::AIProvider => Self::AIEnabled,
             Self::PracticeMode => Self::AIProvider,
-            Self::Theme => Self::PracticeMode,
+            Self::SafeMode => Self::PracticeMode,
+            Self::Theme => Self::SafeMode,
         }
     }
 
@@ -50,6 +53,7 @@ impl SettingField {
             Self::AIEnabled => "AI Assistant",
             Self::AIProvider => "AI Provider",
             Self::PracticeMode => "Lesson Practice Mode",
+            Self::SafeMode => "Safe Mode",
             Self::Theme => "Theme",
         }
     }
@@ -101,6 +105,9 @@ impl SettingsPanel {
             }
             SettingField::PracticeMode => {
                 config.lessons.practice_mode.clone()
+            }
+            SettingField::SafeMode => {
+                if config.shell.safe_mode { "on" } else { "off" }.to_string()
             }
             SettingField::Theme => {
                 config.theme.default_theme.clone()
@@ -159,6 +166,11 @@ impl SettingsPanel {
                 } else {
                     "simulated".to_string()
                 };
+            }
+            SettingField::SafeMode => {
+                // Only an explicit "off" turns it off; anything else keeps it on
+                let value = self.edit_buffer.trim().to_lowercase();
+                config.shell.safe_mode = !(value == "off" || value == "false" || value == "0");
             }
             SettingField::Theme => {
                 config.theme.default_theme = self.edit_buffer.clone();
@@ -326,6 +338,32 @@ impl SettingsPanel {
             )
         };
         lines.push(Line::from(vec![Span::styled(practice_note, theme.style_dim())]));
+
+        // Safe mode for the free shell
+        let safe_value = if config.shell.safe_mode { "on" } else { "off" };
+        self.add_field_line(
+            &mut lines,
+            SettingField::SafeMode,
+            "Safe mode",
+            if self.editing && self.selected_field == SettingField::SafeMode {
+                &self.edit_buffer
+            } else {
+                safe_value
+            },
+            theme,
+        );
+        let safe_note = if config.shell.safe_mode {
+            format!(
+                "    {}The shell stays inside ~/ArcAcademy/home. Type \"off\" to use your real folders.",
+                icons::hint().content
+            )
+        } else {
+            format!(
+                "    {}Off: commands run in your real folders. Only catastrophic ones are blocked.",
+                icons::warning().content
+            )
+        };
+        lines.push(Line::from(vec![Span::styled(safe_note, theme.style_dim())]));
 
         lines.push(Line::from(""));
         lines.push(Line::from(vec![

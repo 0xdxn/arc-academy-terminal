@@ -27,11 +27,19 @@ pub struct Playground {
     setup: Vec<SetupFile>,
     /// Tracked working directory (absolute, always inside `root`).
     cwd: PathBuf,
+    /// How the root is shown to the learner (e.g. `~/ArcAcademy/playground`).
+    display: String,
 }
 
 impl Playground {
     /// Open (creating on demand) the playground at `root`.
     pub fn open(root: PathBuf) -> Result<Self> {
+        Self::open_with_display(root, crate::guard::PLAYGROUND_DISPLAY)
+    }
+
+    /// Open a playground whose paths are shown to the learner under
+    /// `display` (e.g. `~/ArcAcademy/home`).
+    pub fn open_with_display(root: PathBuf, display: impl Into<String>) -> Result<Self> {
         fs::create_dir_all(&root)
             .with_context(|| format!("Failed to create playground at {}", root.display()))?;
         let root = root
@@ -42,6 +50,7 @@ impl Playground {
             root,
             lesson_id: None,
             setup: Vec::new(),
+            display: display.into(),
         })
     }
 
@@ -64,8 +73,8 @@ impl Playground {
     /// `~/ArcAcademy/playground/file-mgmt/practice`.
     pub fn display_cwd(&self) -> String {
         match self.cwd.strip_prefix(&self.root) {
-            Ok(rel) if rel.as_os_str().is_empty() => "~/ArcAcademy/playground".to_string(),
-            Ok(rel) => format!("~/ArcAcademy/playground/{}", rel.display()),
+            Ok(rel) if rel.as_os_str().is_empty() => self.display.clone(),
+            Ok(rel) => format!("{}/{}", self.display, rel.display()),
             Err(_) => self.cwd.display().to_string(),
         }
     }
@@ -154,8 +163,8 @@ impl Playground {
 
         anyhow::ensure!(
             canonical.starts_with(&self.root),
-            "'{target}' leaves the playground — practice commands stay inside \
-             ~/ArcAcademy/playground"
+            "'{target}' leaves {} — commands here stay inside it",
+            self.display
         );
         anyhow::ensure!(canonical.is_dir(), "Not a directory: {target}");
 

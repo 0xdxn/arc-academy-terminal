@@ -85,7 +85,7 @@ impl ProgressPanel {
             Line::from(""),
             Line::from(vec![
                 Span::raw("  "),
-                Span::styled("🔥 ", theme.style_warning()),
+                Span::styled("streak ", theme.style_warning()),
                 Span::styled(
                     format!("{} day streak", stats.current_streak),
                     theme.style_accent().add_modifier(Modifier::BOLD),
@@ -95,7 +95,7 @@ impl ProgressPanel {
                     theme.style_dim(),
                 ),
                 Span::raw("    "),
-                Span::styled(icons::TIMER, theme.style_info()),
+                Span::styled(icons::timer_glyph(), theme.style_info()),
                 Span::styled(
                     format!("  {} invested", stats.formatted_time_spent()),
                     theme.style_secondary(),

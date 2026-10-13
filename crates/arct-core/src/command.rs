@@ -238,7 +238,7 @@ impl CommandAnalyzer {
             category: CommandCategory::FileManagement,
             danger_level: DangerLevel::Dangerous,
             summary: "Remove files or directories",
-            description: "⚠️  Permanently deletes files or directories from your system. Unlike moving files to a recycle bin in a graphical interface, this command completely removes them - there's no undo! Use 'rm file.txt' to delete a single file, or 'rm -r folder/' to delete a directory and everything inside it. The -i flag will ask for confirmation before each deletion, which is much safer for beginners. Always double-check what you're deleting because once it's gone, it's gone forever!",
+            description: "Careful: Permanently deletes files or directories from your system. Unlike moving files to a recycle bin in a graphical interface, this command completely removes them - there's no undo! Use 'rm file.txt' to delete a single file, or 'rm -r folder/' to delete a directory and everything inside it. The -i flag will ask for confirmation before each deletion, which is much safer for beginners. Always double-check what you're deleting because once it's gone, it's gone forever!",
             common_flags: vec![
                 FlagInfo { flag: "-r", description: "Recursive: remove directories and their contents", example: Some("rm -r folder/") },
                 FlagInfo { flag: "-f", description: "Force: ignore warnings and nonexistent files", example: None },
@@ -644,7 +644,7 @@ impl CommandAnalyzer {
             category: CommandCategory::SystemInfo,
             danger_level: DangerLevel::Critical,
             summary: "Execute command as superuser",
-            description: "⚠️  Runs commands with administrator (root) privileges, giving you full power over the system. Short for 'superuser do'. Like clicking 'Run as Administrator' on Windows - it bypasses normal security restrictions. You'll need to enter your password the first time you use it. Essential for system administration tasks like installing software, modifying system files, or changing settings. Be VERY careful what you run with sudo - you can accidentally damage your entire system since there are no safety nets!",
+            description: "Careful: Runs commands with administrator (root) privileges, giving you full power over the system. Short for 'superuser do'. Like clicking 'Run as Administrator' on Windows - it bypasses normal security restrictions. You'll need to enter your password the first time you use it. Essential for system administration tasks like installing software, modifying system files, or changing settings. Be VERY careful what you run with sudo - you can accidentally damage your entire system since there are no safety nets!",
             common_flags: vec![
                 FlagInfo { flag: "-u", description: "User: run as specified user instead of root", example: Some("sudo -u user command") },
             ],
@@ -822,7 +822,7 @@ impl CommandAnalyzer {
             category: CommandCategory::ProcessManagement,
             danger_level: DangerLevel::Dangerous,
             summary: "Kill processes by name",
-            description: "⚠️  Terminates ALL processes that match a program name, which is more convenient than 'kill' when you don't know the PID but know the program name. Be careful - it will stop EVERY instance of that program! For example, 'killall firefox' closes all Firefox windows at once. Useful for cleaning up multiple stuck processes or ensuring all instances of a program are stopped. The -9 flag forces immediate termination. Double-check the name before running this - typos can stop the wrong programs!",
+            description: "Careful: Terminates ALL processes that match a program name, which is more convenient than 'kill' when you don't know the PID but know the program name. Be careful - it will stop EVERY instance of that program! For example, 'killall firefox' closes all Firefox windows at once. Useful for cleaning up multiple stuck processes or ensuring all instances of a program are stopped. The -9 flag forces immediate termination. Double-check the name before running this - typos can stop the wrong programs!",
             common_flags: vec![
                 FlagInfo { flag: "-9", description: "Force kill all matching processes", example: Some("killall -9 firefox") },
             ],
@@ -1282,7 +1282,7 @@ impl CommandAnalyzer {
             category: CommandCategory::SystemInfo,
             danger_level: DangerLevel::Dangerous,
             summary: "Mount filesystems",
-            description: "⚠️  Attaches storage devices (like USB drives, hard disks, or network shares) to your filesystem so you can access their files. In Linux, you must 'mount' a drive before using it - it doesn't happen automatically like on Windows. Run 'mount' alone to see what's currently mounted, or 'sudo mount /dev/sdb1 /mnt' to mount a device. Always unmount with 'umount' before removing drives to prevent data corruption! Modern desktop Linux often automounts USB drives, but servers require manual mounting.",
+            description: "Careful: Attaches storage devices (like USB drives, hard disks, or network shares) to your filesystem so you can access their files. In Linux, you must 'mount' a drive before using it - it doesn't happen automatically like on Windows. Run 'mount' alone to see what's currently mounted, or 'sudo mount /dev/sdb1 /mnt' to mount a device. Always unmount with 'umount' before removing drives to prevent data corruption! Modern desktop Linux often automounts USB drives, but servers require manual mounting.",
             common_flags: vec![
                 FlagInfo { flag: "-t", description: "Type: specify filesystem type", example: Some("mount -t ext4 /dev/sdb1 /mnt") },
             ],
@@ -1298,7 +1298,7 @@ impl CommandAnalyzer {
             category: CommandCategory::SystemInfo,
             danger_level: DangerLevel::Dangerous,
             summary: "Unmount filesystems",
-            description: "⚠️  Safely detaches mounted filesystems, ensuring all data is written before disconnecting the device. ALWAYS run this before unplugging USB drives or external drives - yanking them out while mounted can corrupt data! Use 'sudo umount /mnt' where /mnt is the mount point. If it says 'device is busy', something is still using files on that drive - close programs and try again. The safe eject button equivalent for Linux command line. Note the spelling: it's 'umount', not 'unmount'!",
+            description: "Careful: Safely detaches mounted filesystems, ensuring all data is written before disconnecting the device. ALWAYS run this before unplugging USB drives or external drives - yanking them out while mounted can corrupt data! Use 'sudo umount /mnt' where /mnt is the mount point. If it says 'device is busy', something is still using files on that drive - close programs and try again. The safe eject button equivalent for Linux command line. Note the spelling: it's 'umount', not 'unmount'!",
             common_flags: vec![],
             examples: vec![
                 Example { command: "sudo umount /mnt", description: "Unmount filesystem", use_case: "Safely remove external drive" },
@@ -1327,7 +1327,7 @@ impl CommandAnalyzer {
             category: CommandCategory::SystemInfo,
             danger_level: DangerLevel::Critical,
             summary: "Partition table manipulator",
-            description: "⚠️ CRITICAL: A powerful but dangerous tool for creating, deleting, and modifying disk partitions. Think of it like dividing a hard drive into separate sections - but one wrong move can erase everything! Essential for setting up Arch Linux where you need to partition your disk before installation. Use 'fdisk -l' to safely LIST partitions without changing anything. When actually partitioning (just 'fdisk /dev/sda'), you work in an interactive menu - changes aren't saved until you explicitly write them with 'w'. Beginners should consider using the safer 'cfdisk' which has a friendlier interface.",
+            description: "CRITICAL: A powerful but dangerous tool for creating, deleting, and modifying disk partitions. Think of it like dividing a hard drive into separate sections - but one wrong move can erase everything! Essential for setting up Arch Linux where you need to partition your disk before installation. Use 'fdisk -l' to safely LIST partitions without changing anything. When actually partitioning (just 'fdisk /dev/sda'), you work in an interactive menu - changes aren't saved until you explicitly write them with 'w'. Beginners should consider using the safer 'cfdisk' which has a friendlier interface.",
             common_flags: vec![
                 FlagInfo { flag: "-l", description: "List: show partition tables (safe)", example: Some("sudo fdisk -l") },
             ],
@@ -1591,7 +1591,7 @@ impl CommandAnalyzer {
             category: CommandCategory::SystemInfo,
             danger_level: DangerLevel::Dangerous,
             summary: "Create a new user",
-            description: "⚠️  Creates a new user account on the system, assigning them a username, user ID, and optionally a home directory and default shell. Requires sudo/root access since you're modifying system accounts. Use -m to create their home directory automatically (highly recommended). For example, 'sudo useradd -m john' creates user john with a home directory at /home/john. After creating the user, you'll want to set their password with 'sudo passwd john'. Essential for multi-user systems and servers. Note: Some systems have 'adduser' which is more interactive and beginner-friendly.",
+            description: "Careful: Creates a new user account on the system, assigning them a username, user ID, and optionally a home directory and default shell. Requires sudo/root access since you're modifying system accounts. Use -m to create their home directory automatically (highly recommended). For example, 'sudo useradd -m john' creates user john with a home directory at /home/john. After creating the user, you'll want to set their password with 'sudo passwd john'. Essential for multi-user systems and servers. Note: Some systems have 'adduser' which is more interactive and beginner-friendly.",
             common_flags: vec![
                 FlagInfo { flag: "-m", description: "Create home directory", example: Some("sudo useradd -m username") },
             ],
@@ -1606,7 +1606,7 @@ impl CommandAnalyzer {
             category: CommandCategory::SystemInfo,
             danger_level: DangerLevel::Dangerous,
             summary: "Delete a user account",
-            description: "⚠️  Permanently removes a user account from the system. Requires root privileges. By default it only removes the account entry, leaving their home directory and files intact. Use the -r flag to also delete their home directory and mail spool - but be careful, this deletes all their files! For example, 'sudo userdel john' removes the account but keeps /home/john, while 'sudo userdel -r john' removes everything. Always backup important data before deleting users. Used for cleaning up old accounts or removing compromised accounts on servers.",
+            description: "Careful: Permanently removes a user account from the system. Requires root privileges. By default it only removes the account entry, leaving their home directory and files intact. Use the -r flag to also delete their home directory and mail spool - but be careful, this deletes all their files! For example, 'sudo userdel john' removes the account but keeps /home/john, while 'sudo userdel -r john' removes everything. Always backup important data before deleting users. Used for cleaning up old accounts or removing compromised accounts on servers.",
             common_flags: vec![
                 FlagInfo { flag: "-r", description: "Remove: delete home directory and mail spool", example: Some("sudo userdel -r username") },
             ],
@@ -1788,7 +1788,7 @@ impl CommandAnalyzer {
             category: CommandCategory::SystemInfo,
             danger_level: DangerLevel::Critical,
             summary: "Reboot the system",
-            description: "⚠️ CRITICAL: Immediately restarts your entire computer. Everything stops - all programs close, all users are kicked off, and the system boots back up from scratch. Use this after kernel updates or when the system is misbehaving and needs a fresh start. On multi-user servers, ALWAYS warn other users first! The command requires sudo privileges. After reboot, you'll need to log back in and restart any programs you were running. On servers, this is a big deal - plan reboots carefully and ideally during maintenance windows.",
+            description: "CRITICAL: Immediately restarts your entire computer. Everything stops - all programs close, all users are kicked off, and the system boots back up from scratch. Use this after kernel updates or when the system is misbehaving and needs a fresh start. On multi-user servers, ALWAYS warn other users first! The command requires sudo privileges. After reboot, you'll need to log back in and restart any programs you were running. On servers, this is a big deal - plan reboots carefully and ideally during maintenance windows.",
             common_flags: vec![],
             examples: vec![
                 Example { command: "sudo reboot", description: "Restart system", use_case: "Reboot server/computer" },
@@ -1801,7 +1801,7 @@ impl CommandAnalyzer {
             category: CommandCategory::SystemInfo,
             danger_level: DangerLevel::Critical,
             summary: "Shutdown or restart the system",
-            description: "⚠️ CRITICAL: The controlled way to power off or restart your system, optionally scheduling it for later. Unlike just hitting the power button, this gracefully closes all programs and saves data. Use 'sudo shutdown -h now' to power off immediately, or 'sudo shutdown -r now' to reboot. You can schedule it with 'sudo shutdown -h +30' to shutdown in 30 minutes, giving users warning time. The system will broadcast messages to logged-in users about the impending shutdown. Use 'sudo shutdown -c' to cancel a scheduled shutdown. More polite and safer than 'reboot' or 'poweroff' for managed systems.",
+            description: "CRITICAL: The controlled way to power off or restart your system, optionally scheduling it for later. Unlike just hitting the power button, this gracefully closes all programs and saves data. Use 'sudo shutdown -h now' to power off immediately, or 'sudo shutdown -r now' to reboot. You can schedule it with 'sudo shutdown -h +30' to shutdown in 30 minutes, giving users warning time. The system will broadcast messages to logged-in users about the impending shutdown. Use 'sudo shutdown -c' to cancel a scheduled shutdown. More polite and safer than 'reboot' or 'poweroff' for managed systems.",
             common_flags: vec![
                 FlagInfo { flag: "-h", description: "Halt: shutdown and power off", example: Some("sudo shutdown -h now") },
                 FlagInfo { flag: "-r", description: "Reboot: restart the system", example: Some("sudo shutdown -r now") },
@@ -2166,7 +2166,7 @@ impl CommandAnalyzer {
             category: CommandCategory::SystemInfo,
             danger_level: DangerLevel::Critical,
             summary: "Build a Linux filesystem",
-            description: "⚠️ CRITICAL: Creates a new filesystem on a partition, PERMANENTLY ERASING ALL EXISTING DATA! Like formatting a drive in Windows but from the command line. Essential during Arch Linux installation when you need to format partitions as ext4, FAT32 (for EFI), or other filesystem types. Use 'sudo mkfs.ext4 /dev/sda1' to format partition sda1 as ext4, or 'sudo mkfs.fat -F32 /dev/sda1' for FAT32. TRIPLE-CHECK the device name before running - one typo and you could erase the wrong drive! Always unmount the partition first. This is a point of no return command.",
+            description: "CRITICAL: Creates a new filesystem on a partition, PERMANENTLY ERASING ALL EXISTING DATA! Like formatting a drive in Windows but from the command line. Essential during Arch Linux installation when you need to format partitions as ext4, FAT32 (for EFI), or other filesystem types. Use 'sudo mkfs.ext4 /dev/sda1' to format partition sda1 as ext4, or 'sudo mkfs.fat -F32 /dev/sda1' for FAT32. TRIPLE-CHECK the device name before running - one typo and you could erase the wrong drive! Always unmount the partition first. This is a point of no return command.",
             common_flags: vec![
                 FlagInfo { flag: "-t", description: "Type: specify filesystem type", example: Some("mkfs -t ext4 /dev/sda1") },
             ],
@@ -2182,7 +2182,7 @@ impl CommandAnalyzer {
             category: CommandCategory::SystemInfo,
             danger_level: DangerLevel::Dangerous,
             summary: "Check and repair filesystem",
-            description: "⚠️  File System ChecK - scans a partition for errors and attempts to repair them, like running CHKDSK on Windows. Critically important: NEVER run fsck on a mounted (in-use) filesystem - you must unmount it first or you'll cause more damage! Usually run automatically during boot if the system wasn't shut down cleanly. Manual use is for when a partition won't mount or you suspect corruption. Use 'sudo fsck /dev/sda1' to check a partition, add -y to automatically fix errors. Essential recovery tool when filesystems get corrupted, but use carefully and always on unmounted partitions.",
+            description: "Careful: File System ChecK - scans a partition for errors and attempts to repair them, like running CHKDSK on Windows. Critically important: NEVER run fsck on a mounted (in-use) filesystem - you must unmount it first or you'll cause more damage! Usually run automatically during boot if the system wasn't shut down cleanly. Manual use is for when a partition won't mount or you suspect corruption. Use 'sudo fsck /dev/sda1' to check a partition, add -y to automatically fix errors. Essential recovery tool when filesystems get corrupted, but use carefully and always on unmounted partitions.",
             common_flags: vec![
                 FlagInfo { flag: "-a", description: "Automatic: automatically repair", example: Some("fsck -a /dev/sda1") },
             ],
@@ -2245,7 +2245,7 @@ impl CommandAnalyzer {
             category: CommandCategory::SystemInfo,
             danger_level: DangerLevel::Dangerous,
             summary: "Create initial ramdisk (Arch)",
-            description: "⚠️  Generates the initramfs (initial RAM filesystem) - a crucial boot component that loads necessary drivers and prepares your system before the real root filesystem mounts. On Arch Linux, you run this after kernel updates or when changing hardware drivers in /etc/mkinitcpio.conf. Use 'sudo mkinitcpio -P' to regenerate all initramfs images for all installed kernels. If you forget to run this after a kernel update, your system might not boot! The initramfs is what makes Linux boot fast by loading only essential drivers first. Critical for Arch maintenance.",
+            description: "Careful: Generates the initramfs (initial RAM filesystem) - a crucial boot component that loads necessary drivers and prepares your system before the real root filesystem mounts. On Arch Linux, you run this after kernel updates or when changing hardware drivers in /etc/mkinitcpio.conf. Use 'sudo mkinitcpio -P' to regenerate all initramfs images for all installed kernels. If you forget to run this after a kernel update, your system might not boot! The initramfs is what makes Linux boot fast by loading only essential drivers first. Critical for Arch maintenance.",
             common_flags: vec![
                 FlagInfo { flag: "-P", description: "Preset: use preset from /etc/mkinitcpio.d/", example: Some("mkinitcpio -P") },
                 FlagInfo { flag: "-p", description: "Preset: generate for specific preset", example: Some("mkinitcpio -p linux") },
@@ -2263,7 +2263,7 @@ impl CommandAnalyzer {
             category: CommandCategory::SystemInfo,
             danger_level: DangerLevel::Critical,
             summary: "Install GRUB bootloader",
-            description: "⚠️ CRITICAL: Installs the GRUB bootloader to your disk - the program that runs when you turn on your computer and lets you choose which operating system to boot. Essential during Arch installation! For UEFI systems use 'sudo grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB'. For BIOS systems use 'sudo grub-install --target=i386-pc /dev/sda'. Get this wrong and your computer won't boot! GRUB is what shows that menu when you start your computer. After installing, run grub-mkconfig to generate the configuration.",
+            description: "CRITICAL: Installs the GRUB bootloader to your disk - the program that runs when you turn on your computer and lets you choose which operating system to boot. Essential during Arch installation! For UEFI systems use 'sudo grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=GRUB'. For BIOS systems use 'sudo grub-install --target=i386-pc /dev/sda'. Get this wrong and your computer won't boot! GRUB is what shows that menu when you start your computer. After installing, run grub-mkconfig to generate the configuration.",
             common_flags: vec![
                 FlagInfo { flag: "--target", description: "Target platform (x86_64-efi, i386-pc)", example: Some("grub-install --target=x86_64-efi") },
                 FlagInfo { flag: "--efi-directory", description: "EFI directory mount point", example: Some("grub-install --efi-directory=/boot") },
@@ -2392,7 +2392,7 @@ impl CommandAnalyzer {
             category: CommandCategory::Networking,
             danger_level: DangerLevel::Critical,
             summary: "IPv4 packet filtering and NAT",
-            description: "⚠️ CRITICAL: The low-level Linux firewall configuration tool - extremely powerful but complex and dangerous if used incorrectly. Controls which network packets are allowed in or out of your system. One wrong command can lock you out of a remote server permanently! Use 'iptables -L' to list current rules safely. Most users should use friendlier front-ends like 'ufw' (Ubuntu) or 'firewalld' (RedHat) instead of raw iptables. Only use this directly if you know what you're doing or are following exact instructions. Being replaced by 'nftables' on modern systems but still widely used.",
+            description: "CRITICAL: The low-level Linux firewall configuration tool - extremely powerful but complex and dangerous if used incorrectly. Controls which network packets are allowed in or out of your system. One wrong command can lock you out of a remote server permanently! Use 'iptables -L' to list current rules safely. Most users should use friendlier front-ends like 'ufw' (Ubuntu) or 'firewalld' (RedHat) instead of raw iptables. Only use this directly if you know what you're doing or are following exact instructions. Being replaced by 'nftables' on modern systems but still widely used.",
             common_flags: vec![
                 FlagInfo { flag: "-L", description: "List: show all rules", example: Some("iptables -L") },
                 FlagInfo { flag: "-A", description: "Append: add new rule", example: Some("iptables -A INPUT -p tcp --dport 22 -j ACCEPT") },
@@ -2439,7 +2439,7 @@ impl CommandAnalyzer {
             category: CommandCategory::SystemInfo,
             danger_level: DangerLevel::Dangerous,
             summary: "Enhanced chroot for Arch installation",
-            description: "⚠️  An enhanced version of the 'chroot' command specifically designed for Arch Linux installation. Changes your root directory to a mounted Arch installation, automatically mounting necessary filesystems (/proc, /sys, /dev) so you can configure the new system before booting into it. During Arch installation, after running pacstrap, you use 'arch-chroot /mnt' to enter your new Arch system and configure the bootloader, set timezone, create users, etc. It's like stepping into your new OS before it's actually installed. Essential Arch installation tool - makes configuration much easier than manual chroot.",
+            description: "Careful: An enhanced version of the 'chroot' command specifically designed for Arch Linux installation. Changes your root directory to a mounted Arch installation, automatically mounting necessary filesystems (/proc, /sys, /dev) so you can configure the new system before booting into it. During Arch installation, after running pacstrap, you use 'arch-chroot /mnt' to enter your new Arch system and configure the bootloader, set timezone, create users, etc. It's like stepping into your new OS before it's actually installed. Essential Arch installation tool - makes configuration much easier than manual chroot.",
             common_flags: vec![],
             examples: vec![
                 Example { command: "arch-chroot /mnt", description: "Chroot into new system", use_case: "Configure Arch installation" },

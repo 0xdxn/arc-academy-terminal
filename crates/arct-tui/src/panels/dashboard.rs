@@ -82,7 +82,7 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &Theme, data: &DashboardData
     lines.push(Line::from(vec![
         Span::styled(greeting, theme.style_normal().add_modifier(Modifier::BOLD)),
         Span::raw("   "),
-        Span::styled("🔥", theme.style_warning()),
+        Span::styled("streak", theme.style_warning()),
         Span::styled(streak_text, theme.style_warning()),
     ]));
     lines.push(Line::from(""));

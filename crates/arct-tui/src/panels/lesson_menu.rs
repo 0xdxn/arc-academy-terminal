@@ -1,7 +1,7 @@
 //! Lesson selection menu — a visual skill tree
 //!
 //! Lessons are grouped by difficulty into a progression map. Every row shows
-//! a state glyph (✓ completed / ▶ available / 🔒 locked), a per-lesson resume
+//! a state glyph (✓ completed / ▶ available / · locked), a per-lesson resume
 //! indicator when a lesson was left mid-way, difficulty color coding, and the
 //! estimated minutes. Locked lessons are selectable but show what unlocks
 //! them instead of starting.
@@ -348,7 +348,7 @@ impl LessonMenuPanel {
                     let (glyph, glyph_style) = match state {
                         LessonState::Completed => ("✓ ", theme.style_success()),
                         LessonState::Available => ("▶ ", theme.style_accent()),
-                        LessonState::Locked => ("🔒", theme.style_dim()),
+                        LessonState::Locked => ("· ", theme.style_dim()),
                     };
 
                     let title_style = if is_selected {
@@ -408,7 +408,7 @@ impl LessonMenuPanel {
                     vec![
                         Line::from(""),
                         Line::from(vec![
-                            Span::styled("  🔒 Locked — complete ", theme.style_warning()),
+                            Span::styled("  Locked: complete ", theme.style_warning()),
                             Span::styled(missing, theme.style_accent().add_modifier(Modifier::BOLD)),
                             Span::styled(" first", theme.style_warning()),
                         ]),

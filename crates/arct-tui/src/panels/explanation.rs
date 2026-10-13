@@ -136,7 +136,7 @@ impl ExplanationPanel {
             // Flag explanations
             if !exp.flag_explanations.is_empty() {
                 items.push(ListItem::new(Line::from(vec![
-                    Span::styled("🔍 ", theme.style_warning()),
+                    Span::styled("", theme.style_warning()),
                     Span::styled("Flag Explanations:", theme.style_header()),
                 ])));
 
@@ -190,7 +190,7 @@ impl ExplanationPanel {
             // Related commands
             if !exp.related_commands.is_empty() {
                 items.push(ListItem::new(Line::from(vec![
-                    Span::styled("🔗 ", theme.style_success()),
+                    Span::styled("", theme.style_success()),
                     Span::styled("Related: ", theme.style_secondary()),
                     Span::styled(exp.related_commands.join(", "), theme.style_dim()),
                 ])));

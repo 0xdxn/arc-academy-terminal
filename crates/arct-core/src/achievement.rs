@@ -328,7 +328,7 @@ pub fn all_achievements() -> Vec<Achievement> {
             points: 1000,
         },
 
-        // ===== EXPLORATION ACHIEVEMENTS (4) =====
+        // ===== EXPLORATION ACHIEVEMENTS (5) =====
         Achievement {
             id: "ai_assistant".to_string(),
             title: "AI Assistant".to_string(),
@@ -355,6 +355,15 @@ pub fn all_achievements() -> Vec<Achievement> {
             category: AchievementCategory::Exploration,
             condition: UnlockCondition::CompleteChallenge("visit_all_panels".to_string()),
             points: 20,
+        },
+        Achievement {
+            id: "safe_hands".to_string(),
+            title: "Safe Hands".to_string(),
+            description: "The safety guard stopped a dangerous command, and you learned why.".to_string(),
+            icon: "\u{f132}", // Shield
+            category: AchievementCategory::Exploration,
+            condition: UnlockCondition::CompleteChallenge("guard_refusal".to_string()),
+            points: 10,
         },
         Achievement {
             id: "context_aware".to_string(),
@@ -422,7 +431,7 @@ mod tests {
     #[test]
     fn test_achievement_count() {
         let achievements = all_achievements();
-        assert_eq!(achievements.len(), 30, "Should have exactly 30 achievements");
+        assert_eq!(achievements.len(), 31, "Should have exactly 31 achievements");
     }
 
     #[test]
@@ -438,7 +447,7 @@ mod tests {
         assert_eq!(streaks, 8, "Should have 8 streak achievements");
         assert_eq!(commands, 5, "Should have 5 command achievements");
         assert_eq!(challenges, 3, "Should have 3 challenge achievements");
-        assert_eq!(exploration, 4, "Should have 4 exploration achievements");
+        assert_eq!(exploration, 5, "Should have 5 exploration achievements");
     }
 
     #[test]

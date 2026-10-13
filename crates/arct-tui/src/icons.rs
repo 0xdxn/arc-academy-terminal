@@ -1,10 +1,43 @@
-//! Icon constants and helpers using Nerd Fonts with tasteful colors
+//! Icon constants and helpers.
 //!
-//! This module provides Nerd Font glyphs with contextually appropriate colors
-//! that make icons stand out from text while maintaining visual harmony.
+//! By default every icon is a plain symbol one terminal cell wide, so panels
+//! line up in any terminal and font. Nerd Font glyphs are opt-in
+//! (`theme.nerd_fonts = true`) because without a patched font they render as
+//! empty boxes.
 
 use ratatui::style::{Color, Style};
 use ratatui::text::Span;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static NERD_FONTS: AtomicBool = AtomicBool::new(false);
+
+/// Choose Nerd Font glyphs (true) or plain symbols (false, the default).
+pub fn set_nerd_fonts(enabled: bool) {
+    NERD_FONTS.store(enabled, Ordering::Relaxed);
+}
+
+fn pick(nerd: &'static str, plain: &'static str) -> &'static str {
+    if NERD_FONTS.load(Ordering::Relaxed) {
+        nerd
+    } else {
+        plain
+    }
+}
+
+/// Folder glyph for file trees
+pub fn folder_glyph() -> &'static str {
+    pick(FOLDER, "▸")
+}
+
+/// File glyph for file trees
+pub fn file_glyph() -> &'static str {
+    pick(FILE, "·")
+}
+
+/// Timer glyph
+pub fn timer_glyph() -> &'static str {
+    pick(TIMER, "◷")
+}
 
 /// Application branding icons
 pub const TERMINAL: &str = "\u{f489}";  //  - Terminal icon
@@ -62,67 +95,67 @@ pub const TRIANGLE_RIGHT: &str = "\u{25b6}"; // ▶ - Right triangle
 
 /// Success icon in green
 pub fn success() -> Span<'static> {
-    Span::styled(format!("{}  ", SUCCESS), Style::default().fg(Color::Rgb(46, 204, 113)))
+    Span::styled(format!("{}  ", pick(SUCCESS, "✓")), Style::default().fg(Color::Rgb(46, 204, 113)))
 }
 
 /// Error icon in red
 pub fn error() -> Span<'static> {
-    Span::styled(format!("{}  ", ERROR), Style::default().fg(Color::Rgb(231, 76, 60)))
+    Span::styled(format!("{}  ", pick(ERROR, "✗")), Style::default().fg(Color::Rgb(231, 76, 60)))
 }
 
 /// Warning icon in yellow/orange
 pub fn warning() -> Span<'static> {
-    Span::styled(format!("{}  ", WARNING), Style::default().fg(Color::Rgb(241, 196, 15)))
+    Span::styled(format!("{}  ", pick(WARNING, "!")), Style::default().fg(Color::Rgb(241, 196, 15)))
 }
 
 /// Info icon in blue
 pub fn info() -> Span<'static> {
-    Span::styled(format!("{}  ", INFO), Style::default().fg(Color::Rgb(52, 152, 219)))
+    Span::styled(format!("{}  ", pick(INFO, "i")), Style::default().fg(Color::Rgb(52, 152, 219)))
 }
 
 /// Hint/tip icon in purple/cyan
 pub fn hint() -> Span<'static> {
-    Span::styled(format!("{}  ", HINT), Style::default().fg(Color::Rgb(155, 89, 182)))
+    Span::styled(format!("{}  ", pick(HINT, "*")), Style::default().fg(Color::Rgb(155, 89, 182)))
 }
 
 /// AI assistant icon in cyan/green
 pub fn ai() -> Span<'static> {
-    Span::styled(format!("{}  ", AI), Style::default().fg(Color::Rgb(26, 188, 156)))
+    Span::styled(format!("{}  ", pick(AI, "?")), Style::default().fg(Color::Rgb(26, 188, 156)))
 }
 
 /// Lesson icon in blue
 pub fn lesson() -> Span<'static> {
-    Span::styled(format!("{}  ", LESSON), Style::default().fg(Color::Rgb(52, 152, 219)))
+    Span::styled(format!("{}  ", pick(LESSON, "§")), Style::default().fg(Color::Rgb(52, 152, 219)))
 }
 
 /// Learning icon in purple
 pub fn learning() -> Span<'static> {
-    Span::styled(format!("{}  ", LEARNING), Style::default().fg(Color::Rgb(142, 68, 173)))
+    Span::styled(format!("{}  ", pick(LEARNING, "^")), Style::default().fg(Color::Rgb(142, 68, 173)))
 }
 
 /// Folder icon in yellow/gold
 pub fn folder() -> Span<'static> {
-    Span::styled(format!("{}  ", FOLDER), Style::default().fg(Color::Rgb(241, 196, 15)))
+    Span::styled(format!("{}  ", pick(FOLDER, "▸")), Style::default().fg(Color::Rgb(241, 196, 15)))
 }
 
 /// File icon in light gray
 pub fn file() -> Span<'static> {
-    Span::styled(format!("{}  ", FILE), Style::default().fg(Color::Rgb(189, 195, 199)))
+    Span::styled(format!("{}  ", pick(FILE, "·")), Style::default().fg(Color::Rgb(189, 195, 199)))
 }
 
 /// Location/pin icon in orange/red
 pub fn location() -> Span<'static> {
-    Span::styled(format!("{}  ", LOCATION), Style::default().fg(Color::Rgb(230, 126, 34)))
+    Span::styled(format!("{}  ", pick(LOCATION, "@")), Style::default().fg(Color::Rgb(230, 126, 34)))
 }
 
 /// Target/goal icon in orange
 pub fn target() -> Span<'static> {
-    Span::styled(format!("{}  ", TARGET), Style::default().fg(Color::Rgb(230, 126, 34)))
+    Span::styled(format!("{}  ", pick(TARGET, "◎")), Style::default().fg(Color::Rgb(230, 126, 34)))
 }
 
 /// Celebration icon in gold
 pub fn celebration() -> Span<'static> {
-    Span::styled(format!("{}  ", CELEBRATION), Style::default().fg(Color::Rgb(241, 196, 15)))
+    Span::styled(format!("{}  ", pick(CELEBRATION, "★")), Style::default().fg(Color::Rgb(241, 196, 15)))
 }
 
 /// Welcome icon in cyan (using star instead of handshake)
@@ -132,45 +165,45 @@ pub fn welcome() -> Span<'static> {
 
 /// Lightning/power icon in bright yellow
 pub fn lightning() -> Span<'static> {
-    Span::styled(format!("{}  ", LIGHTNING), Style::default().fg(Color::Rgb(241, 196, 15)))
+    Span::styled(format!("{}  ", pick(LIGHTNING, "+")), Style::default().fg(Color::Rgb(241, 196, 15)))
 }
 
 /// Question icon in blue
 pub fn question() -> Span<'static> {
-    Span::styled(format!("{}  ", QUESTION), Style::default().fg(Color::Rgb(52, 152, 219)))
+    Span::styled(format!("{}  ", pick(QUESTION, "?")), Style::default().fg(Color::Rgb(52, 152, 219)))
 }
 
 /// Note/pencil icon in cyan
 pub fn note() -> Span<'static> {
-    Span::styled(format!("{}  ", NOTE), Style::default().fg(Color::Rgb(26, 188, 156)))
+    Span::styled(format!("{}  ", pick(NOTE, "-")), Style::default().fg(Color::Rgb(26, 188, 156)))
 }
 
 /// Loading spinner in cyan
 pub fn loading() -> Span<'static> {
-    Span::styled(format!("{}  ", LOADING), Style::default().fg(Color::Rgb(52, 152, 219)))
+    Span::styled(format!("{}  ", pick(LOADING, "…")), Style::default().fg(Color::Rgb(52, 152, 219)))
 }
 
 /// Globe icon in green
 pub fn globe() -> Span<'static> {
-    Span::styled(format!("{}  ", GLOBE), Style::default().fg(Color::Rgb(46, 204, 113)))
+    Span::styled(format!("{}  ", pick(GLOBE, "#")), Style::default().fg(Color::Rgb(46, 204, 113)))
 }
 
 /// Laptop icon in blue
 pub fn laptop() -> Span<'static> {
-    Span::styled(format!("{}  ", LAPTOP), Style::default().fg(Color::Rgb(52, 152, 219)))
+    Span::styled(format!("{}  ", pick(LAPTOP, "#")), Style::default().fg(Color::Rgb(52, 152, 219)))
 }
 
 /// Shell/terminal icon in orange (Arc Academy brand color)
 pub fn shell() -> Span<'static> {
-    Span::styled(format!("{}  ", SHELL), Style::default().fg(Color::Rgb(255, 140, 0)))
+    Span::styled(format!("{}  ", pick(SHELL, "$")), Style::default().fg(Color::Rgb(255, 140, 0)))
 }
 
 /// Output panel icon in gray
 pub fn output() -> Span<'static> {
-    Span::styled(format!("{}  ", OUTPUT), Style::default().fg(Color::Rgb(149, 165, 166)))
+    Span::styled(format!("{}  ", pick(OUTPUT, ">")), Style::default().fg(Color::Rgb(149, 165, 166)))
 }
 
 /// Beginner level icon in light green
 pub fn beginner() -> Span<'static> {
-    Span::styled(format!("{}  ", BEGINNER), Style::default().fg(Color::Rgb(46, 204, 113)))
+    Span::styled(format!("{}  ", pick(BEGINNER, "+")), Style::default().fg(Color::Rgb(46, 204, 113)))
 }

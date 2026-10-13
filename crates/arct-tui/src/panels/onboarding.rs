@@ -84,53 +84,50 @@ impl OnboardingWizard {
         }
     }
 
+    /// Esc: go back one step (the first screen stays put)
+    pub fn handle_back(&mut self) {
+        if self.step != OnboardingStep::Welcome && self.step != OnboardingStep::Complete {
+            self.step = self.step.previous();
+            self.selected_option = 0;
+        }
+    }
+
     pub fn handle_enter(&mut self) {
         match self.step {
             OnboardingStep::Welcome => {
                 self.step = self.step.next();
             }
             OnboardingStep::AskName => {
-                if !self.user_name.trim().is_empty() {
-                    self.step = self.step.next();
-                    self.selected_option = 0;
-                }
+                // The name is optional and never leaves this computer
+                self.user_name = self.user_name.trim().to_string();
+                self.step = self.step.next();
+                self.selected_option = 0;
             }
             OnboardingStep::AskAI => {
-                // 0 = Yes, 1 = No, 2 = Maybe later
+                // 0 = No (default), 1 = Yes
                 match self.selected_option {
-                    0 => {
+                    1 => {
                         self.ai_enabled = Some(true);
                         self.step = self.step.next();
                         self.selected_option = 0;
                     }
-                    1 => {
+                    _ => {
                         self.ai_enabled = Some(false);
                         self.step = OnboardingStep::Complete;
                     }
-                    2 => {
-                        self.ai_enabled = Some(false);
-                        self.step = OnboardingStep::Complete;
-                    }
-                    _ => {}
                 }
             }
             OnboardingStep::AskAIProvider => {
-                // 0 = Claude Code subscription, 1 = Own API, 2 = Managed (coming soon)
-                match self.selected_option {
-                    0 => {
-                        self.ai_provider = Some("claude-code".to_string());
-                        self.step = OnboardingStep::Complete;
+                // 0 = local model (Ollama), 1 = Claude Code CLI, 2 = own API key
+                self.ai_provider = Some(
+                    match self.selected_option {
+                        1 => "claude-code",
+                        2 => "own-key",
+                        _ => "local",
                     }
-                    1 => {
-                        self.ai_provider = Some("own".to_string());
-                        self.step = OnboardingStep::Complete;
-                    }
-                    2 => {
-                        self.ai_provider = Some("managed".to_string());
-                        self.step = OnboardingStep::Complete;
-                    }
-                    _ => {}
-                }
+                    .to_string(),
+                );
+                self.step = OnboardingStep::Complete;
             }
             OnboardingStep::Complete => {}
         }
@@ -214,11 +211,11 @@ impl OnboardingWizard {
         let lines = vec![
             Line::from(""),
             Line::from(vec![
-                Span::styled("  What's your name?", theme.style_accent()),
+                Span::styled("  What should arct call you?", theme.style_accent()),
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("  This helps us personalize your experience.", theme.style_dim()),
+                Span::styled("  A first name or a nickname. Optional; it stays on this computer.", theme.style_dim()),
             ]),
             Line::from(""),
             Line::from(""),
@@ -233,7 +230,9 @@ impl OnboardingWizard {
             Line::from(vec![
                 Span::styled("  Press ", theme.style_dim()),
                 Span::styled("Enter", theme.style_accent()),
-                Span::styled(" to continue", theme.style_dim()),
+                Span::styled(" to continue, ", theme.style_dim()),
+                Span::styled("Esc", theme.style_accent()),
+                Span::styled(" to go back", theme.style_dim()),
             ]),
         ];
 
@@ -243,9 +242,8 @@ impl OnboardingWizard {
 
     fn render_ask_ai(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
         let options = vec![
-            ("Yes, enable AI assistant", 0),
-            ("No, not right now", 1),
-            ("Maybe later", 2),
+            ("No AI, thanks", 0),
+            ("Yes, I'll set up an AI assistant", 1),
         ];
 
         let mut lines = vec![
@@ -255,10 +253,13 @@ impl OnboardingWizard {
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("  The AI can help explain commands, suggest alternatives,", theme.style_dim()),
+                Span::styled("  arct works fully without AI. If you turn it on, your questions", theme.style_dim()),
             ]),
             Line::from(vec![
-                Span::styled("  and answer your shell questions.", theme.style_dim()),
+                Span::styled("  go to the AI you choose. Kids: ask a grown-up first.", theme.style_dim()),
+            ]),
+            Line::from(vec![
+                Span::styled("  You can change this any time in settings (Ctrl+S).", theme.style_dim()),
             ]),
             Line::from(""),
             Line::from(""),
@@ -296,9 +297,9 @@ impl OnboardingWizard {
 
     fn render_ask_provider(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
         let options = vec![
-            ("I have Claude Code with Max subscription", 0),
-            ("I have my own API key (Anthropic, OpenAI, or local LLM)", 1),
-            ("Use Arc Academy managed AI (Coming Soon)", 2),
+            ("A local model with Ollama (stays on this computer)", 0),
+            ("Claude Code, if it's installed and signed in", 1),
+            ("My own API key (Anthropic or OpenAI)", 2),
         ];
 
         let mut lines = vec![
@@ -317,16 +318,11 @@ impl OnboardingWizard {
                 Span::styled("    ", theme.style_dim())
             };
 
-            let mut style = if i == self.selected_option {
+            let style = if i == self.selected_option {
                 theme.style_accent()
             } else {
                 theme.style_normal()
             };
-
-            // Dim "Coming Soon" option
-            if i == 2 {
-                style = theme.style_dim();
-            }
 
             lines.push(Line::from(vec![prefix, Span::styled(*option, style)]));
         }
@@ -334,9 +330,7 @@ impl OnboardingWizard {
         lines.push(Line::from(""));
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
-            Span::styled("  Note: Claude Code option uses ", theme.style_dim()),
-            Span::styled("`claude`", theme.style_accent()),
-            Span::styled(" CLI - no API key needed!", theme.style_dim()),
+            Span::styled("  Only the local model keeps your questions on this computer.", theme.style_dim()),
         ]));
         lines.push(Line::from(""));
         lines.push(Line::from(vec![

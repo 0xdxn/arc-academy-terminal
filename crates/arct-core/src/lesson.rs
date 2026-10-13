@@ -228,12 +228,15 @@ impl LessonProgress {
 #[derive(Debug, Clone)]
 pub struct LessonLibrary {
     lessons: HashMap<String, Lesson>,
+    /// Registration order; `all()` derives a stable learning order from it
+    order: Vec<String>,
 }
 
 impl LessonLibrary {
     pub fn new() -> Self {
         let mut library = Self {
             lessons: HashMap::new(),
+            order: Vec::new(),
         };
         library.load_default_lessons();
         library
@@ -241,6 +244,9 @@ impl LessonLibrary {
 
     /// Register a lesson in the library
     pub fn register(&mut self, lesson: Lesson) {
+        if !self.lessons.contains_key(&lesson.id) {
+            self.order.push(lesson.id.clone());
+        }
         self.lessons.insert(lesson.id.clone(), lesson);
     }
 
@@ -249,23 +255,55 @@ impl LessonLibrary {
         self.lessons.get(id)
     }
 
-    /// Get all lessons
+    /// All lessons in learning order: registration order, except that a
+    /// lesson always comes after the prerequisites it names. Stable across
+    /// runs (the map used to come out in random order).
     pub fn all(&self) -> Vec<&Lesson> {
-        self.lessons.values().collect()
+        let mut placed: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut ordered: Vec<&Lesson> = Vec::with_capacity(self.order.len());
+        while ordered.len() < self.order.len() {
+            let before = ordered.len();
+            for id in &self.order {
+                if placed.contains(id.as_str()) {
+                    continue;
+                }
+                let lesson = &self.lessons[id];
+                let ready = lesson
+                    .prerequisites
+                    .iter()
+                    .all(|p| placed.contains(p.as_str()) || !self.lessons.contains_key(p));
+                if ready {
+                    placed.insert(id.as_str());
+                    ordered.push(lesson);
+                    // Restart so earlier-registered lessons that just became
+                    // ready keep their place ahead of later ones
+                    break;
+                }
+            }
+            if ordered.len() == before {
+                // Prerequisite cycle: append the rest in registration order
+                for id in &self.order {
+                    if placed.insert(id.as_str()) {
+                        ordered.push(&self.lessons[id]);
+                    }
+                }
+            }
+        }
+        ordered
     }
 
     /// Get lessons by difficulty
     pub fn by_difficulty(&self, difficulty: Difficulty) -> Vec<&Lesson> {
-        self.lessons
-            .values()
+        self.all()
+            .into_iter()
             .filter(|l| l.difficulty == difficulty)
             .collect()
     }
 
     /// Get lessons by tag
     pub fn by_tag(&self, tag: &str) -> Vec<&Lesson> {
-        self.lessons
-            .values()
+        self.all()
+            .into_iter()
             .filter(|l| l.tags.iter().any(|t| t == tag))
             .collect()
     }
@@ -2319,5 +2357,21 @@ mod tests {
         assert_eq!(fresh.load_from_dir(&dir.join("does-not-exist")).unwrap(), 0);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_library_order_is_stable_and_respects_prerequisites() {
+        let library = LessonLibrary::new();
+        let ids: Vec<&str> = library.all().iter().map(|l| l.id.as_str()).collect();
+        assert_eq!(ids.first(), Some(&"nav-basics"));
+        let other = LessonLibrary::new();
+        let again: Vec<&str> = other.all().iter().map(|l| l.id.as_str()).collect();
+        assert_eq!(ids, again, "order must not change between runs");
+        for (i, lesson) in library.all().iter().enumerate() {
+            for prereq in &lesson.prerequisites {
+                let at = ids.iter().position(|id| id == prereq).expect("prereq exists");
+                assert!(at < i, "{} must come after {}", lesson.id, prereq);
+            }
+        }
     }
 }

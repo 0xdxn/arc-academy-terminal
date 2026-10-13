@@ -14,8 +14,9 @@
 //!    environment-variable expansion, unbalanced quotes). The heuristics are
 //!    deliberately conservative: when in doubt, refuse politely.
 //!
-//! This guard applies ONLY to lesson real-practice mode. The normal free
-//! shell is never routed through it.
+//! The same guard protects the free shell when `shell.safe_mode` is on (the
+//! default), rooted at `~/ArcAcademy/home`. With safe mode off, the free shell
+//! still runs every command through [`PlaygroundGuard::check_catastrophic`].
 
 use std::path::{Component, Path, PathBuf};
 
@@ -47,12 +48,34 @@ impl GuardVerdict {
 pub struct PlaygroundGuard {
     /// Absolute path of the playground root on the real filesystem.
     root: PathBuf,
+    /// How the root is shown to the learner in refusal messages.
+    display: String,
 }
 
 impl PlaygroundGuard {
     /// Create a guard for the given playground root (absolute path).
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self::with_display(root, PLAYGROUND_DISPLAY)
+    }
+
+    /// Create a guard whose refusal messages name the root as `display`
+    /// (e.g. `~/ArcAcademy/home`).
+    pub fn with_display(root: impl Into<PathBuf>, display: impl Into<String>) -> Self {
+        Self {
+            root: root.into(),
+            display: display.into(),
+        }
+    }
+
+    /// Check only the catastrophic-pattern denylist, with no containment.
+    /// Used by the free shell when safe mode is off: commands may touch the
+    /// whole filesystem, but never the handful that destroy it.
+    pub fn check_catastrophic(command: &str) -> GuardVerdict {
+        let trimmed = command.trim();
+        if trimmed.is_empty() {
+            return GuardVerdict::Allow;
+        }
+        Self::check_denylist(trimmed).unwrap_or(GuardVerdict::Allow)
     }
 
     /// Check a command line before it is sent to the real shell.
@@ -77,14 +100,14 @@ impl PlaygroundGuard {
         if trimmed.contains('`') || trimmed.contains("$(") {
             return GuardVerdict::refuse(
                 "Command substitution (backticks or $(...)) runs a hidden inner command, \
-                 so there's no way to check where it will reach. In practice mode, type \
-                 the command directly instead.",
+                 so there's no way to check where it will reach. Type the command \
+                 directly instead.",
             );
         }
         if trimmed.contains('$') {
             return GuardVerdict::refuse(
                 "Environment variables like $HOME or $PATH can expand to locations outside \
-                 the playground, so commands using '$' are blocked in practice mode. Try \
+                 the folder you're practising in, so commands using '$' are blocked. Try \
                  typing the actual path or value instead.",
             );
         }
@@ -117,14 +140,26 @@ impl PlaygroundGuard {
                 continue;
             }
 
-            // Tilde expansion points at the home directory
+            // Tilde expansion points at the home directory. `~/<root>/...` is
+            // allowed only if it still resolves inside the root after `..`.
             if token.contains('~') {
-                if token.starts_with("~/ArcAcademy/playground") {
+                let inside = self
+                    .display
+                    .strip_prefix("~/")
+                    .and_then(|_| token.strip_prefix(self.display.as_str()))
+                    .filter(|rest| rest.is_empty() || rest.starts_with('/'))
+                    .and_then(|rest| {
+                        let joined = format!("{}{}", self.root.display(), rest);
+                        Self::lexical_normalize(Path::new(&joined))
+                    })
+                    .is_some_and(|normalized| normalized.starts_with(&self.root));
+                if inside {
                     continue;
                 }
                 return GuardVerdict::refuse(format!(
-                    "In practice mode, commands stay inside {PLAYGROUND_DISPLAY} — '~' points \
-                     at your real home directory. Try a relative path instead."
+                    "Commands here stay inside {} — '~' points at your real home \
+                     directory. Try a relative path instead.",
+                    self.display
                 ));
             }
 
@@ -134,8 +169,9 @@ impl PlaygroundGuard {
                     Some(normalized) if normalized.starts_with(&self.root) => continue,
                     _ => {
                         return GuardVerdict::refuse(format!(
-                            "In practice mode, commands stay inside {PLAYGROUND_DISPLAY} — \
-                             '{token}' points outside it. Try a relative path instead."
+                            "Commands here stay inside {} — '{token}' points outside \
+                             it. Try a relative path instead.",
+                            self.display
                         ));
                     }
                 }
@@ -152,8 +188,9 @@ impl PlaygroundGuard {
             .unwrap_or(0);
         if total_climb > depth {
             return GuardVerdict::refuse(format!(
-                "That command uses enough '..' to climb out of {PLAYGROUND_DISPLAY}. In \
-                 practice mode, commands stay inside the playground — try a relative path."
+                "That command uses enough '..' to climb out of {}. Commands here stay \
+                 inside it — try a relative path.",
+                self.display
             ));
         }
 
@@ -178,8 +215,9 @@ impl PlaygroundGuard {
             if segment.split_whitespace().next() == Some("sudo") {
                 return Some(GuardVerdict::refuse(
                     "'sudo' runs a command with full administrator power, where a single \
-                     typo can change or delete critical system files. Practicing in the \
-                     playground never needs admin rights, so sudo is blocked here.",
+                     typo can change or delete critical system files. arct never needs \
+                     admin rights, so sudo is blocked here; when you truly need it, use \
+                     your own terminal and read the command twice first.",
                 ));
             }
         }
@@ -213,46 +251,75 @@ impl PlaygroundGuard {
             ));
         }
 
-        // rm -rf / (or /*) — recursive force-delete from the root
-        if let Ok(tokens) = shellwords::split(command) {
-            if tokens.first().map(String::as_str) == Some("rm") {
-                let mut recursive = false;
-                let mut force = false;
-                let mut targets_root = false;
-                for t in &tokens[1..] {
-                    if t.starts_with('-') && !t.starts_with("--") {
-                        recursive |= t.contains('r') || t.contains('R');
-                        force |= t.contains('f');
-                    } else if t == "--recursive" {
-                        recursive = true;
-                    } else if t == "--force" {
-                        force = true;
-                    } else if t == "/" || t == "/*" {
-                        targets_root = true;
-                    }
-                }
-                if recursive && force && targets_root {
-                    return Some(GuardVerdict::refuse(
-                        "'rm -rf /' recursively force-deletes EVERYTHING starting from the \
-                         root of the filesystem — the operating system, your applications, \
-                         and all your files — with no confirmation and no undo. This is the \
-                         single most destructive command on a Unix system.",
-                    ));
+        // rm -rf / chmod -R 777 — checked in every segment of a chain like
+        // `cd / && rm -rf *` or `true; rm -rf ~`
+        for segment in command.split(|c| c == ';' || c == '|' || c == '&') {
+            if let Some(verdict) = Self::check_segment(segment.trim()) {
+                return Some(verdict);
+            }
+        }
+
+        None
+    }
+
+    /// Destructive-target checks for one simple command (no `;`/`|`/`&`).
+    fn check_segment(segment: &str) -> Option<GuardVerdict> {
+        let tokens = shellwords::split(segment).ok()?;
+        let program = tokens.first().map(String::as_str)?;
+        let is_root = |t: &str| matches!(t, "/" | "/*");
+        let is_home = |t: &str| {
+            matches!(
+                t.trim_end_matches('/'),
+                "~" | "~/*" | "$HOME" | "${HOME}" | "$HOME/*" | "${HOME}/*"
+            )
+        };
+
+        if program == "rm" {
+            let mut recursive = false;
+            let mut no_preserve_root = false;
+            let mut targets_root = false;
+            let mut targets_home = false;
+            for t in &tokens[1..] {
+                if t == "--no-preserve-root" {
+                    no_preserve_root = true;
+                } else if t == "--recursive" {
+                    recursive = true;
+                } else if t.starts_with('-') && !t.starts_with("--") {
+                    recursive |= t.contains('r') || t.contains('R');
+                } else if is_root(t) {
+                    targets_root = true;
+                } else if is_home(t) {
+                    targets_home = true;
                 }
             }
+            if recursive && (targets_root || no_preserve_root) {
+                return Some(GuardVerdict::refuse(
+                    "'rm -rf /' recursively force-deletes EVERYTHING starting from the \
+                     root of the filesystem — the operating system, your applications, \
+                     and all your files — with no confirmation and no undo. This is the \
+                     single most destructive command on a Unix system.",
+                ));
+            }
+            if recursive && targets_home {
+                return Some(GuardVerdict::refuse(
+                    "'rm -r ~' deletes your whole home folder: every document, photo, \
+                     project and setting you own, with no trash can and no undo. To \
+                     clean up, delete one named folder at a time and run 'ls' first to \
+                     see what's inside.",
+                ));
+            }
+        }
 
-            // chmod -R 777 / — world-writable everything
-            if tokens.first().map(String::as_str) == Some("chmod") {
-                let recursive = tokens.iter().any(|t| t == "-R" || t == "-r");
-                let mode_777 = tokens.iter().any(|t| t == "777");
-                let targets_root = tokens.iter().any(|t| t == "/" || t == "/*");
-                if recursive && mode_777 && targets_root {
-                    return Some(GuardVerdict::refuse(
-                        "'chmod -R 777 /' makes every file on the system readable, writable \
-                         and executable by everyone — a massive security hole that also \
-                         breaks programs that refuse to run with unsafe permissions.",
-                    ));
-                }
+        if program == "chmod" {
+            let recursive = tokens.iter().any(|t| t == "-R" || t == "-r");
+            let mode_777 = tokens.iter().any(|t| t == "777");
+            let targets_root = tokens.iter().any(|t| is_root(t));
+            if recursive && mode_777 && targets_root {
+                return Some(GuardVerdict::refuse(
+                    "'chmod -R 777 /' makes every file on the system readable, writable \
+                     and executable by everyone — a massive security hole that also \
+                     breaks programs that refuse to run with unsafe permissions.",
+                ));
             }
         }
 
@@ -508,5 +575,80 @@ mod tests {
     fn test_empty_command_is_allowed() {
         assert_allowed("", &lesson_cwd());
         assert_allowed("   ", &lesson_cwd());
+    }
+
+    #[test]
+    fn test_refuses_tilde_path_that_climbs_out() {
+        let reason = assert_refused(
+            "cat ~/ArcAcademy/playground/../../.ssh/id_rsa",
+            &lesson_cwd(),
+        );
+        assert!(reason.contains("~/ArcAcademy/playground"), "reason: {reason}");
+    }
+
+    #[test]
+    fn test_allows_tilde_path_inside_root() {
+        assert_allowed("ls ~/ArcAcademy/playground", &lesson_cwd());
+        assert_allowed("cat ~/ArcAcademy/playground/nav-basics/notes.txt", &lesson_cwd());
+    }
+
+    #[test]
+    fn test_refuses_tilde_lookalike_prefix() {
+        assert_refused("ls ~/ArcAcademy/playground-evil", &lesson_cwd());
+    }
+
+    #[test]
+    fn test_refuses_destruction_inside_a_chain() {
+        let reason = assert_refused("cd docs && rm -rf /", &lesson_cwd());
+        assert!(reason.contains("no undo"), "reason: {reason}");
+        assert!(!PlaygroundGuard::check_catastrophic("true; rm -r /*").is_allowed());
+    }
+
+    #[test]
+    fn test_refuses_recursive_delete_of_home() {
+        for cmd in ["rm -rf ~", "rm -r ~/", "rm -rf $HOME", "rm -fr ~/*", "rm -R ${HOME}"] {
+            let verdict = PlaygroundGuard::check_catastrophic(cmd);
+            match verdict {
+                GuardVerdict::Refuse { reason } => {
+                    assert!(reason.contains("home folder"), "{cmd}: {reason}")
+                }
+                GuardVerdict::Allow => panic!("{cmd} should be refused"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_refuses_rm_r_root_without_force() {
+        assert!(!PlaygroundGuard::check_catastrophic("rm -r /").is_allowed());
+        assert!(!PlaygroundGuard::check_catastrophic("rm -rf --no-preserve-root /").is_allowed());
+    }
+
+    #[test]
+    fn test_catastrophic_check_allows_everyday_commands() {
+        for cmd in [
+            "ls -la /etc",
+            "rm notes.txt",
+            "rm -r build",
+            "cat ~/.zshrc",
+            "echo $HOME",
+            "grep -r TODO .",
+            "chmod 644 index.html",
+        ] {
+            assert!(
+                PlaygroundGuard::check_catastrophic(cmd).is_allowed(),
+                "{cmd} should be allowed"
+            );
+        }
+    }
+
+    #[test]
+    fn test_messages_name_the_configured_root() {
+        let guard = PlaygroundGuard::with_display(root_cwd(), "~/ArcAcademy/home");
+        match guard.check("cat /etc/hosts", &root_cwd()) {
+            GuardVerdict::Refuse { reason } => {
+                assert!(reason.contains("~/ArcAcademy/home"), "reason: {reason}")
+            }
+            GuardVerdict::Allow => panic!("should be refused"),
+        }
     }
 }

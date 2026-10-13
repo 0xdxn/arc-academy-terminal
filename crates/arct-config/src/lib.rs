@@ -80,6 +80,11 @@ pub struct ThemeConfig {
     /// Color depth (16, 256, or "true")
     #[serde(default = "default_color_depth")]
     pub color_depth: String,
+
+    /// Use Nerd Font glyphs for icons (needs a patched font). Off by
+    /// default: plain one-cell symbols work in every terminal.
+    #[serde(default = "default_false")]
+    pub nerd_fonts: bool,
 }
 
 /// AI integration settings
@@ -144,6 +149,12 @@ pub struct ShellConfig {
     /// Startup commands to run
     #[serde(default)]
     pub startup_commands: Vec<String>,
+
+    /// Safe mode (default on): the free shell runs inside ~/ArcAcademy/home
+    /// and the safety guard keeps commands there. Off: commands run in your
+    /// real directories, and only catastrophic patterns are refused.
+    #[serde(default = "default_true")]
+    pub safe_mode: bool,
 }
 
 /// Lesson practice settings
@@ -304,6 +315,7 @@ impl Default for ThemeConfig {
             default_theme: default_theme(),
             enable_colors: true,
             color_depth: default_color_depth(),
+            nerd_fonts: false,
         }
     }
 }
@@ -338,6 +350,7 @@ impl Default for ShellConfig {
             environment: HashMap::new(),
             aliases: HashMap::new(),
             startup_commands: Vec::new(),
+            safe_mode: true,
         }
     }
 }
