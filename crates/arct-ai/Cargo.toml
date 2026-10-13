@@ -9,7 +9,7 @@ homepage.workspace = true
 description = "AI integration for Arc Academy Terminal - OpenAI, Anthropic, and local LLM support"
 
 [dependencies]
-arct-core = { path = "../arct-core", version = "1.1.1" }
+arct-core = { path = "../arct-core", version = "1.1.2" }
 anyhow.workspace = true
 thiserror.workspace = true
 serde.workspace = true
