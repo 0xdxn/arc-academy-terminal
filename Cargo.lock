@@ -208,6 +208,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tui-textarea",
+ "unicode-width 0.1.14",
  "uuid",
  "vte",
 ]
