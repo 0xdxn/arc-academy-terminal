@@ -326,10 +326,17 @@ fn print_info() -> Result<()> {
         println!("Home:     {}", home);
     }
 
+    // Your own lesson packs (*.toml) are loaded from here
+    if let Some(config_dir) = dirs::config_dir() {
+        let lessons = config_dir.join("arct").join("lessons");
+        println!("Lessons:  {}", lessons.display());
+        println!("          {}", if lessons.exists() { "exists" } else { "not created yet (make it to add your own lessons)" });
+    }
+
     println!();
-    println!("🌐 Website: https://arcacademy.sh");
-    println!("📖 Docs:    https://docs.arcacademy.sh");
-    println!("🐛 Issues:  https://github.com/arc-academy/terminal/issues");
+    println!("Website:  https://arcacademy.sh");
+    println!("Docs:     https://arcacademy.sh/docs");
+    println!("Source:   https://github.com/0xdxn/arc-academy-terminal");
 
     Ok(())
 }

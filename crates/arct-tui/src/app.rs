@@ -1593,10 +1593,11 @@ impl App {
             }
 
             "grep" => {
-                let case_insensitive = Self::has_flag(cmd, "-i") || Self::has_flag(cmd, "--ignore-case");
-                let line_numbers = Self::has_flag(cmd, "-n") || Self::has_flag(cmd, "--line-number");
-
-                let positional: Vec<&String> = cmd.args.iter().filter(|a| !a.starts_with('-')).collect();
+                // Same grep as after a pipe (-i -n -v -c -E), applied per file
+                let flags: Vec<String> =
+                    cmd.args.iter().filter(|a| a.starts_with('-') && a.len() > 1).cloned().collect();
+                let positional: Vec<&String> =
+                    cmd.args.iter().filter(|a| !(a.starts_with('-') && a.len() > 1)).collect();
                 let Some(pattern) = positional.first() else {
                     return Some(format!("{}grep: usage: grep [-i] [-n] PATTERN FILE...\n", icons::error().content));
                 };
@@ -1604,24 +1605,30 @@ impl App {
                 if files.is_empty() {
                     return Some(format!("{}(lesson sandbox) grep needs a file here — try: grep {} <file>\n", icons::hint().content, pattern));
                 }
+                let mut grep_args = flags.clone();
+                grep_args.push((*pattern).clone());
 
                 let mut output = String::new();
                 let multiple = files.len() > 1;
                 for file in files {
-                    match vfs.grep_file(pattern, file, case_insensitive) {
-                        Ok(matches) => {
-                            for (line_no, line) in matches {
+                    let content = match vfs.read_file(file) {
+                        Ok(content) => content,
+                        Err(e) => {
+                            output.push_str(&format!("{}grep: {}\n", icons::error().content, e));
+                            continue;
+                        }
+                    };
+                    match arct_core::text_filter::apply("grep", &grep_args, &content) {
+                        Ok(found) => {
+                            for line in found.lines() {
                                 if multiple {
                                     output.push_str(&format!("{}:", file));
                                 }
-                                if line_numbers {
-                                    output.push_str(&format!("{}:", line_no));
-                                }
-                                output.push_str(&line);
+                                output.push_str(line);
                                 output.push('\n');
                             }
                         }
-                        Err(e) => output.push_str(&format!("{}grep: {}\n", icons::error().content, e)),
+                        Err(message) => output.push_str(&format!("{}{}\n", icons::error().content, message)),
                     }
                 }
                 if output.is_empty() {

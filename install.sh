@@ -1,199 +1,146 @@
-#!/bin/bash
-# Arc Academy Terminal - One-Command Installation Script
-# Usage: curl -fsSL https://arcacademy.sh/install.sh | bash
+#!/bin/sh
+# arct installer: https://arcacademy.sh
+#
+#   curl -fsSL https://arcacademy.sh/install.sh | sh
+#
+# Downloads a prebuilt arct for this computer, checks it against the
+# published SHA-256 sums, and puts it in ~/.local/bin. No admin rights,
+# nothing sent anywhere except the download itself. If there is no
+# prebuilt binary for this computer and Rust is already installed, it
+# builds arct with cargo instead. It never installs Rust without asking.
+#
+# Settings (optional, as environment variables):
+#   ARCT_VERSION        version to install (default: the release this script ships with)
+#   ARCT_INSTALL_DIR    where to put arct (default: ~/.local/bin)
+#   ARCT_DOWNLOAD_BASE  where releases live (default: https://arcacademy.sh/releases)
 
-set -e
+set -eu
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
+VERSION="${ARCT_VERSION:-1.1.0}"
+INSTALL_DIR="${ARCT_INSTALL_DIR:-$HOME/.local/bin}"
+BASE="${ARCT_DOWNLOAD_BASE:-https://arcacademy.sh/releases}"
 
-# Fancy header
-echo ""
-echo -e "${CYAN}${BOLD}"
-cat << 'EOF'
-╔═══════════════════════════════════════════════════════════╗
-║                                                           ║
-║           Arc Academy Terminal Installer                 ║
-║                                                           ║
-║   Learn Linux commands interactively in your terminal    ║
-║                                                           ║
-╚═══════════════════════════════════════════════════════════╝
-EOF
-echo -e "${NC}"
-echo ""
+say() { printf '%s\n' "$*"; }
+fail() { printf 'arct install: %s\n' "$*" >&2; exit 1; }
 
-# Detect OS and architecture
-OS="$(uname -s)"
-ARCH="$(uname -m)"
-
-case "${OS}" in
-    Linux*)     PLATFORM="Linux";;
-    Darwin*)    PLATFORM="macOS";;
-    CYGWIN*|MINGW*|MSYS*) PLATFORM="Windows";;
-    *)          PLATFORM="UNKNOWN:${OS}"
-esac
-
-echo -e "${GREEN}✓${NC} Platform: ${BLUE}${PLATFORM}${NC} (${ARCH})"
-echo ""
-
-# Function to check if command exists
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
+# Ask a yes/no question on the terminal (works under `curl | sh`); default no
+ask() {
+    if [ -r /dev/tty ]; then
+        printf '%s [y/N] ' "$1" > /dev/tty
+        read -r answer < /dev/tty || answer=""
+        case "$answer" in y|Y|yes|YES) return 0 ;; esac
+    fi
+    return 1
 }
 
-# Step 1: Check for Rust/Cargo installation
-if command_exists cargo; then
-    CARGO_VERSION=$(cargo --version | cut -d' ' -f2)
-    echo -e "${GREEN}✓${NC} Rust/Cargo is installed (v${CARGO_VERSION})"
-    echo ""
-    RUST_INSTALLED=1
-else
-    echo -e "${YELLOW}⚠${NC}  Rust/Cargo is not installed"
-    echo -e "${BLUE}ℹ${NC}  Installing Rust automatically..."
-    echo ""
-    RUST_INSTALLED=0
-
-    # Install Rust via rustup
-    if [ "${PLATFORM}" = "Windows" ]; then
-        echo -e "${YELLOW}Windows detected.${NC}"
-        echo "Please install Rust manually:"
-        echo "  1. Visit: ${BLUE}https://rustup.rs${NC}"
-        echo "  2. Download and run rustup-init.exe"
-        echo "  3. Restart your terminal"
-        echo "  4. Run this script again"
-        echo ""
-        exit 1
+fetch() {
+    # Plain http only for a local test server; everything else is https
+    case "$1" in
+        http://127.0.0.1:*|http://localhost:*) proto="=http,https" ;;
+        *) proto="=https" ;;
+    esac
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --proto "$proto" --tlsv1.2 "$1" -o "$2"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q --https-only "$1" -O "$2"
     else
-        # Download and run rustup installer
-        echo -e "${CYAN}Downloading Rust installer...${NC}"
-        if curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable; then
-            echo ""
-            echo -e "${GREEN}✓${NC} Rust installed successfully!"
-            echo ""
+        fail "needs curl or wget to download"
+    fi
+}
 
-            # Source cargo environment
-            if [ -f "$HOME/.cargo/env" ]; then
-                . "$HOME/.cargo/env"
-            fi
+sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -d' ' -f1
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | cut -d' ' -f1
+    else
+        fail "needs sha256sum or shasum to check the download"
+    fi
+}
 
-            # Add to PATH for this session
-            export PATH="$HOME/.cargo/bin:$PATH"
-        else
-            echo ""
-            echo -e "${RED}✗${NC} Failed to install Rust"
-            echo "Please install manually from: ${BLUE}https://rustup.rs${NC}"
-            exit 1
-        fi
+target=""
+case "$(uname -s)" in
+    Darwin)
+        case "$(uname -m)" in
+            arm64|aarch64) target="aarch64-apple-darwin" ;;
+            x86_64) target="x86_64-apple-darwin" ;;
+        esac ;;
+    Linux)
+        case "$(uname -m)" in
+            x86_64|amd64) target="x86_64-unknown-linux-musl" ;;
+            aarch64|arm64) target="aarch64-unknown-linux-musl" ;;
+        esac ;;
+esac
+
+say "arct $VERSION installer"
+say ""
+
+install_prebuilt() {
+    [ -n "$target" ] || return 1
+    archive="arct-$VERSION-$target.tar.gz"
+    work="$(mktemp -d 2>/dev/null || mktemp -d -t arct)"
+    trap 'rm -rf "$work"' EXIT
+
+    say "Downloading $archive"
+    fetch "$BASE/v$VERSION/$archive" "$work/$archive" || return 1
+    fetch "$BASE/v$VERSION/SHA256SUMS" "$work/SHA256SUMS" || fail "could not download SHA256SUMS to check the file"
+
+    expected="$(grep " $archive\$" "$work/SHA256SUMS" | cut -d' ' -f1)"
+    [ -n "$expected" ] || fail "$archive is not listed in SHA256SUMS"
+    actual="$(sha256_of "$work/$archive")"
+    [ "$expected" = "$actual" ] || fail "checksum mismatch for $archive: refusing to install"
+    say "Checksum OK"
+
+    tar -xzf "$work/$archive" -C "$work"
+    mkdir -p "$INSTALL_DIR"
+    cp "$work/arct-$VERSION-$target/arct" "$INSTALL_DIR/arct.new"
+    chmod 755 "$INSTALL_DIR/arct.new"
+    mv "$INSTALL_DIR/arct.new" "$INSTALL_DIR/arct"
+    say "Installed $INSTALL_DIR/arct"
+    return 0
+}
+
+install_with_cargo() {
+    command -v cargo >/dev/null 2>&1 || return 1
+    say "Building arct $VERSION with cargo (this takes a few minutes)"
+    cargo install --locked arct-cli --version "$VERSION"
+}
+
+if install_prebuilt; then
+    :
+elif install_with_cargo; then
+    INSTALL_DIR="${CARGO_HOME:-$HOME/.cargo}/bin"
+else
+    say "There's no prebuilt arct for this computer ($(uname -s) $(uname -m)),"
+    say "and Rust isn't installed, so arct can't be built here yet."
+    say ""
+    if ask "Install Rust from https://rustup.rs and build arct? (about 1 GB, several minutes)"; then
+        fetch https://sh.rustup.rs "${TMPDIR:-/tmp}/rustup-init.sh"
+        sh "${TMPDIR:-/tmp}/rustup-init.sh" -y --profile minimal
+        rm -f "${TMPDIR:-/tmp}/rustup-init.sh"
+        # shellcheck disable=SC1091
+        . "$HOME/.cargo/env"
+        install_with_cargo || fail "cargo could not build arct"
+        INSTALL_DIR="$HOME/.cargo/bin"
+    else
+        say "Nothing installed. See https://arcacademy.sh/docs for other ways to get arct."
+        exit 1
     fi
 fi
 
-# Verify cargo is available
-if ! command_exists cargo; then
-    echo -e "${RED}✗${NC} Cargo is still not available in PATH"
-    echo ""
-    echo "Please:"
-    echo "  1. Close and reopen your terminal"
-    echo "  2. Or run: ${YELLOW}source \$HOME/.cargo/env${NC}"
-    echo "  3. Then run this script again"
-    exit 1
-fi
-
-# Step 2: Install Arc Academy Terminal
-echo -e "${CYAN}${BOLD}Installing Arc Academy Terminal...${NC}"
-echo ""
-
-# Install from crates.io
-if cargo install arct-cli; then
-    echo ""
-    echo -e "${GREEN}✓${NC} Arc Academy Terminal installed successfully!"
-    echo ""
-else
-    echo ""
-    echo -e "${RED}✗${NC} Installation failed"
-    echo ""
-    echo "Please check the error messages above."
-    echo "If the issue persists, file an issue at:"
-    echo "${BLUE}https://github.com/metarobb/arc-academy-terminal/issues${NC}"
-    exit 1
-fi
-
-# Step 3: Verify installation
-if command_exists arct; then
-    ARCT_PATH=$(which arct)
-    echo -e "${GREEN}✓${NC} Installation verified: ${BLUE}${ARCT_PATH}${NC}"
-    echo ""
-else
-    echo -e "${YELLOW}⚠${NC}  'arct' command not found in PATH"
-    echo ""
-fi
-
-# Step 4: PATH configuration check
-CARGO_BIN="$HOME/.cargo/bin"
-if [[ ":$PATH:" != *":$CARGO_BIN:"* ]]; then
-    echo -e "${YELLOW}⚠${NC}  ~/.cargo/bin is not in your PATH"
-    echo ""
-    echo "Add this line to your shell config:"
-    echo ""
-
-    # Detect shell and provide specific instructions
-    SHELL_NAME=$(basename "$SHELL")
-    case "$SHELL_NAME" in
-        bash)
-            echo -e "  ${YELLOW}echo 'export PATH=\"\$HOME/.cargo/bin:\$PATH\"' >> ~/.bashrc${NC}"
-            echo -e "  ${YELLOW}source ~/.bashrc${NC}"
-            ;;
-        zsh)
-            echo -e "  ${YELLOW}echo 'export PATH=\"\$HOME/.cargo/bin:\$PATH\"' >> ~/.zshrc${NC}"
-            echo -e "  ${YELLOW}source ~/.zshrc${NC}"
-            ;;
-        fish)
-            echo -e "  ${YELLOW}set -U fish_user_paths \$HOME/.cargo/bin \$fish_user_paths${NC}"
-            ;;
-        *)
-            echo -e "  ${YELLOW}export PATH=\"\$HOME/.cargo/bin:\$PATH\"${NC}"
-            ;;
-    esac
-    echo ""
-    echo "Or simply restart your terminal."
-    echo ""
-fi
-
-# Success banner
-echo -e "${GREEN}${BOLD}"
-cat << 'EOF'
-╔═══════════════════════════════════════════════════════════╗
-║                                                           ║
-║              Installation Complete! 🎉                    ║
-║                                                           ║
-╚═══════════════════════════════════════════════════════════╝
-EOF
-echo -e "${NC}"
-echo ""
-
-# Quick start guide
-echo -e "${BOLD}Quick Start:${NC}"
-echo ""
-echo -e "  ${CYAN}arct${NC}                     Start Arc Academy Terminal"
-echo -e "  ${CYAN}arct --help${NC}              Show available options"
-echo ""
-echo -e "${BOLD}Inside the terminal:${NC}"
-echo ""
-echo -e "  ${CYAN}Ctrl+L${NC}                   Toggle lesson mode"
-echo -e "  ${CYAN}?${NC}                        Show keyboard shortcuts"
-echo -e "  ${CYAN}Ctrl+A${NC}                   Toggle AI assistant"
-echo -e "  ${CYAN}Ctrl+T${NC}                   Cycle themes"
-echo -e "  ${CYAN}q${NC} or ${CYAN}Ctrl+C${NC}            Quit"
-echo ""
-echo -e "${BOLD}Learn more:${NC}"
-echo ""
-echo -e "  Docs:    ${BLUE}https://arcacademy.sh/docs${NC}"
-echo -e "  GitHub:  ${BLUE}https://github.com/metarobb/arc-academy-terminal${NC}"
-echo ""
-echo -e "${GREEN}Happy learning! 🚀${NC}"
-echo ""
+say ""
+case ":$PATH:" in
+    *":$INSTALL_DIR:"*)
+        say "Done. Start with:  arct" ;;
+    *)
+        say "Done. $INSTALL_DIR isn't on your PATH yet. Add it with:"
+        say ""
+        case "$(basename "${SHELL:-sh}")" in
+            zsh)  say "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.zshrc && exec zsh" ;;
+            bash) say "  echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.bashrc && exec bash" ;;
+            fish) say "  fish_add_path $INSTALL_DIR" ;;
+            *)    say "  export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
+        esac
+        say ""
+        say "Then start with:  arct" ;;
+esac
