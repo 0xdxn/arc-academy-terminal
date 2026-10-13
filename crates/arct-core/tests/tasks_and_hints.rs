@@ -137,3 +137,26 @@ fn builtin_lessons_parse_and_steps_are_numbered() {
         }
     }
 }
+
+/// Quiz answers are numbered from 1, as the screen shows them
+#[test]
+fn quiz_answers_count_from_one() {
+    let library = arct_core::LessonLibrary::new();
+    let (step, correct) = library
+        .all()
+        .into_iter()
+        .flat_map(|l| l.steps.clone())
+        .find_map(|s| match s.step_type {
+            arct_core::StepType::MultipleChoice { correct_index, .. } => Some((s.clone(), correct_index)),
+            _ => None,
+        })
+        .expect("a lesson with a quiz");
+    let validator = arct_core::LessonValidator::new();
+    let answer = |input: &str| {
+        let attempt = arct_core::Attempt { input, output: "" };
+        arct_core::validate_step(&step, &validator, &attempt, false, None).is_success()
+    };
+    assert!(answer(&(correct + 1).to_string()));
+    assert!(!answer(&correct.to_string()));
+    assert!(!answer("0"));
+}

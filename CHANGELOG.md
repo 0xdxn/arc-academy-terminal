@@ -21,6 +21,7 @@
 - Lessons are TOML files, and steps can check outcomes (a folder exists, a file contains text, where you are) instead of exact keystrokes.
 - Hints come one per miss; the answer only after the last hint; challenge steps give none.
 - Practice and fill-in-the-blank steps check the learner's answer.
+- Quiz answers are numbered from 1.
 - Onboarding asks who's learning (Explorer or Operator); the lesson map groups by track and points at the next lesson.
 - Sandbox: `ls` with folders, `-l` and `-h`; pipes into grep, head, tail, wc, sort, uniq and cut; scripts with `sh`, `bash` and `./`; `chmod +x` works.
 - Operator lessons use their own practice files instead of system files; `top` is explained rather than run; the curl example fetches example.com.

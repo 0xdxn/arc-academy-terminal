@@ -24,7 +24,7 @@ fn step_inputs(lesson_id: &str, step: &LessonStep) -> Vec<String> {
             CommandValidation::AnyOf(options) => vec![options[0].clone()],
             _ => vec![expected_command.clone()],
         },
-        StepType::MultipleChoice { correct_index, .. } => vec![correct_index.to_string()],
+        StepType::MultipleChoice { correct_index, .. } => vec![(correct_index + 1).to_string()],
         StepType::FillInBlank {
             template,
             correct_answers,

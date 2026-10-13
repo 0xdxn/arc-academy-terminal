@@ -370,7 +370,7 @@ mod tests {
             let input = if step.solution.is_empty() {
                 match &step.step_type {
                     StepType::Information { .. } => String::new(),
-                    StepType::MultipleChoice { correct_index, .. } => correct_index.to_string(),
+                    StepType::MultipleChoice { correct_index, .. } => (correct_index + 1).to_string(),
                     StepType::CommandExercise { expected_command, .. } => expected_command.clone(),
                     other => panic!("no input for {other:?}"),
                 }
@@ -445,7 +445,7 @@ mod tests {
                 let input = match (&step.step_type, step.solution.is_empty()) {
                     (_, false) => step.solution.join("\n"),
                     (StepType::Information { .. }, true) => String::new(),
-                    (StepType::MultipleChoice { correct_index, .. }, true) => correct_index.to_string(),
+                    (StepType::MultipleChoice { correct_index, .. }, true) => (correct_index + 1).to_string(),
                     (StepType::CommandExercise { expected_command, .. }, true) => expected_command.clone(),
                     (StepType::FillInBlank { correct_answers, .. }, true) => correct_answers[0].clone(),
                     (other, true) => panic!("no input for {other:?}"),

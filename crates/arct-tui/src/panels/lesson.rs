@@ -385,7 +385,7 @@ impl LessonPanel {
                 ]));
                 for (i, option) in options.iter().enumerate() {
                     lines.push(Line::from(vec![
-                        Span::styled(format!("  {}. ", i), theme.style_accent()),
+                        Span::styled(format!("  {}. ", i + 1), theme.style_accent()),
                         Span::styled(option.clone(), theme.style_normal()),
                     ]));
                 }
@@ -400,8 +400,8 @@ impl LessonPanel {
                 }
                 lines.push(Line::from(""));
                 lines.push(cta(format!(
-                    "▶ Type the number of your answer (0-{}) and press Enter",
-                    options.len().saturating_sub(1)
+                    "▶ Type the number of your answer (1-{}) and press Enter",
+                    options.len()
                 )));
             }
             StepType::Information { content } => {

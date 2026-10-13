@@ -346,9 +346,10 @@ pub fn validate_step(
                 }
             }
         }
+        // Answers are numbered from 1 on screen (correct_index counts from 0)
         StepType::MultipleChoice { correct_index, .. } => match attempt.input.trim().parse::<usize>() {
-            Ok(choice) => validator.validate_multiple_choice(choice, *correct_index),
-            Err(_) => ValidationResult::Failure {
+            Ok(choice) if choice >= 1 => validator.validate_multiple_choice(choice - 1, *correct_index),
+            _ => ValidationResult::Failure {
                 message: "Type the number of your answer.".to_string(),
                 hint: None,
             },
