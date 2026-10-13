@@ -1,21 +1,70 @@
-//! Printable certificate for a finished track.
+//! Printable certificate for a finished track, or for First Keys.
 //!
 //! Made on the learner's own computer from their saved progress: a single
 //! HTML file with no script and nothing fetched (its own CSP forbids it),
 //! meant to be opened in a browser and printed. Also available as plain
-//! text. Issued only for a finished track.
+//! text. Issued only for a finished track, or once First Keys' magic words
+//! have all been used.
 
 use crate::streak::track_name;
 use arct_core::{LessonLibrary, StepType, Track, TrackProgress, UserStats};
 use chrono::{Local, NaiveDate};
 
+/// Achievement that marks First Keys done: every magic word used
+pub const FIRST_KEYS_ACHIEVEMENT: &str = "first_keys";
+
+/// What a certificate is for
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Award {
+    /// A finished lesson track
+    Track(Track),
+    /// First Keys, the pre-reader mode
+    FirstKeys,
+}
+
+impl Award {
+    /// Display name ("Explorer", "First Keys")
+    pub fn name(self) -> &'static str {
+        match self {
+            Award::Track(track) => track_name(track),
+            Award::FirstKeys => "First Keys",
+        }
+    }
+
+    /// Name as typed on the command line and used in file names
+    pub fn key(self) -> &'static str {
+        match self {
+            Award::Track(Track::Explorer) => "explorer",
+            Award::Track(Track::Operator) => "operator",
+            Award::FirstKeys => "first-keys",
+        }
+    }
+
+    /// The certificate's corner label ("Explorer track", "First Keys")
+    fn label(self) -> String {
+        match self {
+            Award::Track(track) => format!("{} track", track_name(track)),
+            Award::FirstKeys => "First Keys".to_string(),
+        }
+    }
+
+    /// Achievement whose unlock time dates the certificate
+    fn achievement(self) -> &'static str {
+        match self {
+            Award::Track(Track::Explorer) => "station_crew",
+            Award::Track(Track::Operator) => "operator",
+            Award::FirstKeys => FIRST_KEYS_ACHIEVEMENT,
+        }
+    }
+}
+
 /// Everything a certificate shows
 #[derive(Debug, Clone)]
 pub struct Certificate {
-    pub track: Track,
+    pub award: Award,
     /// The learner's name; `None` leaves a line to write it by hand
     pub name: Option<String>,
-    /// Lesson titles in track order
+    /// Lesson titles in track order (for First Keys, what the child did)
     pub lessons: Vec<String>,
     /// Every lesson was finished without needing the answer
     pub mastered: bool,
@@ -29,7 +78,7 @@ pub struct Certificate {
 /// Why a certificate can't be made yet
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotYet {
-    pub track: Track,
+    pub award: Award,
     pub done: usize,
     pub total: usize,
     pub remaining: Vec<String>,
@@ -37,10 +86,16 @@ pub struct NotYet {
 
 impl std::fmt::Display for NotYet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.award == Award::FirstKeys {
+            return writeln!(
+                f,
+                "The First Keys certificate comes once the magic words ls, cd and pwd have all been used in First Keys (arct first-keys)."
+            );
+        }
         writeln!(
             f,
             "The {} certificate comes when the track is finished: {} of {} lessons done so far.",
-            track_name(self.track),
+            self.award.name(),
             self.done,
             self.total
         )?;
@@ -54,12 +109,19 @@ impl std::fmt::Display for NotYet {
     }
 }
 
-/// Achievement that marks a finished track (its unlock time dates the certificate)
-fn completion_achievement(track: Track) -> &'static str {
-    match track {
-        Track::Explorer => "station_crew",
-        Track::Operator => "operator",
-    }
+/// When an award was earned (or today, if that wasn't recorded)
+fn award_date(stats: &UserStats, award: Award) -> NaiveDate {
+    stats
+        .achievements
+        .unlock_timestamps
+        .get(award.achievement())
+        .map(|t| t.with_timezone(&Local).date_naive())
+        .unwrap_or_else(arct_core::local_today)
+}
+
+/// Clean up a name; blank means "leave a line to write on"
+fn clean_name(name: Option<String>) -> Option<String> {
+    name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty())
 }
 
 impl Certificate {
@@ -73,39 +135,89 @@ impl Certificate {
         let progress: TrackProgress = stats.track_progress(library, track);
         if !progress.is_complete() {
             return Err(NotYet {
-                track,
+                award: Award::Track(track),
                 done: progress.completed.len(),
                 total: progress.total,
                 remaining: progress.remaining,
             });
         }
-        let date = stats
-            .achievements
-            .unlock_timestamps
-            .get(completion_achievement(track))
-            .map(|t| t.with_timezone(&Local).date_naive())
-            .unwrap_or_else(arct_core::local_today);
+        let award = Award::Track(track);
         Ok(Self {
-            track,
-            name: name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty()),
+            award,
+            name: clean_name(name),
             mastered: progress.is_mastered(),
             lessons: progress.completed,
             commands: track_commands(library, track),
-            date,
+            date: award_date(stats, award),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        })
+    }
+
+    /// Build the First Keys certificate, once every magic word has been
+    /// used. The name is never filled in from setup: the child in First
+    /// Keys is rarely the person who set arct up, so a blank line is left
+    /// unless a name is given.
+    pub fn first_keys(stats: &UserStats, name: Option<String>) -> Result<Self, NotYet> {
+        if !stats.achievements.is_unlocked(FIRST_KEYS_ACHIEVEMENT) {
+            return Err(NotYet {
+                award: Award::FirstKeys,
+                done: 0,
+                total: 1,
+                remaining: Vec::new(),
+            });
+        }
+        Ok(Self {
+            award: Award::FirstKeys,
+            name: clean_name(name),
+            mastered: false,
+            lessons: [
+                "Pressed keys and heard their names",
+                "Found letters on the keyboard",
+                "Looked around a room with ls",
+                "Walked to the next room with cd",
+                "Asked where they are with pwd",
+            ]
+            .map(String::from)
+            .to_vec(),
+            commands: ["ls", "cd", "pwd"].map(String::from).to_vec(),
+            date: award_date(stats, Award::FirstKeys),
             version: env!("CARGO_PKG_VERSION").to_string(),
         })
     }
 
     /// File name for this certificate
     pub fn file_name(&self) -> String {
-        format!("arct-{}-certificate.html", track_name(self.track).to_lowercase())
+        format!("arct-{}-certificate.html", self.award.key())
     }
 
-    fn summary(&self) -> String {
+    /// The line under the name, without a final full stop
+    fn what(&self) -> String {
         let count = number_word(self.lessons.len());
-        match self.track {
-            Track::Explorer => format!("the Explorer track: {count} lessons aboard Arc Station"),
-            Track::Operator => format!("the Operator track: {count} lessons at a working shell"),
+        match self.award {
+            Award::Track(Track::Explorer) => {
+                format!("finished the Explorer track: {count} lessons aboard Arc Station")
+            }
+            Award::Track(Track::Operator) => {
+                format!("finished the Operator track: {count} lessons at a working shell")
+            }
+            Award::FirstKeys => {
+                "found their first keys: letters on the keyboard, and three magic words aboard Arc Station"
+                    .to_string()
+            }
+        }
+    }
+
+    fn lessons_heading(&self) -> &'static str {
+        match self.award {
+            Award::Track(_) => "Lessons",
+            Award::FirstKeys => "What they did",
+        }
+    }
+
+    fn commands_heading(&self) -> &'static str {
+        match self.award {
+            Award::Track(_) => "Commands used",
+            Award::FirstKeys => "Magic words",
         }
     }
 
@@ -122,12 +234,12 @@ impl Certificate {
             Some(name) => out.push_str(&format!("  {name}\n")),
             None => out.push_str("  ______________________________\n"),
         }
-        out.push_str(&format!("  finished {}.\n\n", self.summary()));
+        out.push_str(&format!("  {}.\n\n", self.what()));
         for title in &self.lessons {
             out.push_str(&format!("    {title}\n"));
         }
         if !self.commands.is_empty() {
-            out.push_str(&format!("\n  Commands: {}\n", self.commands.join("  ")));
+            out.push_str(&format!("\n  {}: {}\n", self.commands_heading(), self.commands.join("  ")));
         }
         if self.mastered {
             out.push_str("\n  Every lesson finished without needing the answer.\n");
@@ -142,7 +254,7 @@ impl Certificate {
 
     /// Printable HTML certificate (self-contained)
     pub fn to_html(&self) -> String {
-        let track = track_name(self.track);
+        let track = self.award.name();
         let name = match &self.name {
             Some(name) => format!(r#"<p class="name">{}</p>"#, escape(name)),
             None => r#"<p class="name blank" aria-label="Name"></p>"#.to_string(),
@@ -161,7 +273,10 @@ impl Certificate {
                 .map(|c| format!("<code>{}</code>", escape(c)))
                 .collect::<Vec<_>>()
                 .join(" ");
-            format!(r#"<section><h2>Commands used</h2><p class="commands">{list}</p></section>"#)
+            format!(
+                r#"<section><h2>{}</h2><p class="commands">{list}</p></section>"#,
+                self.commands_heading()
+            )
         };
         let mastery = if self.mastered {
             r#"<p class="mastery">Every lesson finished without needing the answer.</p>"#
@@ -212,13 +327,13 @@ footer {{ display: flex; align-items: flex-end; gap: 0.5in; margin-top: 0.4in; }
 </head>
 <body>
 <main class="sheet">
-<header><span>Arc Academy</span><span>{track} track</span></header>
+<header><span>Arc Academy</span><span>{label}</span></header>
 <h1>Certificate of completion</h1>
 <p class="lead">This certifies that</p>
 {name}
-<p class="what">finished {summary}.</p>
+<p class="what">{what}.</p>
 <div class="body">
-<section><h2>Lessons</h2><ol>{lessons}</ol></section>
+<section><h2>{lessons_heading}</h2><ol>{lessons}</ol></section>
 <div>{commands}{mastery}</div>
 </div>
 <footer>
@@ -239,8 +354,10 @@ footer {{ display: flex; align-items: flex-end; gap: 0.5in; margin-top: 0.4in; }
 "##,
             track = track,
             track_upper = track.to_uppercase(),
+            label = escape(&self.award.label()),
             name = name,
-            summary = escape(&self.summary()),
+            what = escape(&self.what()),
+            lessons_heading = self.lessons_heading(),
             lessons = lessons,
             commands = commands,
             mastery = mastery,
@@ -381,6 +498,29 @@ mod tests {
         let cert = Certificate::for_track(&stats, &library, Track::Explorer, None).unwrap();
         assert!(cert.mastered);
         assert!(cert.to_text().contains("without needing the answer"));
+    }
+
+    #[test]
+    fn first_keys_certificate_waits_for_the_magic_words() {
+        let mut stats = UserStats::new();
+        let not_yet = Certificate::first_keys(&stats, None).unwrap_err();
+        assert_eq!(not_yet.award, Award::FirstKeys);
+        assert!(not_yet.to_string().contains("arct first-keys"));
+
+        stats.record_event("first_keys_complete");
+        let cert = Certificate::first_keys(&stats, None).unwrap();
+        assert!(cert.name.is_none(), "a blank line for the grown-up to write the name");
+        assert_eq!(cert.file_name(), "arct-first-keys-certificate.html");
+        assert_eq!(cert.commands, ["ls", "cd", "pwd"]);
+        let html = cert.to_html();
+        assert!(html.contains("First Keys"));
+        assert!(html.contains("Magic words"));
+        assert!(html.contains("found their first keys"));
+        assert!(!html.contains("First Keys track"));
+        for banned in ["<script", "http://", "https://", "src=", "<link", "@import", "url("] {
+            assert!(!html.contains(banned), "certificate contains {banned}");
+        }
+        assert!(cert.to_text().contains("Magic words: ls  cd  pwd"));
     }
 
     #[test]

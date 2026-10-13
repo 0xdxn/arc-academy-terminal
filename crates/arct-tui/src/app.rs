@@ -696,7 +696,18 @@ impl App {
             Event::Key(key) => {
                 // First Keys takes every key; only the grown-up sequence leaves
                 if let Some(keys) = self.first_keys.as_mut() {
-                    if keys.handle_key(key) == crate::first_keys::KeyOutcome::Exit {
+                    let outcome = keys.handle_key(key);
+                    // Every magic word used: the First Keys badge (saved at once,
+                    // so it counts even if a grown-up quits right after)
+                    if keys.finished()
+                        && !self
+                            .user_stats
+                            .achievements
+                            .is_unlocked(crate::certificate::FIRST_KEYS_ACHIEVEMENT)
+                    {
+                        self.record_feature_event("first_keys_complete");
+                    }
+                    if outcome == crate::first_keys::KeyOutcome::Exit {
                         self.first_keys = None;
                         if self.first_keys_quits {
                             self.should_quit = true;
@@ -4123,6 +4134,31 @@ mod first_keys_wiring_tests {
         type_word(&mut app, "quit").await;
         assert!(app.first_keys.is_none());
         assert!(!app.should_quit, "leaving First Keys from the palette goes back to arct");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn using_every_magic_word_earns_the_badge() {
+        let (mut app, dir) = app("badge", true);
+        assert!(!app.user_stats.achievements.is_unlocked("first_keys"));
+        // Stage 1: any keys; stage 2: find each letter shown; stage 3: the words
+        let at_words =
+            |app: &App| app.first_keys.as_ref().unwrap().stage() == crate::first_keys::Stage::MagicWords;
+        'outer: for _ in 0..200 {
+            for c in 'a'..='z' {
+                if at_words(&app) {
+                    break 'outer;
+                }
+                press(&mut app, KeyCode::Char(c), KeyModifiers::NONE).await;
+            }
+        }
+        assert!(at_words(&app));
+        for word in ["ls", "cd", "pwd"] {
+            type_word(&mut app, word).await;
+            press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        }
+        assert!(app.first_keys.as_ref().unwrap().finished());
+        assert!(app.user_stats.achievements.is_unlocked("first_keys"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
