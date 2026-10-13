@@ -111,7 +111,7 @@ dependencies = [
 
 [[package]]
 name = "arct-ai"
-version = "1.1.2"
+version = "1.1.3"
 dependencies = [
  "anyhow",
  "arct-core",
@@ -128,7 +128,7 @@ dependencies = [
 
 [[package]]
 name = "arct-cli"
-version = "1.1.2"
+version = "1.1.3"
 dependencies = [
  "anyhow",
  "arct-config",
@@ -145,7 +145,7 @@ dependencies = [
 
 [[package]]
 name = "arct-config"
-version = "1.1.2"
+version = "1.1.3"
 dependencies = [
  "anyhow",
  "arct-core",
@@ -156,7 +156,7 @@ dependencies = [
 
 [[package]]
 name = "arct-core"
-version = "1.1.2"
+version = "1.1.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -175,7 +175,7 @@ dependencies = [
 
 [[package]]
 name = "arct-telemetry"
-version = "1.1.2"
+version = "1.1.3"
 dependencies = [
  "anyhow",
  "arct-core",
@@ -189,7 +189,7 @@ dependencies = [
 
 [[package]]
 name = "arct-tui"
-version = "1.1.2"
+version = "1.1.3"
 dependencies = [
  "anyhow",
  "arct-ai",
@@ -216,7 +216,7 @@ dependencies = [
 
 [[package]]
 name = "arct-web"
-version = "1.1.2"
+version = "1.1.3"
 dependencies = [
  "arct-core",
  "serde_json",

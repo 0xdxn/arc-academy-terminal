@@ -11,10 +11,10 @@ description = "Terminal UI for Arc Academy Terminal - interactive shell learning
 [dependencies]
 shellwords.workspace = true
 libc = "0.2"
-arct-core = { path = "../arct-core", version = "1.1.2" }
-arct-config = { path = "../arct-config", version = "1.1.2" }
-arct-ai = { path = "../arct-ai", version = "1.1.2" }
-arct-telemetry = { path = "../arct-telemetry", version = "1.1.2" }
+arct-core = { path = "../arct-core", version = "1.1.3" }
+arct-config = { path = "../arct-config", version = "1.1.3" }
+arct-ai = { path = "../arct-ai", version = "1.1.3" }
+arct-telemetry = { path = "../arct-telemetry", version = "1.1.3" }
 ratatui = { workspace = true, features = ["unstable-rendered-line-info"] }
 crossterm.workspace = true
 tui-textarea.workspace = true
