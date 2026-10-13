@@ -123,7 +123,7 @@ The sandbox is a small shell over the lesson's own files. It never touches anyth
 
 In real-files mode, arct fills in every line itself with the same rules (variables, `~`, and wildcards against the real playground files, never matching `.` or `..`), then the guard checks it and exactly that runs: `$HOME` is the learner's real home (so the guard keeps it out of reach), `$PWD` is their playground folder, and `$` inside `for`, `while` or `if` is refused. Lessons that live in `~` (like `path-and-which`) only work in the sandbox.
 
-Real commands the sandbox doesn't run (`git`, `ps`, `curl`...) are accepted by `CommandExercise` steps with a note that they only ran as a check; write those lessons for real-files mode. A word that isn't a command at all gets "command not found", and the step doesn't pass.
+Real commands the sandbox doesn't run (`git`, `ps`, `curl`...) are accepted by `CommandExercise` steps with a note that they only ran as a check; write those lessons for real-files mode. Real-files commands run inside the operating system's sandbox: they can write only inside the playground and have no network, so a lesson can't depend on `curl`, `git clone` or `ssh` reaching another computer. A word that isn't a command at all gets "command not found", and the step doesn't pass.
 
 ## Test it
 
