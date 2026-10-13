@@ -3669,6 +3669,47 @@ mod playthrough_tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Looking around in a task step (ls, cat, cd) through the Enter key
+    /// isn't counted as a wrong answer; a real wrong attempt still is
+    #[tokio::test]
+    async fn looking_around_in_a_task_is_not_a_wrong_answer() {
+        let dir = std::env::temp_dir().join(format!("arct-lookaround-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("ARCT_DATA_DIR", &dir);
+        let config = dir.join("config.toml");
+        std::fs::write(
+            &config,
+            "[general]\nsetup_complete = true\n[lessons]\npractice_mode = \"simulated\"\n",
+        )
+        .unwrap();
+        let lesson = arct_core::LessonLibrary::new().get("archives").unwrap().clone();
+        let mut app = App::new_with_options(crate::RunOptions {
+            config_path: Some(config),
+            ..Default::default()
+        })
+        .unwrap();
+        app.lesson_mode = true;
+        app.lesson_panel.as_mut().unwrap().load_lesson(lesson);
+        app.prepare_lesson_environment();
+        app.command_buffer = String::new();
+        app.execute_command().await.unwrap();
+        let panel = |app: &App| {
+            let p = app.lesson_panel.as_ref().unwrap();
+            (p.current_step_index(), p.wrong_answers(), p.mastered_run())
+        };
+        assert_eq!(panel(&app), (1, 0, true), "on 'Pack the bakery'");
+
+        for line in ["ls", "ls -la bakery", "cat bakery/notes.txt", "cd bakery", "ls | wc -l", "cd .."] {
+            app.command_buffer = line.to_string();
+            app.execute_command().await.unwrap();
+            assert_eq!(panel(&app), (1, 0, true), "{line}\n{}", app.last_output);
+        }
+        app.command_buffer = "mkdir bakery.tar.gz".to_string();
+        app.execute_command().await.unwrap();
+        assert_eq!(panel(&app).1, 1, "a wrong attempt counts");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Safe mode without a jail says so, once. Runs only `echo`, in the
     /// test's own folder; no safe-mode home is opened.
     #[tokio::test]

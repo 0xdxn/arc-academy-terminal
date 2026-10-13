@@ -152,3 +152,44 @@ fn misses_climb_the_hint_ladder() {
     }
     assert_eq!(turn.prompt_cwd, "~");
 }
+
+#[test]
+fn looking_around_is_not_a_miss() {
+    let library = LessonLibrary::new();
+    let lesson = library.get("explorer-hidden-compartments").unwrap().clone();
+    let mut run = LessonRun::new(lesson.clone()).unwrap();
+    // Play up to "Meet the stowaway" with the lesson's own answers
+    while run.step().title != "Meet the stowaway" {
+        let step = run.step().clone();
+        for input in step_inputs(&lesson.id, &step) {
+            run.submit(&input);
+        }
+    }
+    let at = run.step_index();
+    let hint = |turn: &Turn| match &turn.result {
+        Some(arct_core::ValidationResult::Failure { hint, .. }) => hint.clone(),
+        other => panic!("expected a failure, got {other:?}"),
+    };
+
+    // Listing and moving around while looking for the note: no hints spent
+    for line in ["ls", "ls -a station", "cd station", "ls -a vents", "cd .."] {
+        let turn = run.submit(line);
+        assert_eq!(run.step_index(), at, "{line}");
+        assert_eq!(hint(&turn), None, "{line} only looks");
+    }
+    // Reading the wrong file is an answer, and a miss
+    let turn = run.submit("cat station/vents/stowaway.txt");
+    assert!(hint(&turn).is_some(), "a wrong read climbs the ladder");
+
+    // Up to the last rung, then the answer, which costs mastery
+    let rungs = run.step().hint_ladder().len();
+    for _ in 1..rungs {
+        run.submit("cat station/vents/stowaway.txt");
+    }
+    assert!(run.mastered(), "hints only, so far");
+    let turn = run.submit("ls -a station/vents");
+    assert_eq!(hint(&turn), None);
+    assert!(run.mastered(), "looking never reveals the answer");
+    run.submit("cat station/vents/stowaway.txt");
+    assert!(!run.mastered(), "a miss past the ladder does");
+}

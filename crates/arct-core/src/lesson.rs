@@ -299,7 +299,7 @@ pub fn evaluate_checks(
 }
 
 /// Map the older practice validations onto checks
-fn practice_checks(validation: &PracticeValidation) -> Vec<Check> {
+pub(crate) fn practice_checks(validation: &PracticeValidation) -> Vec<Check> {
     match validation {
         PracticeValidation::FileExists(p) => vec![Check::FileExists(p.clone())],
         PracticeValidation::DirectoryExists(p) => vec![Check::DirExists(p.clone())],
