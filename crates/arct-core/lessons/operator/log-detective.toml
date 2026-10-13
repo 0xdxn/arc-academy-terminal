@@ -4,13 +4,243 @@ description = "Use everything so far to answer real questions from a pile of log
 difficulty = "Advanced"
 estimated_minutes = 20
 prerequisites = ["pipelines", "find-files"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "capstone", "logs", "grep", "cut", "sort", "uniq", "tee"]
+
+# A small bakery's web shop, three days of logs. Addresses come from the
+# ranges set aside for documentation (192.0.2.x, 198.51.100.x, 203.0.113.x).
+# The text 500 appears only as a status code, so the counts are unambiguous.
+
+[[setup]]
+path = "case/README.txt"
+contents = """From Omar, who runs the bakery's web shop:
+On Tuesday morning the shop was slow and some people couldn't pay.
+Monday and Wednesday were fine. What happened?
+"""
+
+[[setup]]
+path = "case/logs/web-mon.log"
+contents = """2026-03-02 08:45:10 198.51.100.23 GET / 200
+2026-03-02 08:47:33 198.51.100.23 GET /menu 200
+2026-03-02 09:12:04 192.0.2.44 GET /menu 200
+2026-03-02 09:13:41 192.0.2.44 GET /cart 200
+2026-03-02 09:14:20 192.0.2.44 POST /checkout 200
+2026-03-02 13:20:45 192.0.2.81 GET /cakes 404
+2026-03-02 13:21:02 192.0.2.81 GET /menu 200
+2026-03-02 16:40:18 198.51.100.9 GET /about 500
+"""
+
+[[setup]]
+path = "case/logs/web-tue.log"
+contents = """2026-03-03 09:00:12 198.51.100.23 GET / 200
+2026-03-03 09:04:40 198.51.100.23 GET /menu 200
+2026-03-03 09:31:07 192.0.2.44 GET /menu 200
+2026-03-03 09:32:19 192.0.2.44 GET /cart 200
+2026-03-03 09:33:02 192.0.2.44 POST /checkout 200
+2026-03-03 10:00:05 203.0.113.77 POST /checkout 200
+2026-03-03 10:00:06 203.0.113.77 POST /checkout 200
+2026-03-03 10:00:06 203.0.113.77 POST /checkout 200
+2026-03-03 10:00:07 203.0.113.77 POST /checkout 200
+2026-03-03 10:02:11 203.0.113.77 POST /checkout 500
+2026-03-03 10:02:12 203.0.113.77 POST /checkout 500
+2026-03-03 10:02:12 203.0.113.77 POST /checkout 500
+2026-03-03 10:02:41 192.0.2.81 GET / 200
+2026-03-03 10:02:58 192.0.2.81 GET /cart 500
+2026-03-03 10:03:13 203.0.113.77 POST /checkout 500
+2026-03-03 10:03:14 203.0.113.77 POST /checkout 500
+2026-03-03 11:15:30 198.51.100.23 GET /about 200
+"""
+
+[[setup]]
+path = "case/logs/web-wed.log"
+contents = """2026-03-04 08:30:02 192.0.2.44 GET /menu 200
+2026-03-04 08:31:15 192.0.2.44 POST /checkout 200
+2026-03-04 09:47:51 198.51.100.23 GET / 200
+2026-03-04 09:48:09 198.51.100.23 GET /menu 200
+2026-03-04 12:05:36 192.0.2.81 GET /bread 404
+2026-03-04 12:06:10 192.0.2.81 GET /menu 200
+"""
+
+[[setup]]
+path = "case/logs/app.log"
+contents = """2026-03-03 09:00:00 INFO shop started
+2026-03-03 09:33:02 INFO order 1041 paid
+2026-03-03 10:00:30 WARN payment service slow (2.4s)
+2026-03-03 10:01:45 WARN payment service slow (4.9s)
+2026-03-03 10:02:11 ERROR payment service timed out
+2026-03-03 10:02:12 ERROR payment service timed out
+2026-03-03 10:02:12 ERROR payment service timed out
+2026-03-03 10:02:58 ERROR cart could not reach payment service
+2026-03-03 10:03:13 ERROR payment service timed out
+2026-03-03 10:03:14 ERROR payment service timed out
+2026-03-03 10:20:00 INFO payment service back to normal
+"""
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "The case"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+Omar runs a small bakery's web shop. On Tuesday morning it
+was slow and some people couldn't pay. His notes are in
+case/README.txt; the logs are somewhere under case.
+
+Each web log line has six fields, split by spaces:
+
+  2026-03-03 10:02:11 203.0.113.77 POST /checkout 500
+  date       time     visitor      method page   status
+
+Status 200 means OK, 404 not found, 500 the server broke.
+
+Your tools:
+  find DIR -name '*.log'          where the logs are
+  grep -c WORD FILE...            how many lines match
+  grep -v WORD FILE               lines that don't match
+  cut -d ' ' -f 3                 keep only field 3
+  sort | uniq -c | sort -rn       count and rank
+  head -n 3                       only the top lines
+  tee FILE / > FILE               save what you found"""
+
+[[steps]]
+step_number = 2
+title = "Find the evidence"
+instruction = "List every .log file anywhere under case."
+hints = ["find, the folder, then -name with a quoted pattern.", "Type: find case -name '*.log'"]
+solution = ["find case -name '*.log'"]
+
+[steps.step_type.Task]
+goal = "Find the log files"
+success_message = "Three days of web logs and one app log. The app log is the shop's own diary."
+checks = [{ Used = "find" }, { OutputContains = "logs/app.log" }, { OutputContains = "web-tue.log" }]
+
+[[steps]]
+step_number = 3
+title = "Count the failures"
+instruction = "How many requests got status 500 on each day? Count with one grep -c over all three web logs. Search for ' 500' with a space in front, in quotes."
+hints = ["grep -c counts matching lines. A glob like case/logs/web-*.log gives it all three days.", "Type: grep -c ' 500' case/logs/web-*.log"]
+solution = ["grep -c ' 500' case/logs/web-*.log"]
+
+[steps.step_type.Task]
+goal = "Count status 500 per day"
+success_message = "Monday 1, Tuesday 6, Wednesday 0. Tuesday is the day to dig into."
+checks = [{ Used = "grep" }, { OutputContains = "web-tue.log:6" }, { OutputContains = "web-wed.log:0" }]
+
+[[steps]]
+step_number = 4
+title = "Why the space?"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "On a real server log, why can grep -c 500 (no space, no quotes) give too big a number?"
+options = [
+    "It counts every line with 500 anywhere in it: a page, an address or a size could contain 500 too.",
+    "grep -c counts characters, not lines.",
+    "500 is a special word that grep treats as a number.",
+]
+correct_index = 0
+explanation = "grep matches text anywhere in the line. Make the pattern as specific as the data lets you: here, a space then 500. In these logs 500 only appears as a status, so either way gives 6, but real logs are rarely that tidy."
+
+[[steps]]
+step_number = 5
+title = "What were people asking for?"
+instruction = "Which pages were asked for on Tuesday, and how many times each? Cut out field 5 of web-tue.log, sort it, and count with uniq -c."
+hints = ["cut -d ' ' -f 5 FILE, then | sort | uniq -c.", "uniq only merges lines that sit next to each other, which is why sort comes first.", "Type: cut -d ' ' -f 5 case/logs/web-tue.log | sort | uniq -c"]
+solution = ["cut -d ' ' -f 5 case/logs/web-tue.log | sort | uniq -c"]
+
+[steps.step_type.Task]
+goal = "Count Tuesday's pages"
+success_message = "10 requests for /checkout in one morning. For a small bakery, that is a lot."
+checks = [{ Used = "uniq" }, { OutputContains = "10 /checkout" }]
+
+[[steps]]
+step_number = 6
+title = "Who was busiest?"
+instruction = "Now count Tuesday's visitors (field 3) instead, rank them biggest first, and show only the top three."
+hints = ["Same shape as before with -f 3, then | sort -rn | head -n 3.", "Type: cut -d ' ' -f 3 case/logs/web-tue.log | sort | uniq -c | sort -rn | head -n 3"]
+solution = ["cut -d ' ' -f 3 case/logs/web-tue.log | sort | uniq -c | sort -rn | head -n 3"]
+
+[steps.step_type.Task]
+goal = "Rank Tuesday's visitors"
+success_message = "One address, 203.0.113.77, made 9 of Tuesday's 17 requests. A person doesn't check out 9 times in 3 minutes. This looks like a misbehaving program."
+checks = [{ Used = "head" }, { OutputContains = "9 203.0.113.77" }]
+
+[[steps]]
+step_number = 7
+title = "Everyone else"
+instruction = "Leave out that visitor and count what's left: how many of Tuesday's requests came from everyone else? Use grep -v, then count lines with wc -l."
+hints = ["grep -v ADDRESS FILE shows the other lines. Pipe them into wc -l.", "Type: grep -v 203.0.113.77 case/logs/web-tue.log | wc -l"]
+solution = ["grep -v 203.0.113.77 case/logs/web-tue.log | wc -l"]
+
+[steps.step_type.Task]
+goal = "Count the other requests"
+success_message = "8 requests from real customers, a normal morning. The flood came from one place."
+checks = [{ Used = "grep" }, { Used = "wc" }, { OutputContains = "8" }]
+
+[[steps]]
+step_number = 8
+title = "Keep a copy"
+instruction = "Run the visitor ranking again, without head, and save it to case/visitors.txt while still seeing it on screen. tee does both."
+hints = ["Put | tee case/visitors.txt at the end of the pipeline.", "Type: cut -d ' ' -f 3 case/logs/web-tue.log | sort | uniq -c | sort -rn | tee case/visitors.txt"]
+solution = ["cut -d ' ' -f 3 case/logs/web-tue.log | sort | uniq -c | sort -rn | tee case/visitors.txt"]
+
+[steps.step_type.Task]
+goal = "Save the ranking with tee"
+success_message = "On screen and in a file. Evidence you can send to Omar."
+checks = [{ Used = "tee" }, { FileContains = { path = "case/visitors.txt", text = "9 203.0.113.77" } }]
+
+[[steps]]
+step_number = 9
+title = "When did it break?"
+instruction = "Now the app's own log. Show only the first ERROR line in case/logs/app.log."
+hints = ["grep for ERROR, then keep one line with head.", "Type: grep ERROR case/logs/app.log | head -n 1"]
+solution = ["grep ERROR case/logs/app.log | head -n 1"]
+
+[steps.step_type.Task]
+goal = "Find the first error"
+success_message = "10:02:11, two minutes after the flood began at 10:00:05. The payment service couldn't keep up."
+checks = [{ Used = "grep" }, { OutputContains = "10:02:11" }]
+
+[[steps]]
+step_number = 10
+title = "Has it happened before?"
+instruction = "Was 203.0.113.77 on the other days too? Count its lines in each web log with one command."
+hints = ["You counted per file in step 3. Do the same with the address.", "Type: grep -c 203.0.113.77 case/logs/web-*.log"]
+solution = ["grep -c 203.0.113.77 case/logs/web-*.log"]
+
+[steps.step_type.Task]
+goal = "Count the visitor on each day"
+success_message = "Zero on Monday and Wednesday. It came, flooded the checkout on Tuesday morning, and left."
+checks = [{ Used = "grep" }, { OutputContains = "web-mon.log:0" }, { OutputContains = "web-tue.log:9" }, { OutputContains = "web-wed.log:0" }]
+
+[[steps]]
+step_number = 11
+title = "Close the case"
+instruction = "Omar wants one file. Write Tuesday's failed requests (status 500), counted by page and biggest first, to case/findings.txt."
+challenge = true
+solution = ["grep ' 500' case/logs/web-tue.log | cut -d ' ' -f 5 | sort | uniq -c | sort -rn > case/findings.txt"]
+
+[steps.step_type.Task]
+goal = "Write case/findings.txt"
+success_message = "5 failed checkouts from the flood and 1 customer's cart caught in it. Case closed: Omar can block 203.0.113.77."
+checks = [{ FileContains = { path = "case/findings.txt", text = "5 /checkout" } }, { FileContains = { path = "case/findings.txt", text = "1 /cart" } }]
+
+[[steps]]
+step_number = 12
+title = "What you used"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  find case -name '*.log'                where the evidence is
+  grep -c ' 500' FILE...                 count per file
+  grep -v WORD FILE | wc -l              count what's left
+  cut -d ' ' -f N FILE                   one field
+  ... | sort | uniq -c | sort -rn        count and rank
+  ... | head -n 3                        the top few
+  ... | tee FILE                         see it and save it
+  ... > FILE                             just save it
+
+The method: find the logs, count, narrow down, compare
+days, and write down what you found. It works the same on
+a real server's logs."""

@@ -4,13 +4,175 @@ description = "Make a key pair, protect the private key, and know which half to 
 difficulty = "Advanced"
 estimated_minutes = 15
 prerequisites = ["permissions"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "ssh", "ssh-keygen", "security", "chmod"]
+
+# Two folders play two computers: laptop is yours, server is the
+# machine you want to log in to. Grace already has access.
+
+[[setup]]
+path = "server/README.txt"
+contents = """This folder plays a second computer: a server called workshop.
+Its .ssh/authorized_keys file lists the public keys allowed to log in,
+one per line.
+"""
+
+[[setup]]
+path = "server/.ssh/authorized_keys"
+contents = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPRACTICExGRACExNOTxAxREALxKEY grace@workshop-laptop\n"
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "Two halves of a key"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+An SSH key lets you log in to another computer with a key
+instead of a password. It comes as a pair of files:
+
+  the private key   stays on your computer. Never share it.
+  the public key    goes to every machine you want to reach.
+
+When you connect, the other machine checks that you hold the
+private key that matches. The private key never leaves your
+computer.
+
+  ssh-keygen -t ed25519 -C "LABEL" -f PATH
+
+makes a pair: PATH is the private key, PATH.pub the public
+one. ed25519 is the modern type: short and strong.
+
+In this lesson the folder laptop plays your computer and
+server plays the other machine."""
+
+[[steps]]
+step_number = 2
+title = "A place for keys"
+instruction = "Keys live in a folder called .ssh in your home folder. Make laptop/.ssh, the practice laptop's version of it."
+hints = ["mkdir -p makes a folder and any missing folders above it.", "Type: mkdir -p laptop/.ssh"]
+solution = ["mkdir -p laptop/.ssh"]
+
+[steps.step_type.Task]
+goal = "Make laptop/.ssh"
+success_message = "The dot hides it from a plain ls. On a real machine it is ~/.ssh, and it is usually there already."
+checks = [{ DirExists = "laptop/.ssh" }]
+
+[[steps]]
+step_number = 3
+title = "Make a key pair"
+instruction = "Make an ed25519 key pair at laptop/.ssh/id_ed25519 with the label me@laptop. Add -N '' to skip the passphrase, just for this practice. The sandbox makes a practice key that opens nothing; on a real machine the same command makes a real one."
+hints = ["ssh-keygen with -t for the type, -C for the label, -f for where, -N '' for no passphrase.", "If it says the file already exists, remove both files with rm and try again.", "Type: ssh-keygen -t ed25519 -C \"me@laptop\" -f laptop/.ssh/id_ed25519 -N ''"]
+solution = ["ssh-keygen -t ed25519 -C \"me@laptop\" -f laptop/.ssh/id_ed25519 -N ''"]
+
+[steps.step_type.Task]
+goal = "Make laptop/.ssh/id_ed25519 and its .pub"
+success_message = "Two files: id_ed25519 (private) and id_ed25519.pub (public). On a real machine, leave off -N '' and type a passphrase when asked: then a stolen copy of the key is useless without it."
+checks = [{ FileExists = "laptop/.ssh/id_ed25519" }, { FileContains = { path = "laptop/.ssh/id_ed25519.pub", text = "me@laptop" } }]
+
+[[steps]]
+step_number = 4
+title = "Read the public half"
+instruction = "Print the public key with cat. It is the file that ends in .pub."
+hints = ["cat, then the path to the .pub file.", "Type: cat laptop/.ssh/id_ed25519.pub"]
+solution = ["cat laptop/.ssh/id_ed25519.pub"]
+
+[steps.step_type.Task]
+goal = "Print the public key"
+success_message = "One line: the key type, a long string, and your label. This is the half you can hand out."
+checks = [{ Used = "cat" }, { OutputContains = "ssh-ed25519" }]
+
+[[steps]]
+step_number = 5
+title = "Which half?"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "A colleague asks for your SSH key so they can give you access to a machine. Which file do you send?"
+options = [
+    "id_ed25519",
+    "id_ed25519.pub",
+    "Both. The machine needs the whole pair.",
+]
+correct_index = 1
+explanation = "Only ever send the .pub file. Anyone with id_ed25519 can log in as you. Never paste it into an email, a chat or a support ticket. If it ever leaks, make a new pair and remove the old public key from every machine."
+
+[[steps]]
+step_number = 6
+title = "Lock the private key"
+instruction = "ssh refuses to use a private key that other people can read, with a warning about an UNPROTECTED PRIVATE KEY FILE. ssh-keygen sets this up for you, but copies (from a backup, a USB stick) often lose it. Set the private key so only you can read and write it: mode 600."
+hints = ["chmod, the number, then the private key's path (no .pub).", "Type: chmod 600 laptop/.ssh/id_ed25519"]
+
+[steps.step_type.CommandExercise]
+expected_command = "chmod 600 laptop/.ssh/id_ed25519"
+validation = { Regex = "^chmod 0?600 (~/|\\./)?(laptop/)?(\\.ssh/)?id_ed25519$" }
+success_message = "6 is read and write for you; the two 0s are nothing for your group and nothing for everyone else."
+
+[[steps]]
+step_number = 7
+title = "Read ls -l"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = """On a real machine, ls -l ~/.ssh shows these lines. id_ed25519 and old_key are both private keys. Which one needs chmod 600?
+(The practice sandbox's ls -l shows the same letters for every file, so learn to read the real thing here.)"""
+options = [
+    "-rw-------  id_ed25519",
+    "-rw-r--r--  id_ed25519.pub",
+    "-rw-r--r--  old_key",
+]
+correct_index = 2
+explanation = "r-- in the group and other columns means anyone on the machine can read old_key. -rw------- is what a private key should look like. A .pub file being readable is fine: sharing is its job."
+
+[[steps]]
+step_number = 8
+title = "Back up before you edit"
+instruction = "The server lets in every public key listed in its .ssh/authorized_keys file. Grace's key is already there. Before you change a file that controls who gets in, copy it: make server/.ssh/authorized_keys.bak."
+hints = ["cp, the file, then the new name.", "Type: cp server/.ssh/authorized_keys server/.ssh/authorized_keys.bak"]
+solution = ["cp server/.ssh/authorized_keys server/.ssh/authorized_keys.bak"]
+
+[steps.step_type.Task]
+goal = "Back up authorized_keys"
+success_message = "If the next step goes wrong, you can put this copy back."
+checks = [{ FileContains = { path = "server/.ssh/authorized_keys.bak", text = "grace@workshop-laptop" } }]
+
+[[steps]]
+step_number = 9
+title = "Give the server your public key"
+instruction = "Add your public key to the end of server/.ssh/authorized_keys. Use cat and >> so Grace's line stays."
+hints = ["cat the .pub file, then >> (two arrows: add to the end) and the authorized_keys path.", "If Grace's key vanished, you used one arrow. Put the backup back with cp server/.ssh/authorized_keys.bak server/.ssh/authorized_keys and try again.", "Type: cat laptop/.ssh/id_ed25519.pub >> server/.ssh/authorized_keys"]
+solution = ["cat laptop/.ssh/id_ed25519.pub >> server/.ssh/authorized_keys"]
+
+[steps.step_type.Task]
+goal = "Add your key, keep Grace's"
+success_message = "Two lines now: Grace's key and yours. On a real machine, ssh-copy-id user@host does exactly this for you."
+checks = [{ FileContains = { path = "server/.ssh/authorized_keys", text = "grace@workshop-laptop" } }, { FileContains = { path = "server/.ssh/authorized_keys", text = "me@laptop" } }]
+
+[[steps]]
+step_number = 10
+title = "On your own"
+instruction = "A script on your laptop needs its own key. Make a second pair at laptop/.ssh/deploy_ed25519 with the label deploy@laptop (no passphrase, for practice), and give the server its public half. Grace's key and yours must stay."
+challenge = true
+solution = ["ssh-keygen -t ed25519 -C \"deploy@laptop\" -f laptop/.ssh/deploy_ed25519 -N ''", "cat laptop/.ssh/deploy_ed25519.pub >> server/.ssh/authorized_keys"]
+
+[steps.step_type.Task]
+goal = "Add a deploy key to the server"
+success_message = "Three keys, three lines. One key per job means you can remove one line later without locking anyone else out."
+checks = [{ FileExists = "laptop/.ssh/deploy_ed25519" }, { FileContains = { path = "server/.ssh/authorized_keys", text = "deploy@laptop" } }, { FileContains = { path = "server/.ssh/authorized_keys", text = "me@laptop" } }, { FileContains = { path = "server/.ssh/authorized_keys", text = "grace@workshop-laptop" } }]
+
+[[steps]]
+step_number = 11
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  ssh-keygen -t ed25519 -C "LABEL" -f PATH   make a pair
+  chmod 600 PATH                             private key: only you
+  cat PATH.pub >> ~/.ssh/authorized_keys     on the other machine
+  ssh-copy-id user@host                      does that for you
+
+The private key stays home. Only the .pub travels.
+On a real machine, give your key a passphrase, and keep
+~/.ssh itself at 700 so only you can open it.
+To take access away, delete that key's line from
+authorized_keys."""
