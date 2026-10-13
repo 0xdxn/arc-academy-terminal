@@ -2681,6 +2681,8 @@ impl App {
             .map(|l| (l.id.clone(), l.setup.clone()));
 
         if self.practice_mode_is_real() {
+            // Each lesson starts with no variables left over from the last
+            self.sandbox = crate::sandbox::SandboxShell::new();
             if let Err(e) = self.ensure_playground() {
                 self.last_output.push_str(&format!(
                     "{}Failed to open the practice playground: {}\n",
@@ -2873,10 +2875,20 @@ impl App {
             };
         }
 
+        // Each command runs in a fresh shell, so variables set in a lesson
+        // (NAME=value, export, unset) are kept here and handed to every
+        // later command, for this lesson only
+        if is_simple {
+            if let Some(out) = self.sandbox.real_assignments(command_str) {
+                return out;
+            }
+        }
+
         // Real execution, pinned to the tracked playground cwd, with the
         // same timeout-kill behavior as the normal shell
         let timeout = std::time::Duration::from_secs(self.config.general.command_timeout);
-        let env_vars = self.environment_vars.clone();
+        let mut env_vars = self.environment_vars.clone();
+        env_vars.extend(self.sandbox.real_env());
         match self
             .shell_executor
             .execute(command_str.to_string(), env_vars, timeout, Some(cwd))

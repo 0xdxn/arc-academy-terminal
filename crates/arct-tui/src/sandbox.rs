@@ -24,6 +24,9 @@ pub struct SandboxShell {
     depth: usize,
     /// Set by `exit` inside a script
     exiting: bool,
+    /// Variables set in real-files mode (each command there is a new
+    /// process, so the app carries them from one command to the next)
+    real: BTreeMap<String, String>,
 }
 
 impl Default for SandboxShell {
@@ -41,6 +44,7 @@ impl SandboxShell {
             status: 0,
             depth: 0,
             exiting: false,
+            real: BTreeMap::new(),
         };
         for (k, v) in [
             ("HOME", "/lesson-home"),
@@ -72,6 +76,59 @@ impl SandboxShell {
 
     fn set(&mut self, name: &str, value: &str) {
         self.vars.insert(name.to_string(), value.to_string());
+    }
+
+    /// Real-files mode: handle a line that only sets or clears variables
+    /// (`NAME=value`, `export NAME=value`, `unset NAME`). Returns `None`
+    /// for any other line, which then runs in a real shell.
+    pub(crate) fn real_assignments(&mut self, line: &str) -> Option<String> {
+        let real_value = |name: &str| std::env::var(name).ok();
+        let lookup = |name: &str| self.real.get(name).cloned().or_else(|| real_value(name));
+        let mut list = shell_syntax::parse(line, &lookup).ok()?;
+        if list.len() != 1 || list[0].1.stages.len() != 1 {
+            return None;
+        }
+        let stage = list.remove(0).1.stages.remove(0);
+        if !stage.redirects.is_empty() {
+            return None;
+        }
+        let words: Vec<&str> = stage.words.iter().map(|w| w.text.as_str()).collect();
+        match words.split_first() {
+            None => {
+                for (name, value) in stage.assignments {
+                    self.real.insert(name, value);
+                }
+                Some(String::new())
+            }
+            Some((&"export", rest)) if stage.assignments.is_empty() && !rest.is_empty() => {
+                for word in rest {
+                    match word.split_once('=') {
+                        Some((name, value)) if shell_syntax::is_name(name) => {
+                            self.real.insert(name.to_string(), value.to_string());
+                        }
+                        None if shell_syntax::is_name(word) => {
+                            if let Some(value) = real_value(word) {
+                                self.real.entry(word.to_string()).or_insert(value);
+                            }
+                        }
+                        _ => return Some(error(format!("export: '{word}': not a valid name"))),
+                    }
+                }
+                Some(String::new())
+            }
+            Some((&"unset", rest)) if stage.assignments.is_empty() => {
+                for name in rest {
+                    self.real.remove(*name);
+                }
+                Some(String::new())
+            }
+            _ => None,
+        }
+    }
+
+    /// Variables set during a real-files lesson, for the next command's environment
+    pub(crate) fn real_env(&self) -> impl Iterator<Item = (String, String)> + '_ {
+        self.real.iter().map(|(k, v)| (k.clone(), v.clone()))
     }
 }
 
@@ -925,6 +982,23 @@ mod tests {
         let out = run(&mut app, "X=/; rm -rf $X");
         assert!(out.contains("Blocked"), "{out}");
         assert!(app.virtual_fs.as_ref().unwrap().resolve_path("keep.txt").unwrap().exists());
+    }
+
+    #[test]
+    fn real_mode_keeps_variables_between_commands() {
+        let mut shell = SandboxShell::new();
+        assert_eq!(shell.real_assignments("GREETING=hello"), Some(String::new()));
+        assert_eq!(shell.real_assignments("export WHO=\"$GREETING world\""), Some(String::new()));
+        let env: BTreeMap<String, String> = shell.real_env().collect();
+        assert_eq!(env["WHO"], "hello world");
+        assert_eq!(shell.real_assignments("export PATH=/x/bin:$PATH").as_deref(), Some(""));
+        assert!(shell.real.get("PATH").unwrap().starts_with("/x/bin:"));
+        assert_eq!(shell.real_assignments("unset GREETING"), Some(String::new()));
+        assert!(!shell.real.contains_key("GREETING"));
+        // Anything else runs for real
+        assert_eq!(shell.real_assignments("echo $WHO"), None);
+        assert_eq!(shell.real_assignments("X=1 env"), None);
+        assert_eq!(shell.real_assignments("export"), None);
     }
 
     #[test]
