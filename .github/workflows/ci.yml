@@ -26,18 +26,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-24.04, macos-14]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust 1.99.0
+        uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch, 2026-10
         with:
+          toolchain: 1.99.0
           components: clippy
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       # Warnings are currently allowed; tighten to `-- -D warnings` once the
       # workspace is clippy-clean
@@ -47,8 +48,20 @@ jobs:
       - name: Build
         run: cargo build --workspace
 
+      # The tests prove the OS jail on both systems (see release.yml)
+      - name: Linux jail (bubblewrap)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
       - name: Test
-        run: cargo test --workspace
+        env:
+          ARCT_REQUIRE_JAIL: "1"
+        run: cargo test --workspace --locked
 
       - name: Core without the app's records (what the browser build uses)
         run: cargo test -p arct-core --no-default-features
