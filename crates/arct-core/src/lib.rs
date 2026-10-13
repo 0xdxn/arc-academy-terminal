@@ -23,6 +23,7 @@ pub use guard::{GuardVerdict, PlaygroundGuard, PLAYGROUND_DISPLAY};
 pub use lesson::{
     Lesson, LessonStep, StepType, LessonProgress, LessonLibrary,
     LessonValidator, ValidationResult, Difficulty, CommandValidation, SetupFile,
+    Track, Check, PracticeWorld, Attempt, validate_step, evaluate_checks,
 };
 pub use playground::Playground;
 pub use session::{Session, SessionState};

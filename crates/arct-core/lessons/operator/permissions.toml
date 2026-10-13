@@ -1,0 +1,300 @@
+id = "permissions"
+title = "Permissions & Ownership"
+description = "Understand Linux file permissions, ownership, and how to modify them safely using chmod and chown."
+difficulty = "Intermediate"
+estimated_minutes = 15
+prerequisites = [
+    "nav-basics",
+    "file-mgmt",
+]
+tags = [
+    "intermediate",
+    "permissions",
+    "security",
+]
+setup = []
+
+[[steps]]
+step_number = 1
+title = "Understanding Linux Permissions"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Welcome to Permissions & Ownership!
+
+Linux is a multi-user system. Permissions control who can read, write, or execute files.
+
+When you run 'ls -l', you see something like:
+  -rw-r--r-- 1 user group 1234 Nov 16 10:30 file.txt
+
+Let's decode this:
+  -rw-r--r--  ← Permissions (10 characters)
+  1           ← Number of hard links
+  user        ← Owner
+  group       ← Group
+  1234        ← Size in bytes
+  Nov 16...   ← Last modified date/time
+  file.txt    ← Filename
+
+We'll focus on permissions and ownership. Understanding this is crucial for security!"""
+
+[[steps]]
+step_number = 2
+title = "Viewing Permissions"
+instruction = "First, let's see permissions in action. Use 'ls -l' to view detailed file information in your home directory."
+hint = "Type: ls -l"
+
+[steps.step_type.CommandExercise]
+expected_command = "ls -l"
+validation = "CommandOnly"
+success_message = "Great! Look at the first column - those cryptic letters are the permissions. Let's decode them!"
+
+[[steps]]
+step_number = 3
+title = "Decoding Permission Strings"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Understanding the 10-character permission string:
+
+  -rw-r--r--
+  ↑↑↑↑↑↑↑↑↑↑
+  │││││││││└─ Others: read
+  ││││││││└── Others: write (no)
+  │││││││└─── Others: execute (no)
+  ││││││└──── Group: read
+  │││││└───── Group: write (no)
+  ││││└────── Group: execute (no)
+  │││└─────── Owner: read
+  ││└──────── Owner: write
+  │└───────── Owner: execute (no)
+  └────────── File type (- = file, d = directory, l = link)
+
+Three permission types:
+  r = read (4)    - View file contents
+  w = write (2)   - Modify or delete
+  x = execute (1) - Run as program/script
+
+Three permission groups:
+  Owner → Group → Others (everyone else)"""
+
+[[steps]]
+step_number = 4
+title = "Quiz: Reading Permissions"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "A file has permissions '-rwxr-x---'. What can the group do?"
+options = [
+    "Read, write, and execute",
+    "Read and execute only",
+    "Execute only",
+    "Nothing - no permissions",
+]
+correct_index = 1
+explanation = """
+Correct! Breaking it down: -rwxr-x---
+Owner (rwx) can do everything. Group (r-x) can read and execute but NOT write. Others (---) have no permissions at all. The middle set of three characters (r-x) represents group permissions."""
+
+[[steps]]
+step_number = 5
+title = "Numeric Permission Notation"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Permissions can be expressed as numbers!
+
+Each permission has a value:
+  r (read)    = 4
+  w (write)   = 2
+  x (execute) = 1
+  - (none)    = 0
+
+Add them up for each group:
+  rwx = 4+2+1 = 7 (all permissions)
+  rw- = 4+2+0 = 6 (read + write)
+  r-x = 4+0+1 = 5 (read + execute)
+  r-- = 4+0+0 = 4 (read only)
+  --- = 0+0+0 = 0 (no permissions)
+
+Common permission sets:
+  644 = rw-r--r-- (owner writes, others read)
+  755 = rwxr-xr-x (owner writes, all execute)
+  600 = rw------- (owner only, private file)
+  777 = rwxrwxrwx (DANGEROUS - everyone can do everything!)
+
+Example: -rw-r--r-- = 644"""
+
+[[steps]]
+step_number = 6
+title = "Quiz: Numeric Permissions"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "What does 'chmod 755 script.sh' do?"
+options = [
+    "Owner: read only, Group/Others: read + execute",
+    "Owner: all permissions, Group/Others: read + execute",
+    "Everyone: all permissions (dangerous!)",
+    "Owner: read + write, Group/Others: read only",
+]
+correct_index = 1
+explanation = """
+Correct! 755 means:
+  7 (owner) = rwx = 4+2+1 = full control
+  5 (group) = r-x = 4+0+1 = read and execute
+  5 (others) = r-x = 4+0+1 = read and execute
+
+This is perfect for scripts and executables - the owner can modify it, but everyone can run it. Common for programs in /usr/bin!"""
+
+[[steps]]
+step_number = 7
+title = "Using chmod with Numbers"
+instruction = "Let's practice! First, create a test file: touch testfile.txt, then set its permissions to 644: chmod 644 testfile.txt"
+hint = "Type two commands: touch testfile.txt then chmod 644 testfile.txt"
+
+[steps.step_type.CommandExercise]
+expected_command = "chmod 644 testfile.txt"
+validation = "Exact"
+success_message = "Perfect! You've set the file to rw-r--r-- (644). You can write to it, but others can only read. This is the standard for regular files."
+
+[[steps]]
+step_number = 8
+title = "Using chmod with Symbolic Notation"
+instruction = "You can also use letters! Make testfile.txt executable for the owner: chmod u+x testfile.txt"
+hint = "Type: chmod u+x testfile.txt (u=user/owner, +x=add execute)"
+
+[steps.step_type.CommandExercise]
+expected_command = "chmod u+x testfile.txt"
+validation = "Exact"
+success_message = """
+Excellent! Symbolic notation is intuitive:
+  u=user/owner, g=group, o=others, a=all
+  +=add, -=remove, ==set exactly
+  r=read, w=write, x=execute
+
+Examples: chmod g+w file (group can write), chmod o-r file (others can't read)"""
+
+[[steps]]
+step_number = 9
+title = "Making Scripts Executable"
+instruction = "Common task: making a script runnable. Use the shorthand to add execute permission for everyone: chmod +x testfile.txt"
+hint = "Type: chmod +x testfile.txt (no u/g/o means 'all')"
+
+[steps.step_type.CommandExercise]
+expected_command = "chmod +x testfile.txt"
+validation = "Exact"
+success_message = "Great! When you omit u/g/o, it applies to all. 'chmod +x' is the quickest way to make a script executable. Now you could run it with ./testfile.txt (if it were a script)."
+
+[[steps]]
+step_number = 10
+title = "Understanding Ownership"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+File Ownership in Linux:
+
+Every file has TWO owners:
+  1. User owner (usually who created it)
+  2. Group owner (for sharing among team members)
+
+In 'ls -l' output:
+  -rw-r--r-- 1 alice developers 1234 Nov 16 file.txt
+              ↑     ↑
+              user  group
+
+Why does this matter?
+  • Users in 'developers' group get the group permissions
+  • Everyone else gets the 'others' permissions
+  • Only root (admin) or the owner can change ownership
+
+Common use case:
+  Web server files owned by 'www-data' user and group
+  Log files owned by 'syslog' user for security"""
+
+[[steps]]
+step_number = 11
+title = "Changing Ownership with chown"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+The chown command changes file ownership:
+
+Syntax:
+  chown user:group file.txt
+  chown user file.txt        (just change user)
+  chown :group file.txt      (just change group)
+
+Examples:
+  sudo chown alice:developers file.txt
+  sudo chown www-data:www-data /var/www/index.html
+  sudo chown -R user:group /path/to/directory  (-R = recursive)
+
+IMPORTANT:
+  • Usually requires sudo (only root can change ownership)
+  • Be careful with -R (recursive) - affects all files inside!
+  • Don't change ownership of system files unless you know what you're doing
+
+For practice, you typically don't need chown on your own files.
+You're already the owner!"""
+
+[[steps]]
+step_number = 12
+title = "Quiz: Permission Safety"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "Why should you NEVER use 'chmod 777' on files?"
+options = [
+    "It's too complicated to type",
+    "It gives EVERYONE full read, write, execute access - a security nightmare!",
+    "It makes files read-only",
+    "It only works on directories",
+]
+correct_index = 1
+explanation = """
+CORRECT! chmod 777 = rwxrwxrwx means EVERYONE on the system can read, modify, delete, and execute your file. This is a massive security risk!
+
+Never use 777! Instead:
+  • 644 for regular files (rw-r--r--)
+  • 755 for scripts/executables (rwxr-xr-x)
+  • 600 for private files (rw-------)
+  • 700 for private scripts (rwx------)
+
+Use minimal permissions needed. It's the principle of least privilege!"""
+
+[[steps]]
+step_number = 13
+title = "Completion: Permissions Mastered!"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Excellent work! You understand Linux permissions!
+
+Key concepts:
+  • Three permission types: read (r), write (w), execute (x)
+  • Three groups: owner, group, others
+  • Numeric notation: 644, 755, 600, 700
+  • Symbolic notation: u+x, g-w, o=r
+
+Essential commands:
+  ls -l                  View permissions
+  chmod 644 file         Set permissions (numeric)
+  chmod u+x file         Add execute for owner (symbolic)
+  chmod +x file          Make executable for all
+  chown user:group file  Change ownership (needs sudo)
+
+Safety rules:
+  ✓ Never chmod 777 (security risk!)
+  ✓ Use minimal permissions needed
+  ✓ 644 for files, 755 for executables
+  ✓ 600/700 for private data
+  ✓ Be careful with -R (recursive)
+
+Next: Learn process management!"""

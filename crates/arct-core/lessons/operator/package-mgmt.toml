@@ -1,0 +1,402 @@
+id = "package-mgmt"
+title = "Package Management"
+description = "Learn to install, update, and manage software packages using apt (Debian/Ubuntu) and pacman (Arch)."
+difficulty = "Beginner"
+estimated_minutes = 12
+prerequisites = ["nav-basics"]
+tags = [
+    "beginner",
+    "packages",
+    "system",
+]
+setup = []
+
+[[steps]]
+step_number = 1
+title = "What is Package Management?"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Welcome to Package Management!
+
+A 'package' is software bundled with:
+  • The program itself
+  • Dependencies (other software it needs)
+  • Configuration files
+  • Documentation
+  • Install/uninstall scripts
+
+Package managers handle:
+  ✓ Installing software
+  ✓ Updating software
+  ✓ Removing software
+  ✓ Dependency resolution
+  ✓ Security updates
+
+Common package managers:
+  • apt/apt-get (Debian, Ubuntu, Linux Mint)
+  • dnf/yum (Fedora, RHEL, CentOS)
+  • pacman (Arch, Manjaro)
+  • zypper (openSUSE)
+
+We'll cover apt (most common) and pacman (fastest growing).
+
+No more downloading .exe files from random websites!"""
+
+[[steps]]
+step_number = 2
+title = "apt Basics - Updating Package Lists"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+First rule of apt: Always update package lists first!
+
+Command:
+  sudo apt update
+
+What it does:
+  • Downloads latest package information from repositories
+  • Checks which packages have updates available
+  • Does NOT install anything yet
+  • Should be run before installing or upgrading
+
+Think of it like:
+  • apt update = Check what's available in the store
+  • apt upgrade = Actually buy the new versions
+
+Why sudo?
+  Package management affects the whole system, so it requires
+  administrator (root) privileges. 'sudo' gives you temporary
+  admin access.
+
+Best practice:
+  Run 'sudo apt update' daily or before installing anything."""
+
+[[steps]]
+step_number = 3
+title = "Quiz: Understanding apt update"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "What does 'sudo apt update' do?"
+options = [
+    "Installs all available updates immediately",
+    "Downloads the list of available packages and updates",
+    "Removes old packages",
+    "Reboots the system",
+]
+correct_index = 1
+explanation = "Correct! 'apt update' refreshes your package database - it downloads information about what packages are available and which versions are current. It does NOT install anything. Think of it as 'checking the menu' before ordering food. To actually install updates, you'd use 'apt upgrade'."
+
+[[steps]]
+step_number = 4
+title = "Upgrading Installed Packages"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Keeping software updated is crucial for security!
+
+Command:
+  sudo apt upgrade
+
+What it does:
+  • Upgrades all installed packages to latest versions
+  • Shows what will be upgraded before proceeding
+  • Asks for confirmation (y/n)
+  • Keeps your system secure and stable
+
+Safe upgrade workflow:
+  1. sudo apt update      (refresh package lists)
+  2. sudo apt upgrade     (install updates)
+
+Full upgrade (more aggressive):
+  sudo apt full-upgrade
+  • Upgrades packages even if it means removing some
+  • Use carefully, read what it plans to do!
+
+Automatic yes:
+  sudo apt upgrade -y
+  • Automatically answers 'yes' to prompts
+  • Convenient for scripts
+  • Use carefully!"""
+
+[[steps]]
+step_number = 5
+title = "Installing Packages"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Installing software is simple with apt!
+
+Command:
+  sudo apt install package-name
+
+Examples:
+  sudo apt install htop         # Better process viewer
+  sudo apt install curl         # Download tool
+  sudo apt install git          # Version control
+  sudo apt install neofetch     # System info display
+
+Multiple packages at once:
+  sudo apt install vim git curl htop
+
+What happens:
+  1. apt checks dependencies
+  2. Shows what will be installed
+  3. Asks for confirmation
+  4. Downloads packages
+  5. Installs everything
+  6. Runs post-install scripts
+
+Tips:
+  • Read the confirmation message!
+  • Check disk space requirements
+  • Package names are case-sensitive
+  • Most packages have documentation in /usr/share/doc/"""
+
+[[steps]]
+step_number = 6
+title = "Searching for Packages"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+How to find packages:
+
+Search by name/description:
+  apt search keyword
+  apt search python | grep ^python3   # Filter results
+
+Show package details:
+  apt show package-name
+  • Shows description, version, size, dependencies
+  • Shows if it's installed
+  • Shows homepage and maintainer
+
+List installed packages:
+  apt list --installed
+  apt list --installed | grep python
+
+Check if package is installed:
+  apt list --installed package-name
+  dpkg -l | grep package-name
+
+Find which package provides a file:
+  apt-file search /path/to/file
+  (requires: sudo apt install apt-file)
+
+Example workflow:
+  1. apt search "video editor"
+  2. apt show kdenlive
+  3. sudo apt install kdenlive"""
+
+[[steps]]
+step_number = 7
+title = "Removing Packages"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Uninstalling software cleanly:
+
+Remove package (keep config files):
+  sudo apt remove package-name
+  • Removes the program
+  • Keeps configuration in /etc/ and ~/
+  • Useful if you might reinstall later
+
+Complete removal (including configs):
+  sudo apt purge package-name
+  • Removes everything
+  • Clean slate
+  • Use when you're sure you won't reinstall
+
+Remove orphaned dependencies:
+  sudo apt autoremove
+  • Removes packages that were dependencies
+  • But are no longer needed
+  • Safe to run regularly
+
+Clean package cache:
+  sudo apt clean         # Remove all cached .deb files
+  sudo apt autoclean     # Remove only outdated cache
+
+Full cleanup workflow:
+  sudo apt remove package-name
+  sudo apt autoremove
+  sudo apt clean"""
+
+[[steps]]
+step_number = 8
+title = "Quiz: Package Removal"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "What's the difference between 'apt remove' and 'apt purge'?"
+options = [
+    "They do exactly the same thing",
+    "remove keeps config files, purge removes everything",
+    "purge is faster than remove",
+    "remove requires sudo, purge doesn't",
+]
+correct_index = 1
+explanation = "Correct! 'apt remove' uninstalls the package but keeps configuration files (useful if you might reinstall). 'apt purge' removes EVERYTHING including configs. Example: If you remove then reinstall a database, 'remove' would keep your database config. 'purge' would give you a completely fresh start. Both require sudo."
+
+[[steps]]
+step_number = 9
+title = "Introduction to pacman (Arch Linux)"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+pacman is the package manager for Arch Linux.
+
+Basic commands:
+  sudo pacman -Syu              Update system
+  sudo pacman -S package        Install package
+  sudo pacman -R package        Remove package
+  sudo pacman -Rns package      Remove package + dependencies
+  sudo pacman -Ss keyword       Search for packages
+  sudo pacman -Qi package       Package info (installed)
+  sudo pacman -Si package       Package info (repository)
+  sudo pacman -Qe               List explicitly installed
+  sudo pacman -Sc               Clean package cache
+
+Flag meanings:
+  -S = Sync (install/update from repos)
+  -R = Remove
+  -Q = Query (search installed)
+  -s = search
+  -y = refresh package database
+  -u = upgrade
+  -n = remove package-specific config
+  -s = remove unneeded dependencies
+
+Common combinations:
+  -Syu = Sync database + upgrade all
+  -Ss = Sync search
+  -Rns = Remove + unneeded deps + configs"""
+
+[[steps]]
+step_number = 10
+title = "apt vs pacman Comparison"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Quick reference: apt vs pacman
+
+Update package lists:
+  apt: sudo apt update
+  pacman: sudo pacman -Sy
+
+Upgrade all packages:
+  apt: sudo apt upgrade
+  pacman: sudo pacman -Syu
+
+Install package:
+  apt: sudo apt install pkg
+  pacman: sudo pacman -S pkg
+
+Remove package:
+  apt: sudo apt remove pkg
+  pacman: sudo pacman -R pkg
+
+Remove package + deps:
+  apt: sudo apt autoremove pkg
+  pacman: sudo pacman -Rns pkg
+
+Search packages:
+  apt: apt search keyword
+  pacman: pacman -Ss keyword
+
+Show package info:
+  apt: apt show pkg
+  pacman: pacman -Si pkg
+
+List installed:
+  apt: apt list --installed
+  pacman: pacman -Qe
+
+Clean cache:
+  apt: sudo apt clean
+  pacman: sudo pacman -Sc"""
+
+[[steps]]
+step_number = 11
+title = "Package Management Best Practices"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Golden rules for package management:
+
+1. Update regularly:
+   sudo apt update && sudo apt upgrade
+   Do this weekly or before installing new software
+
+2. Read before confirming:
+   Check what will be installed/removed!
+   Especially important for 'full-upgrade' or 'autoremove'
+
+3. Don't mix package managers:
+   Use ONE primary package manager
+   Don't mix apt with snap, or pip system-wide packages
+   Use virtual environments for Python/Node packages
+
+4. Be careful with PPAs (apt) or AUR (Arch):
+   Third-party repositories can be unsafe
+   Only add trusted sources
+
+5. Keep backups:
+   Before major upgrades, backup important data
+   Upgrades rarely break things, but be prepared
+
+6. Clean up regularly:
+   sudo apt autoremove && sudo apt clean
+   Removes orphaned packages and cached files
+
+7. Check logs if something fails:
+   /var/log/apt/history.log (apt)
+   /var/log/pacman.log (pacman)"""
+
+[[steps]]
+step_number = 12
+title = "Completion: Package Management Mastered!"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Great job! You can now manage software like a pro!
+
+apt (Debian/Ubuntu) commands:
+  sudo apt update              Refresh package lists
+  sudo apt upgrade             Install updates
+  sudo apt install pkg         Install package
+  sudo apt remove pkg          Uninstall package
+  sudo apt purge pkg           Uninstall + remove configs
+  sudo apt autoremove          Remove orphaned dependencies
+  sudo apt search keyword      Find packages
+  apt show pkg                 Package details
+  apt list --installed         List installed packages
+
+pacman (Arch) commands:
+  sudo pacman -Syu             Update system
+  sudo pacman -S pkg           Install package
+  sudo pacman -R pkg           Remove package
+  sudo pacman -Rns pkg         Remove + dependencies + configs
+  sudo pacman -Ss keyword      Search packages
+  pacman -Qi pkg               Package info
+
+Best practices:
+  ✓ Update before installing
+  ✓ Read confirmation prompts
+  ✓ Clean up regularly
+  ✓ Use one package manager
+  ✓ Keep backups
+
+Next: Learn networking basics!"""

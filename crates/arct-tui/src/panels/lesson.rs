@@ -2,7 +2,7 @@
 
 use crate::icons;
 use crate::theme::Theme;
-use arct_core::{Lesson, LessonStep, StepType, ValidationResult, LessonValidator};
+use arct_core::{Attempt, Lesson, LessonStep, LessonValidator, PracticeWorld, StepType, ValidationResult};
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -23,6 +23,8 @@ pub struct LessonPanel {
     started_at: Option<std::time::Instant>,
     /// Wrong answers in this lesson run (for the "perfect_lesson" achievement)
     wrong_answers: usize,
+    /// Misses on the current step: each one reveals the next hint rung
+    step_misses: usize,
 }
 
 impl LessonPanel {
@@ -36,6 +38,7 @@ impl LessonPanel {
             completed_steps: Vec::new(),
             started_at: None,
             wrong_answers: 0,
+            step_misses: 0,
         }
     }
 
@@ -48,6 +51,7 @@ impl LessonPanel {
         self.completed_steps.clear();
         self.started_at = Some(std::time::Instant::now());
         self.wrong_answers = 0;
+        self.step_misses = 0;
     }
 
     /// Resume a previously started lesson at a saved step.
@@ -58,6 +62,7 @@ impl LessonPanel {
         if let Some(lesson) = &self.current_lesson {
             let max = lesson.steps.len().saturating_sub(1);
             self.current_step_index = step_index.min(max);
+            self.step_misses = 0;
             self.completed_steps = completed_steps
                 .into_iter()
                 .filter(|&s| s < lesson.steps.len())
@@ -74,6 +79,7 @@ impl LessonPanel {
         self.completed_steps.clear();
         self.started_at = Some(std::time::Instant::now());
         self.wrong_answers = 0;
+        self.step_misses = 0;
     }
 
     /// Current (0-based) step index
@@ -105,63 +111,113 @@ impl LessonPanel {
             .and_then(|lesson| lesson.steps.get(self.current_step_index))
     }
 
-    /// Check if user input is valid for current step
+    /// Check if user input is valid for current step (no command output
+    /// or practice environment: steps that need them will not pass)
     pub fn validate_current_step(&mut self, input: &str) -> ValidationResult {
-        if let Some(step) = self.current_step() {
-            let result = match &step.step_type {
-                StepType::CommandExercise {
-                    expected_command,
-                    validation,
-                    success_message,
-                } => {
-                    let validation_result =
-                        self.validator.validate_command(input, expected_command, validation);
+        self.validate_step_with(input, "", false, None)
+    }
 
-                    if validation_result.is_success() {
-                        ValidationResult::Success {
-                            message: success_message.clone(),
-                        }
-                    } else {
-                        validation_result
-                    }
-                }
-                StepType::MultipleChoice {
-                    correct_index, ..
-                } => {
-                    if let Ok(choice) = input.parse::<usize>() {
-                        self.validator.validate_multiple_choice(choice, *correct_index)
-                    } else {
-                        ValidationResult::Failure {
-                            message: "Please enter a number.".to_string(),
-                            hint: None,
-                        }
-                    }
-                }
-                StepType::Information { .. } => {
-                    // Information steps just need any key press to continue
-                    ValidationResult::Success {
-                        message: "Continue to next step.".to_string(),
-                    }
-                }
-                _ => ValidationResult::Success {
-                    message: "Continue.".to_string(),
-                },
-            };
-
-            // Track wrong answers for the "perfect_lesson" achievement
-            // (Information steps never fail, so this only counts real misses)
-            if !result.is_success() {
-                self.wrong_answers += 1;
-            }
-
-            self.last_validation = Some(result.clone());
-            result
-        } else {
-            ValidationResult::Failure {
+    /// Validate the current step against what was typed, what the command
+    /// printed, whether it failed, and the practice environment (for task
+    /// steps). Misses climb the hint ladder; the answer is only shown after
+    /// the last rung, and never on a challenge step.
+    pub fn validate_step_with(
+        &mut self,
+        input: &str,
+        output: &str,
+        command_failed: bool,
+        world: Option<&dyn PracticeWorld>,
+    ) -> ValidationResult {
+        let Some(step) = self.current_step().cloned() else {
+            return ValidationResult::Failure {
                 message: "No active step.".to_string(),
                 hint: None,
+            };
+        };
+        let attempt = Attempt { input, output };
+        let mut result =
+            arct_core::validate_step(&step, &self.validator, &attempt, command_failed, world);
+
+        if !result.is_success() {
+            self.wrong_answers += 1;
+            self.step_misses += 1;
+            result = Self::coach(&step, result, self.step_misses);
+        }
+
+        self.last_validation = Some(result.clone());
+        result
+    }
+
+    /// Turn a raw failure into coaching: a hint per miss, the answer last
+    fn coach(step: &LessonStep, raw: ValidationResult, misses: usize) -> ValidationResult {
+        let ValidationResult::Failure { message, hint } = raw else {
+            return raw;
+        };
+        // Task-style failures say what is missing without giving the answer
+        let outcome_based = matches!(
+            step.step_type,
+            StepType::Task { .. } | StepType::Practice { .. }
+        );
+        let gentle = if outcome_based { message.clone() } else { "Not quite.".to_string() };
+
+        if step.challenge {
+            return ValidationResult::Failure {
+                message: gentle,
+                hint: Some("Challenge step: no hints. You know this one.".to_string()),
+            };
+        }
+        let ladder = step.hint_ladder();
+        if misses <= ladder.len() {
+            ValidationResult::Failure {
+                message: gentle,
+                hint: Some(ladder[misses - 1].to_string()),
+            }
+        } else {
+            // Out of hints: show what the validator knows (the answer)
+            ValidationResult::Failure {
+                message,
+                hint: hint.or_else(|| ladder.last().map(|h| h.to_string())),
             }
         }
+    }
+
+    /// Lines showing the last validation result
+    fn validation_lines(&self, theme: &Theme) -> Vec<Line<'static>> {
+        let mut lines = Vec::new();
+        match &self.last_validation {
+            Some(ValidationResult::Success { message }) => lines.push(Line::from(vec![
+                icons::success(),
+                Span::styled(message.clone(), theme.style_success()),
+            ])),
+            Some(ValidationResult::Failure { message, hint }) => {
+                lines.push(Line::from(vec![
+                    icons::error(),
+                    Span::styled(message.clone(), theme.style_error()),
+                ]));
+                if let Some(h) = hint {
+                    lines.push(Line::from(vec![
+                        icons::hint(),
+                        Span::styled(format!("Hint: {h}"), theme.style_dim()),
+                    ]));
+                }
+            }
+            Some(ValidationResult::Partial { message, progress }) => lines.push(Line::from(vec![
+                icons::warning(),
+                Span::styled(format!("{} ({:.0}%)", message, progress), theme.style_warning()),
+            ])),
+            None => {}
+        }
+        lines
+    }
+
+    /// Badge line for challenge steps
+    fn challenge_line(step: &LessonStep, theme: &Theme) -> Option<Line<'static>> {
+        step.challenge.then(|| {
+            Line::from(vec![Span::styled(
+                "CHALLENGE: on your own, no hints",
+                theme.style_warning().add_modifier(ratatui::style::Modifier::BOLD),
+            )])
+        })
     }
 
     /// Move to next step
@@ -175,6 +231,7 @@ impl LessonPanel {
                 self.current_step_index += 1;
                 self.user_input.clear();
                 self.last_validation = None;
+                self.step_misses = 0;
                 true
             } else {
                 false // Lesson complete
@@ -190,6 +247,7 @@ impl LessonPanel {
             self.current_step_index -= 1;
             self.user_input.clear();
             self.last_validation = None;
+            self.step_misses = 0;
         }
     }
 
@@ -307,45 +365,9 @@ impl LessonPanel {
                         Span::styled(&step.instruction, theme.style_normal()),
                     ]));
                 }
-                // Hint
-                if let Some(hint) = &step.hint {
-                    lines.push(Line::from(vec![
-                        icons::hint(),
-                        Span::styled(hint, theme.style_dim()),
-                    ]));
-                }
-                // Validation result
-                if let Some(validation) = &self.last_validation {
-                    match validation {
-                        ValidationResult::Success { message } => {
-                            lines.push(Line::from(vec![
-                                icons::success(),
-                                Span::styled(message, theme.style_success()),
-                            ]));
-                        }
-                        ValidationResult::Failure { message, hint } => {
-                            lines.push(Line::from(vec![
-                                icons::error(),
-                                Span::styled(message, theme.style_error()),
-                            ]));
-                            if let Some(h) = hint {
-                                lines.push(Line::from(vec![
-                                    icons::hint(),
-                                    Span::styled(h, theme.style_dim()),
-                                ]));
-                            }
-                        }
-                        ValidationResult::Partial { message, progress } => {
-                            lines.push(Line::from(vec![
-                                icons::warning(),
-                                Span::styled(
-                                    format!("{} ({:.0}%)", message, progress),
-                                    theme.style_warning(),
-                                ),
-                            ]));
-                        }
-                    }
-                }
+                lines.extend(Self::challenge_line(step, theme));
+                // Hints are earned: they appear after a miss
+                lines.extend(self.validation_lines(theme));
             }
             StepType::MultipleChoice {
                 question,
@@ -397,23 +419,23 @@ impl LessonPanel {
                     Span::styled("Template: ", theme.style_accent()),
                     Span::styled(template, theme.style_dim()),
                 ]));
+                lines.extend(self.validation_lines(theme));
             }
-            StepType::Practice { goal, hints, .. } => {
-                // HOW TO + Goal combined
+            StepType::Practice { goal, .. } | StepType::Task { goal, .. } => {
+                // Any commands that reach the goal count
                 lines.push(Line::from(vec![
-                    Span::styled("▶ Try commands → ", theme.style_warning()),
+                    Span::styled("▶ Use any commands you like → ", theme.style_warning()),
                     icons::target(),
                     Span::styled(goal, theme.style_normal()),
                 ]));
-                // Hints inline
-                if !hints.is_empty() {
-                    for hint in hints {
-                        lines.push(Line::from(vec![
-                            icons::hint(),
-                            Span::styled(hint, theme.style_dim()),
-                        ]));
-                    }
+                if !step.instruction.is_empty() && step.instruction != *goal {
+                    lines.push(Line::from(vec![Span::styled(
+                        &step.instruction,
+                        theme.style_normal(),
+                    )]));
                 }
+                lines.extend(Self::challenge_line(step, theme));
+                lines.extend(self.validation_lines(theme));
             }
         }
 

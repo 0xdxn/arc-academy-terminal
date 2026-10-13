@@ -1,0 +1,144 @@
+id = "nav-basics"
+title = "Navigation Basics"
+description = "Learn how to navigate the Linux filesystem using essential commands like ls, cd, pwd, and tree."
+difficulty = "Beginner"
+estimated_minutes = 10
+prerequisites = []
+tags = [
+    "beginner",
+    "navigation",
+    "essential",
+]
+
+[[steps]]
+step_number = 1
+title = "Understanding Your Current Location"
+instruction = "Every time you open a terminal, you're in a specific directory. Let's find out where you are. Type the command to print your current working directory."
+hint = "The command is 'pwd' (print working directory)"
+
+[steps.step_type.CommandExercise]
+expected_command = "pwd"
+validation = "CommandOnly"
+success_message = "Perfect! 'pwd' shows your current directory. This is your starting point."
+
+[[steps]]
+step_number = 2
+title = "Listing Files and Directories"
+instruction = "Now let's see what's in your current directory. Use the command to list all files and directories."
+hint = "The command is 'ls' (list)"
+
+[steps.step_type.CommandExercise]
+expected_command = "ls"
+validation = "CommandOnly"
+success_message = "Great! 'ls' shows you what's in the current directory."
+
+[[steps]]
+step_number = 3
+title = "Detailed File Listings"
+instruction = "Let's get more information about the files. Use 'ls' with flags to show a long, detailed listing with human-readable file sizes."
+hint = "Try 'ls -lh' (long format + human-readable sizes)"
+
+[steps.step_type.CommandExercise]
+expected_command = "ls -lh"
+success_message = "Excellent! The -l flag shows details like permissions, owner, size, and date. The -h flag makes sizes human-readable (KB, MB, GB)."
+
+[steps.step_type.CommandExercise.validation]
+AnyOf = [
+    "ls -lh",
+    "ls -hl",
+    "ls -l -h",
+    "ls -h -l",
+]
+
+[[steps]]
+step_number = 4
+title = "Understanding Hidden Files"
+instruction = "Many configuration files are hidden (they start with a dot). Let's see ALL files, including hidden ones."
+hint = "Use the -a flag with ls"
+
+[steps.step_type.CommandExercise]
+expected_command = "ls -a"
+validation = "CommandOnly"
+success_message = "Perfect! Files starting with '.' are hidden. You'll see '.bashrc', '.profile', etc. - these are configuration files."
+
+[[steps]]
+step_number = 5
+title = "Changing Directories"
+instruction = "Let's move to your home directory. Use the change directory command with the ~ symbol (tilde represents your home)."
+hint = "Type 'cd ~' or just 'cd'"
+
+[steps.step_type.CommandExercise]
+expected_command = "cd"
+success_message = "Great! 'cd' without arguments always takes you home. The ~ symbol is a shortcut for your home directory."
+
+[steps.step_type.CommandExercise.validation]
+AnyOf = [
+    "cd",
+    "cd ~",
+    "cd $HOME",
+]
+
+[[steps]]
+step_number = 6
+title = "Quiz: What does 'cd ..' do?"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "What does the command 'cd ..' do?"
+options = [
+    "Goes to the home directory",
+    "Goes up one directory level (to the parent)",
+    "Lists files in the current directory",
+    "Creates a new directory",
+]
+correct_index = 1
+explanation = "Correct! '..' is a special symbol that represents the parent directory. So 'cd ..' moves you up one level in the directory tree."
+
+[[steps]]
+step_number = 7
+title = "Pro Tip: cd -"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Pro tip: 'cd -' is a super useful command! It takes you back to your previous directory. Try it:
+
+  cd /tmp
+  cd ~
+  cd -    # Takes you back to /tmp!
+
+This is great for quickly switching between two directories you're working in."""
+
+[[steps]]
+step_number = 8
+title = "Completion: Navigation Mastered!"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Congratulations! 🎉 You've mastered basic navigation!
+
+Key commands you learned:
+  • pwd  - Print working directory
+  • ls   - List files (use -l for details, -a for hidden, -h for human-readable)
+  • cd   - Change directory
+  • cd ~ - Go home
+  • cd .. - Go up one level
+  • cd -  - Toggle to previous directory
+
+These are the foundation of navigating Linux. Practice them often!"""
+
+[[setup]]
+path = "README.txt"
+contents = """
+Welcome to your practice space!
+
+Use pwd, ls, and cd to look around. There's a 'docs' folder to explore.
+"""
+
+[[setup]]
+path = "docs/getting-started.txt"
+contents = """
+You found the docs folder — nice navigating!
+Try 'cd ..' to go back up.
+"""

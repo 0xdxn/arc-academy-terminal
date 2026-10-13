@@ -1,0 +1,496 @@
+id = "git-fundamentals"
+title = "Git Fundamentals"
+description = "Master version control with Git: init, clone, add, commit, push, pull, status, log, and diff commands."
+difficulty = "Beginner"
+estimated_minutes = 15
+prerequisites = [
+    "nav-basics",
+    "file-mgmt",
+]
+tags = [
+    "beginner",
+    "git",
+    "version-control",
+]
+setup = []
+
+[[steps]]
+step_number = 1
+title = "What is Git?"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Welcome to Git Fundamentals!
+
+Git is a version control system - like 'Track Changes' for code.
+
+Why use Git?
+  • Track every change to your code
+  • Collaborate with others without conflicts
+  • Experiment safely (branches)
+  • Roll back mistakes
+  • See who changed what and when
+  • Backup your work (via GitHub, GitLab, etc.)
+
+Key concepts:
+  • Repository (repo): Project folder tracked by Git
+  • Commit: Snapshot of your code at a point in time
+  • Branch: Parallel version of your code
+  • Remote: Server hosting your repo (GitHub, etc.)
+  • Clone: Download a copy of a repository
+  • Push: Upload your changes
+  • Pull: Download others' changes
+
+Git is essential for:
+  • Professional development
+  • Open source contribution
+  • Portfolio building
+  • Team collaboration"""
+
+[[steps]]
+step_number = 2
+title = "Initializing a Repository"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Starting a new Git project:
+
+Command:
+  git init
+
+What it does:
+  • Creates a .git folder (hidden directory)
+  • This folder stores all version history
+  • Turns current directory into a Git repository
+
+Workflow:
+  mkdir my-project
+  cd my-project
+  git init
+  # Now you have a Git repository!
+
+You'll see:
+  'Initialized empty Git repository in /path/to/my-project/.git/'
+
+The .git folder contains:
+  • All commits
+  • Branch information
+  • Configuration
+  • History
+
+IMPORTANT:
+  • Don't delete .git folder (you'll lose all history!)
+  • Don't manually edit files in .git/
+  • One .git per project (not per subfolder)
+
+Alternative: Clone existing repository
+  git clone https://github.com/user/repo.git"""
+
+[[steps]]
+step_number = 3
+title = "Checking Repository Status"
+instruction = "The most important Git command is 'git status'. It shows what's changed. Try it: git status"
+hint = "Type: git status"
+
+[steps.step_type.CommandExercise]
+expected_command = "git status"
+validation = "CommandOnly"
+success_message = """
+Perfect! 'git status' is your best friend. Run it constantly to see:
+  • Which files changed
+  • Which changes are staged for commit
+  • Which branch you're on
+  • If you're ahead/behind remote
+
+Make it a habit to run 'git status' before every commit!"""
+
+[[steps]]
+step_number = 4
+title = "Understanding Git Workflow"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+The Git workflow has three stages:
+
+1. WORKING DIRECTORY (modified files)
+   ↓
+   git add (stage changes)
+   ↓
+2. STAGING AREA (files ready to commit)
+   ↓
+   git commit (save snapshot)
+   ↓
+3. REPOSITORY (committed history)
+   ↓
+   git push (upload to remote)
+   ↓
+4. REMOTE (GitHub, GitLab, etc.)
+
+Think of it like:
+  • Working Directory = Your desk (working on documents)
+  • Staging Area = Box for mail (selecting what to send)
+  • Repository = Filing cabinet (permanent storage)
+  • Remote = Cloud backup
+
+Commands:
+  git status           See what's changed
+  git add file.txt     Stage specific file
+  git add .            Stage all changes
+  git commit -m 'msg'  Save snapshot with message
+  git push             Upload to remote
+  git pull             Download from remote"""
+
+[[steps]]
+step_number = 5
+title = "Staging Changes with git add"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+'git add' stages files for commit.
+
+Commands:
+  git add file.txt         Stage one file
+  git add file1 file2      Stage multiple files
+  git add .                Stage all changes in current directory
+  git add -A               Stage ALL changes everywhere
+  git add *.js             Stage all .js files
+  git add -p               Interactive staging (review each change)
+
+What 'staging' means:
+  • You're selecting which changes to include in next commit
+  • Lets you commit logical chunks, not everything at once
+  • Like packing a box - choose what goes in
+
+Example workflow:
+  # Edit multiple files
+  git status              # See what changed
+  git add feature.js      # Stage only the feature
+  git status              # Verify what's staged
+  git commit -m 'Add feature'
+  # Later...
+  git add bugfix.js       # Stage the bugfix separately
+  git commit -m 'Fix bug'
+
+Why stage separately?
+  • Clean, focused commit history
+  • Easier to review changes
+  • Easier to revert specific features"""
+
+[[steps]]
+step_number = 6
+title = "Quiz: Understanding git add"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "What does 'git add .' do?"
+options = [
+    "Commits all changes immediately",
+    "Stages all changes in the current directory and subdirectories",
+    "Deletes all unstaged files",
+    "Pushes changes to remote repository",
+]
+correct_index = 1
+explanation = "Correct! 'git add .' stages all new, modified, and deleted files in the current directory and all subdirectories. The dot (.) means 'current directory and everything under it'. This DOES NOT commit anything yet - you still need 'git commit' to save the snapshot. It's like putting documents in a box before mailing them."
+
+[[steps]]
+step_number = 7
+title = "Committing Changes"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+'git commit' saves a snapshot of staged changes.
+
+Basic usage:
+  git commit -m "Commit message"
+  git commit -m "Add user login feature"
+
+Longer messages:
+  git commit
+  # Opens editor for multi-line message
+  # First line: summary (50 chars or less)
+  # Blank line
+  # Detailed explanation
+
+Commit message best practices:
+  ✓ Use present tense: "Add feature" not "Added feature"
+  ✓ Be specific: "Fix login validation bug" not "Fix bug"
+  ✓ Keep first line under 50 characters
+  ✓ Explain WHY, not just WHAT
+
+Good examples:
+  "Add password reset functionality"
+  "Fix memory leak in image processor"
+  "Update dependencies to patch security issue"
+
+Bad examples:
+  "stuff" "wip" "fixed it" "asdfasdf" "changes"
+
+Useful flags:
+  git commit -m "message"    Quick commit
+  git commit -a -m "msg"     Stage + commit modified files (not new files)
+  git commit --amend         Fix last commit message"""
+
+[[steps]]
+step_number = 8
+title = "Viewing Commit History"
+instruction = "The 'git log' command shows commit history. Try it: git log"
+hint = "Type: git log (press 'q' to exit)"
+
+[steps.step_type.CommandExercise]
+expected_command = "git log"
+validation = "CommandOnly"
+success_message = """
+Great! git log shows:
+  • Commit hash (unique ID)
+  • Author
+  • Date
+  • Commit message
+
+Useful variations:
+  git log --oneline          Compact view
+  git log --graph            Show branch graph
+  git log -n 5               Last 5 commits
+  git log --author='Alice'   Commits by Alice
+  git log file.txt           History of specific file"""
+
+[[steps]]
+step_number = 9
+title = "Viewing Changes with git diff"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+'git diff' shows what changed.
+
+Usage:
+  git diff                  Changes not yet staged
+  git diff --staged         Changes that are staged
+  git diff HEAD             All changes (staged + unstaged)
+  git diff branch1 branch2  Compare branches
+  git diff commit1 commit2  Compare commits
+  git diff file.txt         Changes in specific file
+
+Reading diff output:
+  --- a/file.txt      Original file
+  +++ b/file.txt      Modified file
+  @@ -10,7 +10,7 @@  Line numbers
+  -old line           Line removed (red)
+  +new line           Line added (green)
+   unchanged          Context line
+
+Practical uses:
+  • Before staging: Review what you're about to add
+  • Before committing: Double-check staged changes
+  • Code review: See what changed in a commit
+  • Debugging: When did this line change?
+
+Workflow:
+  # Make changes
+  git diff              # Review changes
+  git add file.txt
+  git diff --staged     # Review what's staged
+  git commit -m "msg""""
+
+[[steps]]
+step_number = 10
+title = "Cloning Repositories"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+'git clone' downloads a repository.
+
+Usage:
+  git clone https://github.com/user/repo.git
+  git clone https://github.com/user/repo.git my-folder
+  git clone git@github.com:user/repo.git  (SSH)
+
+What happens:
+  1. Creates a new folder with repo name
+  2. Downloads all files and history
+  3. Sets up remote connection to origin
+  4. Checks out the default branch (usually 'main')
+
+Examples:
+  git clone https://github.com/torvalds/linux.git
+  git clone https://github.com/microsoft/vscode.git
+
+After cloning:
+  cd repo-name
+  git status           # Check status
+  git log              # See history
+  git remote -v        # See remote URLs
+
+HTTPS vs SSH:
+  • HTTPS: Easy setup, requires password/token each time
+  • SSH: Requires setup, but no password needed
+
+Where to clone from?
+  • GitHub (most popular)
+  • GitLab
+  • Bitbucket
+  • Self-hosted servers"""
+
+[[steps]]
+step_number = 11
+title = "Pushing and Pulling Changes"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Syncing with remote repositories:
+
+git push - Upload your commits:
+  git push                    Push current branch
+  git push origin main        Push 'main' to 'origin'
+  git push -u origin branch   Set upstream and push
+
+git pull - Download and merge changes:
+  git pull                    Pull current branch
+  git pull origin main        Pull from specific branch
+
+Workflow:
+  # Make changes locally
+  git add .
+  git commit -m "Add feature"
+  git pull    # Get latest changes from team
+  git push    # Upload your changes
+
+IMPORTANT:
+  • Always pull before push (get latest changes first)
+  • Pull before starting work each day
+  • Push frequently (don't hoard commits)
+
+Handling conflicts:
+  # If pull shows conflicts
+  git status               # See conflicting files
+  # Edit files to resolve conflicts
+  git add .
+  git commit -m "Merge conflicts"
+  git push
+
+Origin:
+  'origin' is the default name for the remote repository
+  git remote -v shows all remotes"""
+
+[[steps]]
+step_number = 12
+title = "Quiz: Git Workflow"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "What's the correct order to save and upload changes?"
+options = [
+    "git commit → git add → git push",
+    "git add → git commit → git push",
+    "git push → git commit → git add",
+    "git add → git push → git commit",
+]
+correct_index = 1
+explanation = """
+Correct! The workflow is:
+  1. git add (stage changes)
+  2. git commit (save snapshot locally)
+  3. git push (upload to remote)
+
+Think of it as:
+  1. Pack the box (add)
+  2. Seal and label the box (commit)
+  3. Mail the box (push)
+
+You can't commit unstaged changes, and you can't push uncommitted changes!"""
+
+[[steps]]
+step_number = 13
+title = "Essential Git Commands Summary"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Git command quick reference:
+
+Setup:
+  git init              Create new repository
+  git clone url         Download repository
+
+Basic workflow:
+  git status            Check status (run often!)
+  git add file          Stage file
+  git add .             Stage all changes
+  git commit -m "msg"   Save snapshot
+  git push              Upload to remote
+  git pull              Download from remote
+
+Viewing:
+  git log               Commit history
+  git log --oneline     Compact history
+  git diff              Unstaged changes
+  git diff --staged     Staged changes
+
+Configuration:
+  git config --global user.name "Your Name"
+  git config --global user.email "you@example.com"
+
+Help:
+  git help command      Detailed help
+  git command --help    Same as above
+
+Daily workflow:
+  1. git pull           (get latest)
+  2. Make changes
+  3. git status         (check changes)
+  4. git add .          (stage)
+  5. git commit -m ""   (save)
+  6. git push           (upload)"""
+
+[[steps]]
+step_number = 14
+title = "Completion: Git Fundamentals Mastered!"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Congratulations! You've learned Git fundamentals!
+
+Key concepts mastered:
+  • Repository: Version-tracked project
+  • Commit: Snapshot of your code
+  • Staging: Selecting changes to commit
+  • Remote: Server hosting your code
+
+Essential commands:
+  git init              Start new repo
+  git clone url         Copy existing repo
+  git status            Check status
+  git add .             Stage changes
+  git commit -m "msg"   Save snapshot
+  git log               View history
+  git diff              See changes
+  git push              Upload commits
+  git pull              Download commits
+
+Git workflow:
+  1. Make changes
+  2. git add (stage)
+  3. git commit (save)
+  4. git push (share)
+
+Best practices:
+  ✓ Commit often with clear messages
+  ✓ Pull before push
+  ✓ Run git status frequently
+  ✓ Review changes with git diff
+  ✓ Write meaningful commit messages
+
+Next steps:
+  • Learn branching and merging
+  • Explore GitHub/GitLab
+  • Practice with real projects
+  • Learn .gitignore
+
+You're ready to version control like a pro!"""

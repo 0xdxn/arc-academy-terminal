@@ -1685,19 +1685,24 @@ impl App {
                 None;
             let mut step_advanced = false;
 
+            let practice_real = self.practice_mode_is_real();
             if let Some(ref mut lesson_panel) = self.lesson_panel {
-                let mut validation = lesson_panel.validate_current_step(&command_str);
-                if validation.is_success() && command_failed {
-                    validation = arct_core::ValidationResult::Failure {
-                        message: "That's the right command, but it didn't work here. \
-                                  Read the error above, then try again."
-                            .to_string(),
-                        hint: Some(
-                            "Check the spelling of names and where you are (pwd)."
-                                .to_string(),
-                        ),
-                    };
-                }
+                // Task steps check the practice environment itself
+                let world: Option<&dyn arct_core::PracticeWorld> = if practice_real {
+                    self.playground
+                        .as_ref()
+                        .map(|p| p as &dyn arct_core::PracticeWorld)
+                } else {
+                    self.virtual_fs
+                        .as_ref()
+                        .map(|v| v as &dyn arct_core::PracticeWorld)
+                };
+                let validation = lesson_panel.validate_step_with(
+                    &command_str,
+                    vfs_output.as_deref().unwrap_or(""),
+                    command_failed,
+                    world,
+                );
 
                 // Build output: virtual FS output FIRST, then validation feedback
                 let mut output = String::new();

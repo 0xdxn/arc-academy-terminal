@@ -733,3 +733,17 @@ mod tests {
         assert!(resolved.starts_with(&vfs.root));
     }
 }
+
+impl crate::lesson::PracticeWorld for VirtualFileSystem {
+    fn locate(&self, lesson_path: &str) -> Option<PathBuf> {
+        let path = lesson_path.trim_start_matches('/');
+        self.resolve_path(&format!("/lesson-home/{path}")).ok()
+    }
+
+    fn cwd_relative(&self) -> String {
+        self.current_dir
+            .strip_prefix("/lesson-home")
+            .map(|rel| rel.to_string_lossy().to_string())
+            .unwrap_or_default()
+    }
+}

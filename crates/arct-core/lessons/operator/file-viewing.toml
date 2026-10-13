@@ -1,0 +1,238 @@
+id = "file-viewing"
+title = "File Viewing & Reading"
+description = "Master the art of reading, viewing, and searching through text files using cat, less, head, tail, and grep."
+difficulty = "Beginner"
+estimated_minutes = 12
+prerequisites = ["nav-basics"]
+tags = [
+    "beginner",
+    "files",
+    "text",
+]
+
+[[steps]]
+step_number = 1
+title = "Introduction to File Viewing"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Welcome to File Viewing & Reading!
+
+In Linux, almost everything is a text file - configuration files, logs, scripts, and more. Knowing how to quickly read and search through files is essential.
+
+You'll learn:
+  • cat - Display entire files
+  • less - Navigate large files
+  • head/tail - View file beginnings and ends
+  • grep - Search for patterns in files
+
+These tools are your windows into the file system. Let's get started!"""
+
+[[steps]]
+step_number = 2
+title = "Using cat to Display Files"
+instruction = "The 'cat' command (concatenate) displays file contents. Try viewing a file with cat /etc/hostname"
+hint = "Type: cat /etc/hostname"
+
+[steps.step_type.CommandExercise]
+expected_command = "cat /etc/hostname"
+validation = "Exact"
+success_message = "Perfect! 'cat' dumps the entire file to your screen. Great for small files, but overwhelming for large ones."
+
+[[steps]]
+step_number = 3
+title = "Viewing Multiple Files"
+instruction = "cat can display multiple files at once. Try: cat /etc/hostname /etc/os-release"
+hint = "Type exactly: cat /etc/hostname /etc/os-release"
+
+[steps.step_type.CommandExercise]
+expected_command = "cat /etc/hostname /etc/os-release"
+validation = "Exact"
+success_message = "Excellent! cat concatenates (combines) multiple files and displays them in order. That's why it's called 'cat'!"
+
+[[steps]]
+step_number = 4
+title = "Reading Large Files with less"
+instruction = "For large files, use 'less' which lets you scroll. It's like a book reader. Try: less /etc/services"
+hint = "Type: less /etc/services (use arrow keys to scroll, 'q' to quit)"
+
+[steps.step_type.CommandExercise]
+expected_command = "less /etc/services"
+validation = "Exact"
+success_message = "Great! In less: arrow keys scroll, Space=page down, 'b'=page up, '/'=search, 'q'=quit. It's named 'less' because 'less is more' (improving on the old 'more' command)."
+
+[[steps]]
+step_number = 5
+title = "Quiz: When to Use cat vs less?"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "When should you use 'less' instead of 'cat'?"
+options = [
+    "Always use cat, it's faster",
+    "For large files where you need to scroll and search",
+    "Only for binary files",
+    "When you want to edit the file",
+]
+correct_index = 1
+explanation = "Correct! Use 'less' for large files (logs, documentation) where you need to scroll and search. Use 'cat' for quick viewing of small files or when piping to other commands. Neither cat nor less can edit files - use a text editor like nano or vim for that!"
+
+[[steps]]
+step_number = 6
+title = "Viewing File Beginnings with head"
+instruction = "To see just the first few lines of a file, use 'head'. Try viewing the first 10 lines of /etc/services"
+hint = "Type: head /etc/services"
+
+[steps.step_type.CommandExercise]
+expected_command = "head /etc/services"
+validation = "Exact"
+success_message = "Perfect! By default, 'head' shows the first 10 lines. Great for previewing files or checking log file headers."
+
+[[steps]]
+step_number = 7
+title = "Custom Line Count with head"
+instruction = "You can specify how many lines to show with -n. Try showing the first 5 lines: head -n 5 /etc/services"
+hint = "Type: head -n 5 /etc/services"
+
+[steps.step_type.CommandExercise]
+expected_command = "head -n 5 /etc/services"
+validation = "Exact"
+success_message = "Excellent! The -n flag controls the number of lines. You can also use the shorthand: head -5 /etc/services"
+
+[[steps]]
+step_number = 8
+title = "Viewing File Endings with tail"
+instruction = "To see the last lines of a file, use 'tail'. This is crucial for checking log files. Try: tail /etc/services"
+hint = "Type: tail /etc/services"
+
+[steps.step_type.CommandExercise]
+expected_command = "tail /etc/services"
+validation = "Exact"
+success_message = "Great! 'tail' shows the last 10 lines by default. Essential for checking recent log entries!"
+
+[[steps]]
+step_number = 9
+title = "Live Log Monitoring"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Pro tip: tail -f (follow mode)
+
+The -f flag makes tail continuously show new lines as they're added to a file:
+
+  tail -f /var/log/syslog
+
+This is INCREDIBLY useful for:
+  • Monitoring live log files
+  • Watching application output
+  • Debugging server issues
+  • Tracking file changes in real-time
+
+Press Ctrl+C to stop following.
+
+Example: tail -f /var/log/nginx/access.log
+Watches web server traffic in real-time!"""
+
+[[steps]]
+step_number = 10
+title = "Introduction to grep"
+instruction = "grep searches for patterns in files. It's like Ctrl+F for the command line. Search for 'http' in /etc/services: grep http /etc/services"
+hint = "Type: grep http /etc/services"
+
+[steps.step_type.CommandExercise]
+expected_command = "grep http /etc/services"
+validation = "Exact"
+success_message = "Perfect! grep found all lines containing 'http'. Each matching line is displayed with the pattern highlighted."
+
+[[steps]]
+step_number = 11
+title = "Case-Insensitive Search"
+instruction = "By default, grep is case-sensitive. Use -i for case-insensitive search. Try: grep -i SSH /etc/services"
+hint = "Type: grep -i SSH /etc/services"
+
+[steps.step_type.CommandExercise]
+expected_command = "grep -i SSH /etc/services"
+success_message = "Excellent! The -i flag makes grep ignore case, matching 'SSH', 'ssh', 'Ssh', etc. Very useful when you're not sure of the exact capitalization."
+
+[steps.step_type.CommandExercise.validation]
+AnyOf = [
+    "grep -i SSH /etc/services",
+    "grep -i ssh /etc/services",
+]
+
+[[steps]]
+step_number = 12
+title = "Completion: File Viewing Mastered!"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Congratulations! You've mastered file viewing!
+
+Key commands learned:
+  • cat file.txt           - Display entire file
+  • cat file1 file2        - Display multiple files
+  • less file.txt          - Navigate large files (q to quit)
+  • head file.txt          - First 10 lines
+  • head -n 20 file.txt    - First 20 lines
+  • tail file.txt          - Last 10 lines
+  • tail -f file.txt       - Follow file (live updates)
+  • grep pattern file      - Search for pattern
+  • grep -i pattern file   - Case-insensitive search
+
+Quick reference:
+  Small files? → cat
+  Large files? → less
+  Check beginning? → head
+  Check end/logs? → tail
+  Find something? → grep
+  Watch live logs? → tail -f
+
+Next lesson: Learn text processing with pipes and filters!"""
+
+[[setup]]
+path = "notes.txt"
+contents = """
+Shopping list:
+- apples
+- bread
+- coffee
+
+Reminder: practice cat, less, head, tail and grep on the files here.
+"""
+
+[[setup]]
+path = "server.log"
+contents = """
+2026-07-01 09:00:01 INFO  http server started on port 8080
+2026-07-01 09:00:02 INFO  ssh daemon listening on port 22
+2026-07-01 09:01:14 INFO  http GET /index.html 200
+2026-07-01 09:02:33 WARN  http GET /admin 403
+2026-07-01 09:03:05 INFO  SSH login accepted for user alice
+2026-07-01 09:04:41 ERROR http GET /missing 404
+2026-07-01 09:05:12 INFO  http GET /about.html 200
+2026-07-01 09:06:58 WARN  disk usage at 81%
+2026-07-01 09:07:23 INFO  http POST /contact 200
+2026-07-01 09:08:44 ERROR ssh login failed for user bob
+2026-07-01 09:09:31 INFO  http GET /index.html 200
+2026-07-01 09:10:02 INFO  backup job started
+2026-07-01 09:12:19 INFO  backup job finished
+2026-07-01 09:13:37 INFO  http GET /docs 200
+2026-07-01 09:14:55 ERROR http GET /broken 500
+2026-07-01 09:15:10 INFO  SSH session closed for user alice
+2026-07-01 09:16:42 INFO  http GET /index.html 200
+2026-07-01 09:17:08 WARN  slow query took 4.2s
+2026-07-01 09:18:29 INFO  http GET /blog 200
+2026-07-01 09:19:59 INFO  server heartbeat OK
+"""
+
+[[setup]]
+path = "poem.txt"
+contents = """
+The terminal glows in quiet night,
+Each command a spark of light.
+With cat and grep the text takes flight,
+And tail reveals the end in sight.
+"""

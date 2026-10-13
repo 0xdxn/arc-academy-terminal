@@ -337,3 +337,28 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 }
+
+impl crate::lesson::PracticeWorld for Playground {
+    fn locate(&self, lesson_path: &str) -> Option<PathBuf> {
+        let base = match &self.lesson_id {
+            Some(id) => self.root.join(id),
+            None => self.root.clone(),
+        };
+        let rel = Path::new(lesson_path.trim_start_matches('/'));
+        if rel.components().any(|c| !matches!(c, Component::Normal(_))) {
+            return None;
+        }
+        Some(base.join(rel))
+    }
+
+    fn cwd_relative(&self) -> String {
+        let base = match &self.lesson_id {
+            Some(id) => self.root.join(id),
+            None => self.root.clone(),
+        };
+        self.cwd
+            .strip_prefix(&base)
+            .map(|rel| rel.to_string_lossy().to_string())
+            .unwrap_or_default()
+    }
+}

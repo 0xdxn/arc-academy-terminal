@@ -1,0 +1,434 @@
+id = "text-processing"
+title = "Text Processing with Pipes"
+description = "Master powerful text processing using grep, cut, sort, uniq, pipes, and basic sed/awk for data manipulation."
+difficulty = "Intermediate"
+estimated_minutes = 20
+prerequisites = ["file-viewing"]
+tags = [
+    "intermediate",
+    "text",
+    "pipes",
+]
+
+[[steps]]
+step_number = 1
+title = "The Power of Text Processing"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Welcome to Text Processing!
+
+Linux philosophy: Small, focused tools that do ONE thing well, combined through pipes.
+
+You'll learn to:
+  • Chain commands with pipes (|)
+  • Filter text with grep patterns
+  • Extract columns with cut
+  • Sort and organize data
+  • Find unique entries with uniq
+  • Transform text with sed and awk
+
+These tools turn the terminal into a data processing powerhouse!
+
+Example workflow:
+  cat access.log | grep ERROR | cut -d' ' -f1 | sort | uniq -c
+  ↑ read log → filter errors → extract IPs → sort → count unique
+
+Let's start simple and build up!"""
+
+[[steps]]
+step_number = 2
+title = "Introduction to Pipes"
+instruction = "Pipes (|) send output from one command as input to another. Try: ls -l | grep txt"
+hint = "Type: ls -l | grep txt"
+
+[steps.step_type.CommandExercise]
+expected_command = "ls -l | grep txt"
+validation = "Exact"
+success_message = "Perfect! The pipe takes 'ls -l' output and filters it through grep, showing only lines with 'txt'. Pipes are the foundation of text processing!"
+
+[[steps]]
+step_number = 3
+title = "Advanced grep Patterns"
+instruction = "grep can use regular expressions. The -E flag enables extended regex. Try finding lines starting with numbers in /etc/services: grep -E '^[0-9]' /etc/services"
+hint = "Type: grep -E '^[0-9]' /etc/services (^ means start of line, [0-9] means any digit)"
+
+[steps.step_type.CommandExercise]
+expected_command = "grep -E '^[0-9]' /etc/services"
+validation = "Exact"
+success_message = """
+Great! Regular expressions are powerful:
+  ^ = start of line
+  $ = end of line
+  . = any character
+  * = zero or more
+  + = one or more
+  [0-9] = any digit
+  [a-z] = any lowercase letter"""
+
+[[steps]]
+step_number = 4
+title = "Showing Line Numbers and Context"
+instruction = "grep -n shows line numbers. Try: grep -n http /etc/services | head -5"
+hint = "Type: grep -n http /etc/services | head -5"
+
+[steps.step_type.CommandExercise]
+expected_command = "grep -n http /etc/services | head -5"
+validation = "Exact"
+success_message = """
+Excellent! The -n flag adds line numbers. Other useful grep flags:
+  -v (invert, show non-matching)
+  -c (count matches)
+  -l (list filenames only)
+  -A 3 (show 3 lines After match)
+  -B 3 (show 3 lines Before match)
+  -C 3 (show 3 lines of Context)"""
+
+[[steps]]
+step_number = 5
+title = "Extracting Columns with cut"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+'cut' extracts specific columns from text.
+
+Common uses:
+  cut -d':' -f1 /etc/passwd     Extract 1st field (usernames)
+  cut -d' ' -f1,3 file.txt      Extract fields 1 and 3
+  cut -c1-10 file.txt           Extract characters 1-10
+
+Options:
+  -d 'delimiter'  - Field separator (default: tab)
+  -f fields       - Which field(s) to extract (1,2,3 or 1-5)
+  -c chars        - Character positions
+
+Example with /etc/passwd:
+  cat /etc/passwd | cut -d':' -f1,3
+  Shows username (field 1) and user ID (field 3)
+
+Great for:
+  • CSV files (cut -d',')
+  • Log files (cut -d' ')
+  • Configuration files
+  • Tab-separated data"""
+
+[[steps]]
+step_number = 6
+title = "Practice: Extract Usernames"
+instruction = "Extract just the usernames (first field) from /etc/passwd. Use cut with colon delimiter: cut -d':' -f1 /etc/passwd"
+hint = "Type: cut -d':' -f1 /etc/passwd"
+
+[steps.step_type.CommandExercise]
+expected_command = "cut -d':' -f1 /etc/passwd"
+validation = "Exact"
+success_message = "Perfect! You've extracted all usernames. The /etc/passwd file uses colons as delimiters, and field 1 is the username. This is how you parse structured text files!"
+
+[[steps]]
+step_number = 7
+title = "Sorting Text with sort"
+instruction = "The 'sort' command organizes lines alphabetically. Try sorting usernames: cut -d':' -f1 /etc/passwd | sort"
+hint = "Type: cut -d':' -f1 /etc/passwd | sort"
+
+[steps.step_type.CommandExercise]
+expected_command = "cut -d':' -f1 /etc/passwd | sort"
+validation = "Exact"
+success_message = """
+Excellent! sort arranges lines alphabetically. Useful flags:
+  -r (reverse order)
+  -n (numeric sort)
+  -k 2 (sort by column 2)
+  -u (unique, remove duplicates)
+  -t ':' (use : as delimiter)"""
+
+[[steps]]
+step_number = 8
+title = "Quiz: Understanding Pipes"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "What does this command do: ps aux | grep python | wc -l"
+options = [
+    "Counts how many Python programs are installed",
+    "Counts lines in Python scripts",
+    "Counts how many running processes have 'python' in their name",
+    "Shows Python version",
+]
+correct_index = 2
+explanation = """
+Correct! Let's break it down:
+  1. ps aux - List all processes
+  2. | grep python - Filter for lines containing 'python'
+  3. | wc -l - Count the lines (wc -l counts lines)
+
+So it counts how many processes contain 'python' in their command/name. This is how you combine simple tools for complex tasks!"""
+
+[[steps]]
+step_number = 9
+title = "Finding Unique Entries with uniq"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+'uniq' removes duplicate adjacent lines.
+
+IMPORTANT: Lines must be sorted first!
+
+Common usage:
+  sort file.txt | uniq           Remove duplicates
+  sort file.txt | uniq -c        Count occurrences
+  sort file.txt | uniq -d        Show only duplicates
+  sort file.txt | uniq -u        Show only unique lines
+
+Real-world example:
+  cat access.log | cut -d' ' -f1 | sort | uniq -c | sort -rn
+  ↑ Get IPs from log → sort → count each → sort by frequency
+
+Why sort first?
+  uniq only detects consecutive duplicates!
+  Without sort: a,b,a,a,b → a,b,a,b (only middle duplicates removed)
+  With sort:    a,a,a,b,b → a,b (all duplicates removed)
+
+Pro tip: 'sort -u' combines sort + uniq in one command!"""
+
+[[steps]]
+step_number = 10
+title = "Counting with wc"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+'wc' (word count) counts lines, words, and characters.
+
+Usage:
+  wc file.txt              Show lines, words, bytes
+  wc -l file.txt           Count lines only
+  wc -w file.txt           Count words only
+  wc -c file.txt           Count bytes/characters
+
+With pipes:
+  ls | wc -l               Count files in directory
+  ps aux | wc -l           Count running processes
+  grep ERROR log | wc -l   Count errors in log
+  cat file | wc -w         Count words in file
+
+Example:
+  $ wc /etc/passwd
+    45   72  2594 /etc/passwd
+    ↑    ↑   ↑
+    lines words bytes
+
+Quick counts:
+  • How many users? → wc -l /etc/passwd
+  • How many files? → ls | wc -l
+  • How many errors? → grep ERROR log.txt | wc -l"""
+
+[[steps]]
+step_number = 11
+title = "Introduction to sed"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+'sed' (stream editor) transforms text.
+
+Basic find-and-replace:
+  sed 's/old/new/' file.txt       Replace first occurrence per line
+  sed 's/old/new/g' file.txt      Replace all occurrences (global)
+  sed 's/old/new/gi' file.txt     Case-insensitive replacement
+
+Deleting lines:
+  sed '/pattern/d' file.txt       Delete lines matching pattern
+  sed '5d' file.txt               Delete line 5
+  sed '1,10d' file.txt            Delete lines 1-10
+
+Printing specific lines:
+  sed -n '5p' file.txt            Print only line 5
+  sed -n '10,20p' file.txt        Print lines 10-20
+  sed -n '/ERROR/p' file.txt      Print lines with ERROR (like grep)
+
+Real examples:
+  sed 's/http/https/g' urls.txt   Change http to https
+  sed '/^$/d' file.txt            Remove empty lines
+  sed 's/  */ /g' file.txt        Replace multiple spaces with one
+
+Note: sed doesn't modify the file, just outputs transformed text.
+To save: sed 's/old/new/g' file.txt > newfile.txt"""
+
+[[steps]]
+step_number = 12
+title = "Introduction to awk"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+'awk' is a powerful text processing language.
+
+Basic syntax:
+  awk '{print $1}' file.txt       Print first field
+  awk '{print $1,$3}' file.txt    Print fields 1 and 3
+  awk '{print $NF}' file.txt      Print last field
+
+With delimiters:
+  awk -F':' '{print $1}' /etc/passwd    Use : as delimiter
+  awk -F',' '{print $2}' data.csv       Use , for CSV
+
+Filtering:
+  awk '$3 > 100' file.txt         Print lines where field 3 > 100
+  awk '/ERROR/' file.txt          Print lines matching ERROR
+  awk '$1 == "root"' /etc/passwd  Print if field 1 equals root
+
+Useful built-ins:
+  $0  = entire line
+  $1  = first field
+  $NF = last field
+  NR  = line number
+  NF  = number of fields
+
+Real examples:
+  ps aux | awk '{print $1,$2,$11}'       User, PID, command
+  awk '{sum+=$1} END {print sum}' nums   Sum first column
+  awk 'length > 80' file.txt             Lines longer than 80 chars"""
+
+[[steps]]
+step_number = 13
+title = "Practice: Complex Pipeline"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Let's build a complex pipeline step by step!
+
+Task: Find the 5 most common shells used by system users.
+
+Pipeline:
+  cut -d':' -f7 /etc/passwd | sort | uniq -c | sort -rn | head -5
+
+Breaking it down:
+  1. cut -d':' -f7 /etc/passwd
+     Extract field 7 (login shell) from passwd
+
+  2. | sort
+     Sort shells alphabetically (required for uniq)
+
+  3. | uniq -c
+     Count occurrences of each unique shell
+
+  4. | sort -rn
+     Sort numerically (-n) in reverse (-r) order
+     (most common first)
+
+  5. | head -5
+     Show only top 5 results
+
+This is the power of pipes! Small tools combined for complex analysis.
+
+Try modifying it:
+  • Top 10 instead of 5? Change head -5 to head -10
+  • Least common? Remove -r from sort
+  • Show all? Remove | head -5"""
+
+[[steps]]
+step_number = 14
+title = "Quiz: Text Processing Mastery"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "Which command extracts unique IP addresses from an access log and counts them?"
+options = [
+    "cat access.log | grep -E '[0-9]+' | uniq",
+    "cut -d' ' -f1 access.log | sort | uniq -c",
+    "awk '{print $1}' access.log | count",
+    '''sed 's/.*([0-9.]+).*/\1/' access.log''',
+]
+correct_index = 1
+explanation = """
+Correct! Breaking it down:
+  • cut -d' ' -f1 - Extract first field (IP address, space-delimited)
+  • sort - Sort IPs (required for uniq)
+  • uniq -c - Count unique occurrences
+
+Alternative with awk:
+  awk '{print $1}' access.log | sort | uniq -c
+
+Why not the others?
+  • Option 1: No sort before uniq, won't work properly
+  • Option 3: No 'count' command exists
+  • Option 4: sed regex is overly complex and incomplete"""
+
+[[steps]]
+step_number = 15
+title = "Completion: Text Processing Mastered!"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Outstanding! You're now a text processing expert!
+
+Key commands:
+  grep pattern file          Search/filter text
+  grep -E '^[0-9]'          Extended regex
+  cut -d':' -f1 file        Extract columns
+  sort file                 Sort lines
+  sort -rn                  Reverse numeric sort
+  uniq                      Remove duplicates (needs sorted input)
+  uniq -c                   Count occurrences
+  wc -l                     Count lines
+  sed 's/old/new/g'         Find and replace
+  awk '{print $1}' file     Print first field
+
+Pipe patterns:
+  cmd1 | cmd2 | cmd3        Chain commands
+  sort | uniq               Remove duplicates
+  sort | uniq -c            Count unique entries
+  grep pattern | wc -l      Count matches
+  cut | sort | uniq         Extract and deduplicate
+
+Pro tips:
+  • Always sort before uniq
+  • Use -n with sort for numbers
+  • Combine awk/cut with pipes for complex parsing
+  • Test each pipe stage separately
+
+Next: Learn package management!"""
+
+[[setup]]
+path = "access.log"
+contents = """
+192.168.1.10 - GET /index.html 200
+192.168.1.22 - GET /about.html 200
+192.168.1.10 - GET /docs 200
+10.0.0.5 - POST /login 401 ERROR bad password
+192.168.1.10 - GET /blog 200
+192.168.1.22 - GET /missing 404 ERROR not found
+10.0.0.5 - POST /login 200
+172.16.4.8 - GET /index.html 200
+192.168.1.10 - GET /contact 200
+172.16.4.8 - GET /broken 500 ERROR server fault
+192.168.1.22 - GET /index.html 200
+10.0.0.5 - GET /profile 200
+"""
+
+[[setup]]
+path = "fruits.txt"
+contents = """
+banana
+apple
+cherry
+apple
+banana
+apple
+date
+cherry
+"""
+
+[[setup]]
+path = "scores.txt"
+contents = """
+alice:87
+bob:62
+carol:95
+dave:78
+erin:95
+"""

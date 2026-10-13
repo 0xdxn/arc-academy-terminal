@@ -1,0 +1,115 @@
+id = "file-mgmt"
+title = "File Management Basics"
+description = "Learn to create, copy, move, and delete files and directories safely."
+difficulty = "Beginner"
+estimated_minutes = 15
+prerequisites = ["nav-basics"]
+tags = [
+    "beginner",
+    "files",
+    "essential",
+]
+
+[[steps]]
+step_number = 1
+title = "Creating a Practice Directory"
+instruction = "Let's create a safe practice space. Create a directory called 'practice' in your current location."
+hint = "Use 'mkdir practice'"
+
+[steps.step_type.CommandExercise]
+expected_command = "mkdir practice"
+validation = "CommandOnly"
+success_message = "Great! 'mkdir' (make directory) creates a new folder. Now you have a safe space to practice."
+
+[[steps]]
+step_number = 2
+title = "Creating a File"
+instruction = "Navigate into your practice directory and create an empty file called 'test.txt'."
+hint = "Use 'cd practice' then 'touch test.txt'"
+
+[steps.step_type.CommandExercise]
+expected_command = "touch test.txt"
+validation = "CommandOnly"
+success_message = "Perfect! 'touch' creates an empty file or updates the timestamp of an existing one."
+
+[[steps]]
+step_number = 3
+title = "Copying Files"
+instruction = "Make a copy of test.txt called test-backup.txt."
+hint = "Use 'cp test.txt test-backup.txt'"
+
+[steps.step_type.CommandExercise]
+expected_command = "cp test.txt test-backup.txt"
+validation = "Exact"
+success_message = "Excellent! 'cp source destination' copies a file. Always make backups of important files before editing!"
+
+[[steps]]
+step_number = 4
+title = "Moving/Renaming Files"
+instruction = "Rename test-backup.txt to backup.txt using the move command."
+hint = "'mv' is used for both moving and renaming. Try 'mv test-backup.txt backup.txt'"
+
+[steps.step_type.CommandExercise]
+expected_command = "mv test-backup.txt backup.txt"
+validation = "Exact"
+success_message = "Great! 'mv' moves OR renames files. When source and destination are in the same directory, it's renaming."
+
+[[steps]]
+step_number = 5
+title = "Safety Quiz"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "Which flag should you ALWAYS use with 'rm' for safety?"
+options = [
+    "-f (force)",
+    "-i (interactive/confirm)",
+    "-r (recursive)",
+    "-v (verbose)",
+]
+correct_index = 1
+explanation = "Correct! The -i flag makes rm ask for confirmation before deleting. NEVER use -f (force) unless you're absolutely sure. -r is for directories but should be used with -i for safety."
+
+[[steps]]
+step_number = 6
+title = "Safe Deletion"
+instruction = "Delete test.txt safely by using the interactive flag."
+hint = "Use 'rm -i test.txt' and confirm when prompted"
+
+[steps.step_type.CommandExercise]
+expected_command = "rm -i test.txt"
+validation = "Exact"
+success_message = "Perfect! Always use -i when deleting files. There is NO undo in Linux - deleted files are gone forever!"
+
+[[steps]]
+step_number = 7
+title = "Completion: File Management Mastered!"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Excellent work! 🎉 You've learned essential file management!
+
+Key commands:
+  • mkdir  - Create directories
+  • touch  - Create empty files
+  • cp     - Copy files
+  • mv     - Move or rename files
+  • rm -i  - Delete files (ALWAYS use -i for safety!)
+
+Safety rules:
+  ⚠️  Always use 'rm -i' not 'rm -f'
+  ⚠️  Make backups before editing important files
+  ⚠️  Be very careful with 'rm -r' (deletes directories)
+  ⚠️  NEVER run 'rm -rf /' (destroys your system!)
+
+Next: Learn text processing!"""
+
+[[setup]]
+path = "README.txt"
+contents = """
+This is your file-management practice space.
+
+You'll create a 'practice' directory here and work with files inside it.
+Nothing outside this folder is ever touched.
+"""
