@@ -4,13 +4,178 @@ description = "See what every program inherits, and pass values on with export."
 difficulty = "Intermediate"
 estimated_minutes = 12
 prerequisites = ["variables"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "environment", "export", "env", "printenv"]
+
+[[setup]]
+path = "station/report.sh"
+contents = """#!/bin/sh
+# Weather report. Reads STATION and UNITS from the environment.
+echo Station: $STATION
+echo Units: $UNITS
+"""
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "What programs inherit"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+Your shell keeps two kinds of variables.
+
+A shell variable lives in this shell only. You made those
+in the last lesson.
+
+An environment variable is also handed to every program
+the shell starts. That list of NAME=value pairs is called
+the environment.
+
+  env                 list the environment
+  printenv NAME       show one environment variable
+  export NAME         add a shell variable to the environment
+  export NAME=value   set it and add it, in one go
+  NAME=value command  set it for that one command only
+
+Some you will meet everywhere:
+  HOME   your home folder        USER   your user name
+  PATH   where programs live     PWD    the folder you're in"""
+
+[[steps]]
+step_number = 2
+title = "Look at the environment"
+instruction = "List the environment with env."
+hints = ["One word, no arguments.", "Type: env"]
+solution = ["env"]
+
+[steps.step_type.Task]
+goal = "List the environment"
+success_message = "Every program you start gets a copy of this list. HOME is where cd with no argument takes you; PATH is where the shell looks for programs."
+checks = [{ Used = "env" }, { OutputContains = "PATH=" }]
+
+[[steps]]
+step_number = 3
+title = "Where am I?"
+instruction = "PWD always holds the folder you're in. Go into the station folder, then show $PWD with echo."
+hints = ["cd first, then echo the variable.", "Type: cd station   then: echo $PWD"]
+solution = ["cd station", "echo $PWD"]
+
+[steps.step_type.Task]
+goal = "Show PWD from inside station"
+success_message = "cd updates PWD for you. pwd prints the same thing."
+checks = [{ CwdIs = "station" }, { Used = "echo" }, { OutputContains = "station" }]
+
+[[steps]]
+step_number = 4
+title = "A shell variable stays home"
+instruction = "Set UNITS to celsius, without export. Then ask the environment for it: printenv UNITS."
+hints = ["Set it the way you learned last lesson, then use printenv.", "Type: UNITS=celsius   then: printenv UNITS"]
+solution = ["UNITS=celsius", "printenv UNITS"]
+
+[steps.step_type.Task]
+goal = "Set UNITS and look for it in the environment"
+success_message = "Nothing printed. UNITS is a shell variable: echo $UNITS would show it, because the shell fills that in, but it is not in the environment, so programs you start don't get it."
+checks = [{ Used = "printenv" }]
+
+[[steps]]
+step_number = 5
+title = "Export it"
+instruction = "Add UNITS to the environment with export, then check with printenv again."
+hints = ["export takes the name, without a $.", "If printenv still shows nothing, UNITS may not be set: export UNITS=celsius sets and exports in one go.", "Type: export UNITS   then: printenv UNITS"]
+solution = ["export UNITS", "printenv UNITS"]
+
+[steps.step_type.Task]
+goal = "Export UNITS and see it in the environment"
+success_message = "Now UNITS is in the environment. Every program this shell starts from now on gets UNITS=celsius."
+checks = [{ Used = "printenv" }, { OutputContains = "celsius" }]
+
+[[steps]]
+step_number = 6
+title = "Quick check: what does a script see?"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "On a real system you type CITY=Millford (no export), then run sh forecast.sh. The script says echo $CITY. What does it print?"
+options = ["Millford", "An empty line", "An error: CITY is not set"]
+correct_index = 1
+explanation = "sh starts a new program, and a new program only gets the environment. CITY was never exported, so inside the script it is empty. (The practice shell here is more forgiving and lets scripts see every variable. Trust this answer for real systems.)"
+
+[[steps]]
+step_number = 7
+title = "Read the script first"
+instruction = "Read report.sh before you run it."
+hints = ["cat shows a file.", "Type: cat report.sh"]
+solution = ["cat report.sh"]
+
+[steps.step_type.Task]
+goal = "Read report.sh"
+success_message = "It prints two variables it never sets. It expects STATION and UNITS to arrive from the environment."
+checks = [{ Used = "cat" }, { OutputContains = "$STATION" }]
+
+[[steps]]
+step_number = 8
+title = "Set, export, run"
+instruction = "Set STATION to Ridgetop and export it, in one command. Then run the report with sh."
+hints = ["export can set a value at the same time: export NAME=value.", "Type: export STATION=Ridgetop   then: sh report.sh"]
+solution = ["export STATION=Ridgetop", "sh report.sh"]
+
+[steps.step_type.Task]
+goal = "Run the report with STATION and UNITS set"
+success_message = "The script got both values from the environment."
+checks = [{ OutputContains = "Station: Ridgetop" }, { OutputContains = "Units: celsius" }]
+
+[[steps]]
+step_number = 9
+title = "Just this once"
+instruction = "A visitor wants one report in fahrenheit. Put UNITS=fahrenheit in front of the command, on the same line: that sets it for that one command only."
+hints = ["The assignment goes before the command, with a space between them.", "Type: UNITS=fahrenheit sh report.sh"]
+solution = ["UNITS=fahrenheit sh report.sh"]
+
+[steps.step_type.Task]
+goal = "Run one report in fahrenheit"
+success_message = "The script saw fahrenheit, because a NAME=value in front of a command goes into that command's environment."
+checks = [{ OutputContains = "Units: fahrenheit" }]
+
+[[steps]]
+step_number = 10
+title = "Nothing changed at home"
+instruction = "Check what UNITS is in your own shell now."
+hints = ["Ask the environment, as you did before.", "Type: printenv UNITS"]
+solution = ["printenv UNITS"]
+
+[steps.step_type.Task]
+goal = "Check UNITS after the one-off"
+success_message = "Still celsius. The one-off setting lasted for one command and then was gone. This is handy for trying a setting without changing your shell."
+checks = [{ Used = "printenv" }, { OutputContains = "celsius" }]
+
+[[steps]]
+step_number = 11
+title = "On your own"
+instruction = "No hints. Add OBSERVER, with the value Mei, to the environment. Then save the whole environment into a file called env.txt in the station folder."
+challenge = true
+solution = ["export OBSERVER=Mei", "env > env.txt"]
+
+[steps.step_type.Task]
+goal = "Save an environment that includes OBSERVER"
+success_message = "env.txt lists what any program started from this shell would get, OBSERVER included."
+checks = [{ FileContains = { path = "station/env.txt", text = "OBSERVER=Mei" } }, { FileContains = { path = "station/env.txt", text = "UNITS=celsius" } }, { FileContains = { path = "station/env.txt", text = "STATION=Ridgetop" } }]
+
+[[steps]]
+step_number = 12
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  env                 list the environment
+  printenv NAME       show one environment variable
+  export NAME         put a shell variable in the environment
+  export NAME=value   set and export in one go
+  NAME=value command  set it for one command only
+  echo $PWD           the folder you're in (also HOME, USER, PATH)
+
+A shell variable stays in your shell. An exported one is
+copied to every program you start from then on.
+
+Exports last until you close the shell. To keep one for
+every new shell, the export line goes in a startup file
+such as ~/.profile. The dotfiles lesson covers that."""

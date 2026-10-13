@@ -4,13 +4,206 @@ description = "Write scripts that take arguments: $1, $#, $@ and exit."
 difficulty = "Advanced"
 estimated_minutes = 15
 prerequisites = ["first-scripts", "variables"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "scripts", "arguments", "exit", "sh"]
+
+[[setup]]
+path = "garden/plant.sh"
+contents = """#!/bin/sh
+# Usage: sh plant.sh SEED BED
+echo "Planting $1 in bed $2."
+"""
+
+[[setup]]
+path = "garden/newbed.sh"
+contents = """#!/bin/sh
+# Start a notes file for a new bed. Usage: sh newbed.sh NAME
+echo "Bed: $1" > "beds/$1.txt"
+echo "Made beds/$1.txt"
+"""
+
+[[setup]]
+path = "garden/harvest.sh"
+contents = """#!/bin/sh
+# Log a harvest from one bed. Usage: sh harvest.sh BED
+echo "Checking beds/$1.txt"
+cat "beds/$1.txt" > /dev/null || exit 1
+echo "$1: harvested" >> garden-log.txt
+echo "Logged a harvest for $1."
+"""
+
+[[setup]]
+path = "garden/beds/north.txt"
+contents = """Bed: north
+Tomatoes and basil.
+"""
+
+[[setup]]
+path = "garden/beds/south.txt"
+contents = """Bed: south
+Beans, climbing the fence.
+"""
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "Words after the name"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+Words you type after a script's name are its arguments.
+Inside the script, the shell fills them in:
+
+  $1 $2 ...   the first argument, the second, ...
+  $#          how many arguments there are
+  $@          all of them, in order
+  exit        stop the script right there
+
+  sh plant.sh tomatoes 3
+    $1 is tomatoes, $2 is 3, $# is 2
+
+Quotes group words: sh plant.sh "sweet peas" 3 gives
+$1 = sweet peas. A missing argument is empty, like an
+unset variable.
+
+This lesson keeps a community garden's notes. The scripts
+are in the garden folder."""
+
+[[steps]]
+step_number = 2
+title = "Read, then run"
+instruction = "Go into garden and read plant.sh. Then run it to plant tomatoes in bed 3."
+hints = ["cd garden, cat plant.sh, then sh plant.sh with two arguments.", "The seed comes first, then the bed.", "Type: cd garden   then: cat plant.sh   then: sh plant.sh tomatoes 3"]
+solution = ["cd garden", "cat plant.sh", "sh plant.sh tomatoes 3"]
+
+[steps.step_type.Task]
+goal = "Plant tomatoes in bed 3"
+success_message = "The same script will plant anything, anywhere. That's what arguments are for."
+checks = [{ OutputContains = "Planting tomatoes in bed 3." }]
+
+[[steps]]
+step_number = 3
+title = "Different arguments"
+instruction = "Now plant basil in bed 5."
+hints = ["Same script, new arguments.", "Type: sh plant.sh basil 5"]
+solution = ["sh plant.sh basil 5"]
+
+[steps.step_type.Task]
+goal = "Plant basil in bed 5"
+success_message = "Nothing in the script changed. Only the words you gave it."
+checks = [{ OutputContains = "Planting basil in bed 5." }]
+
+[[steps]]
+step_number = 4
+title = "Quick check: quotes"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "What does sh plant.sh \"sweet peas\" 2 print?"
+options = ["Planting sweet in bed peas.", "Planting sweet peas in bed 2.", "An error: too many words"]
+correct_index = 1
+explanation = "The quotes make sweet peas one argument, so $1 is sweet peas and $2 is 2. Without them, $1 would be sweet and $2 would be peas."
+
+[[steps]]
+step_number = 5
+title = "Count them"
+instruction = "Write a script, seeds.sh, with one line: echo You gave $# seeds: $@. Wrap that line in single quotes, so $# and $@ go into the file as they are instead of being filled in now."
+hints = ["echo the line in single quotes, and send it into seeds.sh with >.", "Type: echo 'echo You gave $# seeds: $@' > seeds.sh"]
+solution = ["echo 'echo You gave $# seeds: $@' > seeds.sh"]
+
+[steps.step_type.Task]
+goal = "Write seeds.sh"
+success_message = "cat seeds.sh shows the $ signs kept as they are. They get filled in when the script runs."
+checks = [{ FileContains = { path = "garden/seeds.sh", text = "$#" } }, { FileContains = { path = "garden/seeds.sh", text = "$@" } }]
+
+[[steps]]
+step_number = 6
+title = "Run it with three"
+instruction = "Run seeds.sh with three seeds of your choice."
+hints = ["sh seeds.sh, then three words.", "Type: sh seeds.sh carrot pea leek"]
+solution = ["sh seeds.sh carrot pea leek"]
+
+[steps.step_type.Task]
+goal = "Run seeds.sh with three arguments"
+success_message = "$# counted them and $@ listed them. Printing $# is a quick way to check a script got what you meant to give it."
+checks = [{ OutputContains = "You gave 3 seeds" }]
+
+[[steps]]
+step_number = 7
+title = "An argument as a file name"
+instruction = "Read newbed.sh. Then use it to start notes for a new bed called herb spiral (two words, one name)."
+hints = ["The name has a space, so it needs quotes to stay one argument.", "Type: cat newbed.sh   then: sh newbed.sh \"herb spiral\""]
+solution = ["cat newbed.sh", "sh newbed.sh \"herb spiral\""]
+
+[steps.step_type.Task]
+goal = "Make beds/herb spiral.txt"
+success_message = "Quotes did two jobs here. Yours kept herb spiral as one argument. The script's own quotes, \"beds/$1.txt\", keep it as one file name inside the script. Without them, a real shell would split it in two."
+checks = [{ FileContains = { path = "garden/beds/herb spiral.txt", text = "Bed: herb spiral" } }]
+
+[[steps]]
+step_number = 8
+title = "A logging script"
+instruction = "Write log.sh, one line long: echo \"$1: $2\" >> garden-log.txt. It adds a line made of its first two arguments to the log. Wrap the whole line in single quotes when you write it."
+hints = ["The outer single quotes protect the inner double quotes, the $ signs and the >>.", "Type: echo 'echo \"$1: $2\" >> garden-log.txt' > log.sh"]
+solution = ["echo 'echo \"$1: $2\" >> garden-log.txt' > log.sh"]
+
+[steps.step_type.Task]
+goal = "Write log.sh"
+success_message = "One line, and it can log anything you give it."
+checks = [{ FileContains = { path = "garden/log.sh", text = "$1: $2" } }, { FileContains = { path = "garden/log.sh", text = ">> garden-log.txt" } }]
+
+[[steps]]
+step_number = 9
+title = "Log today's work"
+instruction = "Use log.sh to log the line 2026-10-13: watered the beans. The date is the first argument, the note is the second."
+hints = ["The note has spaces, so quote it.", "Type: sh log.sh 2026-10-13 \"watered the beans\""]
+solution = ["sh log.sh 2026-10-13 \"watered the beans\""]
+
+[steps.step_type.Task]
+goal = "Log a dated line"
+success_message = "On a real system, a script can fill in today's date itself with $(date +%F). This practice shell doesn't run a command inside another, so here you pass the date in."
+checks = [{ FileContains = { path = "garden/garden-log.txt", text = "2026-10-13: watered the beans" } }]
+
+[[steps]]
+step_number = 10
+title = "Stop early with exit"
+instruction = "Read harvest.sh. Its fourth line says: if the bed's file can't be read, exit. || runs the next command only when the one before it failed. Run it for a bed that doesn't exist: pumpkins."
+hints = ["cat it first, then sh harvest.sh with one argument.", "Type: cat harvest.sh   then: sh harvest.sh pumpkins"]
+solution = ["cat harvest.sh", "sh harvest.sh pumpkins"]
+
+[steps.step_type.Task]
+goal = "Run harvest.sh for a missing bed"
+success_message = "cat failed, so exit ran, and the script stopped at that line. The log line and 'Logged a harvest' never ran. Without the exit, the script would log a harvest from a bed that isn't there."
+checks = [{ OutputContains = "Checking beds/pumpkins.txt" }]
+
+[[steps]]
+step_number = 11
+title = "On your own"
+instruction = "No hints. Write note.sh: it adds its second argument as a new line at the end of the bed file named by its first argument, beds/NAME.txt. Then use it to add mulched to the herb spiral notes."
+challenge = true
+solution = ["echo 'echo \"$2\" >> \"beds/$1.txt\"' > note.sh", "sh note.sh \"herb spiral\" mulched"]
+
+[steps.step_type.Task]
+goal = "Add mulched to the herb spiral notes with note.sh"
+success_message = "One script, any bed, any note. And the bed's first line is still there, because >> adds instead of replacing."
+checks = [{ FileContains = { path = "garden/note.sh", text = "$1" } }, { FileContains = { path = "garden/beds/herb spiral.txt", text = "mulched" } }, { FileContains = { path = "garden/beds/herb spiral.txt", text = "Bed: herb spiral" } }]
+
+[[steps]]
+step_number = 12
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  $1 $2 ...       the arguments, in order
+  $#              how many there are
+  $@              all of them
+  exit            stop the script at that line
+  cmd || exit 1   stop if cmd failed
+
+Quote arguments with spaces when you call a script, and
+quote "$1" inside it when it's used as a file name.
+
+Next steps on a real system: if [ $# -lt 1 ] can check the
+arguments and print a usage line before doing anything.
+This practice shell runs one command per line, so if needs
+a real shell."""
