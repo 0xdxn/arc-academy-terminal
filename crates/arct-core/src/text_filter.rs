@@ -1,15 +1,18 @@
 //! Text filters for the simulated sandbox: the commands that usually sit
 //! on the right of a pipe (`grep`, `head`, `tail`, `wc`, `sort`, `uniq`,
-//! `cut`), applied to text in memory. Pure functions, so the sandbox can
+//! `cut`, `sed`, `tr`), applied to text in memory, plus a line `diff`. Pure functions, so the sandbox can
 //! run `cat log | grep ERROR | sort | uniq -c` without a real shell.
 
 /// The programs [`apply`] understands
-pub const FILTERS: &[&str] = &["grep", "head", "tail", "wc", "sort", "uniq", "cut"];
+pub const FILTERS: &[&str] = &["grep", "head", "tail", "wc", "sort", "uniq", "cut", "sed", "tr"];
 
 /// Run one filter over `input`. `args` are the words after the program
 /// name (flags and operands, as typed). Returns `Err` with a short,
 /// learner-facing message for bad usage.
 pub fn apply(program: &str, args: &[String], input: &str) -> Result<String, String> {
+    if program == "tr" {
+        return tr(args, input);
+    }
     let lines: Vec<&str> = input.lines().collect();
     let out: Vec<String> = match program {
         "grep" => grep(args, &lines)?,
@@ -68,6 +71,7 @@ pub fn apply(program: &str, args: &[String], input: &str) -> Result<String, Stri
                 .collect()
         }
         "cut" => cut(args, &lines)?,
+        "sed" => sed(args, &lines)?,
         other => return Err(format!("{other} isn't available in the sandbox")),
     };
     let mut text = out.join("\n");
@@ -83,6 +87,7 @@ pub fn operands(program: &str, args: &[String]) -> Vec<String> {
     let takes_value: &[&str] = match program {
         "head" | "tail" => &["-n"],
         "cut" => &["-d", "-f"],
+        "tr" => &[],
         _ => &[],
     };
     let mut out = Vec::new();
@@ -121,6 +126,220 @@ fn line_count(args: &[String]) -> Result<usize, String> {
         }
     }
     Ok(10)
+}
+
+/// The script operand of a sed command (the first non-flag word)
+pub fn sed_script(args: &[String]) -> Option<&String> {
+    args.iter().find(|a| !(a.starts_with('-') && a.len() > 1))
+}
+
+/// sed: `s/old/new/` (flags `g`, `i`), `/pattern/d`, and `-n '/pattern/p'`
+fn sed(args: &[String], lines: &[&str]) -> Result<Vec<String>, String> {
+    let quiet = args.iter().any(|a| a == "-n");
+    for a in args.iter().filter(|a| a.starts_with('-') && a.len() > 1) {
+        if !matches!(a.as_str(), "-n" | "-E" | "-r" | "-i") {
+            return Err(format!("sed: the {a} flag isn't available in the sandbox"));
+        }
+    }
+    let script = sed_script(args).ok_or("sed needs a script, like: sed 's/old/new/'")?;
+    let usage = || format!("sed: '{script}' isn't a script the sandbox understands (try s/old/new/ or /word/d)");
+
+    if let Some(body) = script.strip_prefix('s') {
+        let delim = body.chars().next().ok_or_else(usage)?;
+        let parts: Vec<&str> = body[delim.len_utf8()..].split(delim).collect();
+        if parts.len() != 3 {
+            return Err(usage());
+        }
+        let (pattern, replacement, flags) = (parts[0], parts[1], parts[2]);
+        let global = flags.contains('g');
+        let print = flags.contains('p');
+        if flags.chars().any(|c| !"gipI".contains(c)) {
+            return Err(usage());
+        }
+        let re = regex::RegexBuilder::new(pattern)
+            .case_insensitive(flags.contains('i') || flags.contains('I'))
+            .build()
+            .map_err(|_| format!("sed: '{pattern}' isn't a pattern sed understands"))?;
+        // sed's & and \1 become the regex crate's ${0} and ${1}
+        let mut rep = String::new();
+        let mut chars = replacement.chars().peekable();
+        while let Some(c) = chars.next() {
+            match c {
+                '&' => rep.push_str("${0}"),
+                '\\' => match chars.next() {
+                    Some(d) if d.is_ascii_digit() => rep.push_str(&format!("${{{d}}}")),
+                    Some('n') => rep.push('\n'),
+                    Some(other) => rep.push(other),
+                    None => {}
+                },
+                '$' => rep.push_str("$$"),
+                other => rep.push(other),
+            }
+        }
+        let mut out = Vec::new();
+        for line in lines {
+            let changed = re.is_match(line);
+            let new = if global {
+                re.replace_all(line, rep.as_str()).into_owned()
+            } else {
+                re.replace(line, rep.as_str()).into_owned()
+            };
+            if !quiet {
+                out.push(new.clone());
+            }
+            if print && changed {
+                out.push(new);
+            }
+        }
+        return Ok(out);
+    }
+
+    // /pattern/d or /pattern/p
+    let (pattern, command) = script
+        .strip_prefix('/')
+        .and_then(|rest| rest.rsplit_once('/'))
+        .ok_or_else(usage)?;
+    let re = regex::Regex::new(pattern)
+        .map_err(|_| format!("sed: '{pattern}' isn't a pattern sed understands"))?;
+    let mut out = Vec::new();
+    for line in lines {
+        let hit = re.is_match(line);
+        match command {
+            "d" => {
+                if !hit && !quiet {
+                    out.push(line.to_string());
+                }
+            }
+            "p" => {
+                if !quiet {
+                    out.push(line.to_string());
+                }
+                if hit {
+                    out.push(line.to_string());
+                }
+            }
+            _ => return Err(usage()),
+        }
+    }
+    Ok(out)
+}
+
+/// Expand a tr set: ranges like a-z, and \n \t escapes
+fn tr_set(set: &str) -> Vec<char> {
+    let mut raw = Vec::new();
+    let mut chars = set.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('n') => raw.push('\n'),
+                Some('t') => raw.push('\t'),
+                Some(other) => raw.push(other),
+                None => raw.push('\\'),
+            }
+        } else {
+            raw.push(c);
+        }
+    }
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < raw.len() {
+        if i + 2 < raw.len() && raw[i + 1] == '-' && raw[i] <= raw[i + 2] {
+            out.extend(raw[i]..=raw[i + 2]);
+            i += 3;
+        } else {
+            out.push(raw[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// tr: `tr a-z A-Z` translates, `tr -d SET` deletes
+fn tr(args: &[String], input: &str) -> Result<String, String> {
+    let delete = args.iter().any(|a| a == "-d");
+    let sets: Vec<&String> = args.iter().filter(|a| !(a.starts_with('-') && a.len() > 1)).collect();
+    if delete {
+        let set = tr_set(sets.first().ok_or("tr -d needs the characters to delete, like: tr -d ','")?);
+        return Ok(input.chars().filter(|c| !set.contains(c)).collect());
+    }
+    let (Some(from), Some(to)) = (sets.first(), sets.get(1)) else {
+        return Err("tr needs two sets, like: tr a-z A-Z".to_string());
+    };
+    let (from, to) = (tr_set(from), tr_set(to));
+    if to.is_empty() {
+        return Err("tr needs two sets, like: tr a-z A-Z".to_string());
+    }
+    Ok(input
+        .chars()
+        .map(|c| match from.iter().position(|&f| f == c) {
+            Some(i) => *to.get(i).unwrap_or(to.last().unwrap()),
+            None => c,
+        })
+        .collect())
+}
+
+/// Compare two texts line by line, in diff's classic format
+/// (`2c2`, `< old`, `---`, `> new`). Empty when they match.
+pub fn diff(old: &str, new: &str) -> String {
+    let a: Vec<&str> = old.lines().collect();
+    let b: Vec<&str> = new.lines().collect();
+    // Longest common subsequence table
+    let mut lcs = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    for i in (0..a.len()).rev() {
+        for j in (0..b.len()).rev() {
+            lcs[i][j] = if a[i] == b[j] {
+                lcs[i + 1][j + 1] + 1
+            } else {
+                lcs[i + 1][j].max(lcs[i][j + 1])
+            };
+        }
+    }
+    // A run of `len` (at least 1) lines starting at line `start`
+    let range = |start: usize, len: usize| {
+        if len == 1 {
+            start.to_string()
+        } else {
+            format!("{},{}", start, start + len - 1)
+        }
+    };
+    let mut out = String::new();
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() || j < b.len() {
+        if i < a.len() && j < b.len() && a[i] == b[j] {
+            i += 1;
+            j += 1;
+            continue;
+        }
+        let (si, sj) = (i, j);
+        while i < a.len() || j < b.len() {
+            if i < a.len() && j < b.len() && a[i] == b[j] {
+                break;
+            }
+            if j < b.len() && (i == a.len() || lcs[i][j + 1] >= lcs[i + 1][j]) {
+                j += 1;
+            } else {
+                i += 1;
+            }
+        }
+        let (dels, adds) = (i - si, j - sj);
+        let header = match (dels, adds) {
+            (0, _) => format!("{}a{}", si, range(sj + 1, adds)),
+            (_, 0) => format!("{}d{}", range(si + 1, dels), sj),
+            _ => format!("{}c{}", range(si + 1, dels), range(sj + 1, adds)),
+        };
+        out.push_str(&header);
+        out.push('\n');
+        for line in &a[si..i] {
+            out.push_str(&format!("< {line}\n"));
+        }
+        if dels > 0 && adds > 0 {
+            out.push_str("---\n");
+        }
+        for line in &b[sj..j] {
+            out.push_str(&format!("> {line}\n"));
+        }
+    }
+    out
 }
 
 fn grep(args: &[String], lines: &[&str]) -> Result<Vec<String>, String> {
@@ -213,6 +432,41 @@ mod tests {
     }
 
     const LOG: &str = "a INFO ok\nb ERROR bad\nc INFO ok\nd error worse\n";
+
+    #[test]
+    fn sed_substitutes_and_filters() {
+        let text = "cat sat\ncat ran\ndog sat\n";
+        assert_eq!(run("sed", &["s/cat/dog/"], text), "dog sat\ndog ran\ndog sat\n");
+        assert_eq!(run("sed", &["s/a/o/g"], "banana\n"), "bonono\n");
+        assert_eq!(run("sed", &["s/a/o/"], "banana\n"), "bonana\n");
+        assert_eq!(run("sed", &["s/CAT/x/i"], "cat\n"), "x\n");
+        assert_eq!(run("sed", &["s|/tmp|/home|"], "/tmp/a\n"), "/home/a\n");
+        assert_eq!(run("sed", &["s/[0-9]+/<&>/"], "day 12\n"), "day <12>\n");
+        assert_eq!(run("sed", &["s/(\\w+) (\\w+)/\\2 \\1/"], "hello world\n"), "world hello\n");
+        assert_eq!(run("sed", &["s/a/$5/"], "a\n"), "$5\n");
+        assert_eq!(run("sed", &["/dog/d"], text), "cat sat\ncat ran\n");
+        assert_eq!(run("sed", &["-n", "/ran/p"], text), "cat ran\n");
+        assert!(apply("sed", &["y/a/b/".to_string()], text).is_err());
+        assert!(apply("sed", &["-z".to_string(), "s/a/b/".to_string()], text).is_err());
+    }
+
+    #[test]
+    fn tr_translates_and_deletes() {
+        assert_eq!(run("tr", &["a-z", "A-Z"], "hi there\n"), "HI THERE\n");
+        assert_eq!(run("tr", &["-d", ","], "a,b,c\n"), "abc\n");
+        assert_eq!(run("tr", &[" ", "\\n"], "a b\n"), "a\nb\n");
+        assert!(apply("tr", &["a".to_string()], "x").is_err());
+    }
+
+    #[test]
+    fn diff_classic_format() {
+        assert_eq!(diff("a\nb\n", "a\nb\n"), "");
+        assert_eq!(diff("a\nb\nc\n", "a\nB\nc\n"), "2c2\n< b\n---\n> B\n");
+        assert_eq!(diff("a\nc\n", "a\nb\nc\n"), "1a2\n> b\n");
+        assert_eq!(diff("a\nb\nc\n", "a\nc\n"), "2d1\n< b\n");
+        assert_eq!(diff("", "x\ny\n"), "0a1,2\n> x\n> y\n");
+        assert_eq!(diff("a\nb\nc\nd\n", "a\nX\nY\nd\n"), "2,3c2,3\n< b\n< c\n---\n> X\n> Y\n");
+    }
 
     #[test]
     fn grep_flags() {
