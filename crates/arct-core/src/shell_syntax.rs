@@ -76,6 +76,73 @@ pub fn is_name(s: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
+/// Split a line at unquoted `;`, `&&` and `||`, without expanding
+/// anything, so each part can be expanded just before it runs (as sh
+/// does: in `X=5; echo $X` the echo sees 5). A comment ends the line.
+pub fn split_list(line: &str) -> Vec<(Joiner, String)> {
+    let chars: Vec<char> = line.chars().collect();
+    let mut parts = Vec::new();
+    let mut joiner = Joiner::Always;
+    let mut current = String::new();
+    let mut i = 0;
+    let mut quote: Option<char> = None;
+    let mut word_start = true;
+    while i < chars.len() {
+        let c = chars[i];
+        if let Some(q) = quote {
+            current.push(c);
+            if c == '\\' && q == '"' {
+                if let Some(&next) = chars.get(i + 1) {
+                    current.push(next);
+                    i += 1;
+                }
+            } else if c == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        let next = chars.get(i + 1).copied();
+        let op = match (c, next) {
+            (';', _) => Some((Joiner::Always, 1)),
+            ('&', Some('&')) => Some((Joiner::IfOk, 2)),
+            ('|', Some('|')) => Some((Joiner::IfFailed, 2)),
+            _ => None,
+        };
+        if let Some((next_joiner, width)) = op {
+            parts.push((joiner, std::mem::take(&mut current)));
+            joiner = next_joiner;
+            i += width;
+            word_start = true;
+            continue;
+        }
+        match c {
+            '#' if word_start => break,
+            '\'' | '"' => quote = Some(c),
+            '\\' => {
+                current.push(c);
+                if let Some(next) = next {
+                    current.push(next);
+                }
+                i += 2;
+                word_start = false;
+                continue;
+            }
+            _ => {}
+        }
+        word_start = c.is_whitespace() || c == '|';
+        current.push(c);
+        i += 1;
+    }
+    parts.push((joiner, current));
+    // Drop empty parts after ';' (a trailing ';' is fine); keep empty
+    // parts after && and || so parsing reports the missing command
+    parts
+        .into_iter()
+        .filter(|(j, text)| !(text.trim().is_empty() && *j == Joiner::Always))
+        .collect()
+}
+
 /// Parse one line into pipelines joined by `;`, `&&` and `||`.
 ///
 /// `lookup` returns a variable's value (`HOME`, `1`, `#`, `@`, `?` ...);
@@ -525,6 +592,21 @@ mod tests {
         assert!(parse("| grep x", &vars).is_err());
         assert!(parse("ls |", &vars).is_err());
         assert!(parse("echo > ", &vars).is_err());
+    }
+
+    #[test]
+    fn split_list_respects_quotes() {
+        let parts = split_list("X=5; echo $X && echo 'a;b' || echo \"c&&d\" # done");
+        let texts: Vec<&str> = parts.iter().map(|(_, t)| t.trim()).collect();
+        assert_eq!(texts, ["X=5", "echo $X", "echo 'a;b'", "echo \"c&&d\""]);
+        let joiners: Vec<Joiner> = parts.iter().map(|(j, _)| *j).collect();
+        assert_eq!(joiners, [Joiner::Always, Joiner::Always, Joiner::IfOk, Joiner::IfFailed]);
+        assert_eq!(split_list("ls;").len(), 1);
+        assert_eq!(split_list("cat a | grep b").len(), 1);
+        // A missing command after && is kept so parse can report it
+        let parts = split_list("ls &&");
+        assert_eq!(parts.len(), 2);
+        assert!(parse(&parts[1].1, &vars).unwrap().is_empty());
     }
 
     #[test]

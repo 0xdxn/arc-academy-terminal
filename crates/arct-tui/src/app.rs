@@ -124,6 +124,9 @@ pub struct App {
     /// Virtual filesystem for lesson sandboxing
     pub virtual_fs: Option<arct_core::VirtualFileSystem>,
 
+    /// The sandbox shell's variables and status (see sandbox.rs)
+    pub(crate) sandbox: crate::sandbox::SandboxShell,
+
     /// Real-filesystem practice playground (~/ArcAcademy/playground),
     /// used when lessons.practice_mode = "real"
     pub playground: Option<arct_core::Playground>,
@@ -404,6 +407,7 @@ impl App {
             lesson_panel: Self::initialize_lesson_panel(),
             lesson_mode: false,
             virtual_fs: None,
+            sandbox: crate::sandbox::SandboxShell::new(),
             playground: None,
             explore: None,
             lesson_menu: None,
@@ -1191,7 +1195,7 @@ impl App {
 
     /// Whether command output reports a failure: an error line, a guard
     /// refusal, a timeout, or a non-zero exit from the real shell
-    fn output_reports_failure(output: &str) -> bool {
+    pub(crate) fn output_reports_failure(output: &str) -> bool {
         let error = icons::error().content;
         let warning = icons::warning().content;
         output.lines().any(|line| {
@@ -1244,157 +1248,14 @@ impl App {
         false
     }
 
-    /// Run `a | b | c` in the simulated sandbox: `a` is a sandbox command,
-    /// every later stage is a text filter (grep, head, tail, wc, sort, uniq,
-    /// cut) applied to the text flowing through
-    fn run_virtual_pipeline(&mut self, tokens: &[String]) -> String {
-        let stages: Vec<&[String]> = tokens.split(|t| t == "|").collect();
-        if stages.iter().any(|stage| stage.is_empty()) {
-            return format!(
-                "{}A pipe needs a command on both sides, like: cat log.txt | grep ERROR\n",
-                icons::error().content
-            );
-        }
-        let first = match self.analyzer.parse(&shellwords::join(
-            &stages[0].iter().map(String::as_str).collect::<Vec<_>>(),
-        )) {
-            Ok(first) => first,
-            Err(e) => return format!("{}{}\n", icons::error().content, e),
-        };
-        let mut text = match self.execute_virtual_fs_command(&first) {
-            Some(out) if Self::output_reports_failure(&out) => return out,
-            Some(out) => out,
-            None => {
-                return format!(
-                    "{}{} isn't available in the sandbox\n",
-                    icons::error().content,
-                    first.program
-                )
-            }
-        };
-        for stage in &stages[1..] {
-            let (program, args) = (stage[0].as_str(), &stage[1..]);
-            if !arct_core::text_filter::FILTERS.contains(&program) {
-                return format!(
-                    "{}{} can't be used after a pipe in the sandbox (try grep, head, tail, wc, sort, uniq or cut)\n",
-                    icons::error().content,
-                    program
-                );
-            }
-            match arct_core::text_filter::apply(program, args, &text) {
-                Ok(out) => text = out,
-                Err(message) => return format!("{}{}\n", icons::error().content, message),
-            }
-        }
-        text
-    }
-
-    /// Run a script in the simulated sandbox: each line is one sandbox
-    /// command. Scripts can't start other scripts, and the safety guard
-    /// still applies line by line.
-    fn run_virtual_script(&mut self, cmd: &arct_core::Command) -> String {
-        let (name, direct) = if let Some(path) = cmd.program.strip_prefix("./") {
-            (path.to_string(), true)
-        } else {
-            match cmd.args.iter().find(|a| !a.starts_with('-')) {
-                Some(file) => (file.clone(), false),
-                None => {
-                    return format!(
-                        "{}{}: which script? Try: {} hello.sh\n",
-                        icons::error().content,
-                        cmd.program,
-                        cmd.program
-                    )
-                }
-            }
-        };
-        let Some(vfs) = self.virtual_fs.as_ref() else {
-            return String::new();
-        };
-        let real = match vfs.resolve_path(&name) {
-            Ok(real) => real,
-            Err(e) => return format!("{}{}: {}\n", icons::error().content, name, e),
-        };
-        if direct {
-            #[cfg(unix)]
-            let executable = {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::metadata(&real)
-                    .map(|m| m.permissions().mode() & 0o111 != 0)
-                    .unwrap_or(false)
-            };
-            #[cfg(not(unix))]
-            let executable = true;
-            if real.is_file() && !executable {
-                return format!(
-                    "{}./{}: permission denied\n\n{}A file must be marked executable before ./ can run it: chmod +x {}\n",
-                    icons::error().content,
-                    name,
-                    icons::hint().content,
-                    name
-                );
-            }
-        }
-        let script = match std::fs::read_to_string(&real) {
-            Ok(text) => text,
-            Err(_) => return format!("{}{}: no such script\n", icons::error().content, name),
-        };
-
-        let mut output = String::new();
-        for line in script.lines().map(str::trim) {
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            if let arct_core::GuardVerdict::Refuse { reason } =
-                arct_core::PlaygroundGuard::check_catastrophic(line)
-            {
-                output.push_str(&format!("{}Blocked: {}\n", icons::warning().content, reason));
-                continue;
-            }
-            let Ok(inner) = self.analyzer.parse(line) else {
-                output.push_str(&format!("{}could not read: {}\n", icons::error().content, line));
-                continue;
-            };
-            if matches!(inner.program.as_str(), "sh" | "bash") || inner.program.starts_with("./") {
-                output.push_str(&format!(
-                    "{}scripts can't start other scripts in the sandbox\n",
-                    icons::error().content
-                ));
-                continue;
-            }
-            match self.execute_virtual_fs_command(&inner) {
-                Some(out) => output.push_str(&out),
-                None => output.push_str(&format!(
-                    "{}{}: not available in the sandbox\n",
-                    icons::error().content,
-                    inner.program
-                )),
-            }
-        }
-        if output.is_empty() {
-            output.push_str("(the script ran and printed nothing)\n");
-        }
-        output
-    }
-
     /// Execute command against virtual filesystem and return output
-    fn execute_virtual_fs_command(&mut self, cmd: &arct_core::Command) -> Option<String> {
+    pub(crate) fn execute_virtual_fs_command(&mut self, cmd: &arct_core::Command) -> Option<String> {
         if !self.lesson_mode {
             return None;
         }
 
-        // Pipes: the first command runs in the sandbox, the rest filter text
-        if let Ok(tokens) = shellwords::split(&cmd.raw) {
-            if tokens.iter().any(|t| t == "|") {
-                return Some(self.run_virtual_pipeline(&tokens));
-            }
-        }
-
-        // Scripts: `sh file`, `bash file`, or `./file` once it is executable
-        if matches!(cmd.program.as_str(), "sh" | "bash") || cmd.program.starts_with("./") {
-            return Some(self.run_virtual_script(cmd));
-        }
-
+        // Pipes, redirection, variables and scripts are handled before
+        // this point by the sandbox shell (sandbox.rs)
         let vfs = self.virtual_fs.as_mut()?;
         let program = cmd.program.as_str();
 
@@ -1700,52 +1561,14 @@ impl App {
             }
 
             "echo" => {
-                // Handle `echo text`, `echo text > file`, `echo text >> file`
-                let mut no_newline = false;
-                let mut redirect: Option<(String, bool)> = None; // (target, append)
-                let mut text_parts: Vec<&str> = Vec::new();
-
-                let mut iter = cmd.args.iter().peekable();
-                while let Some(arg) = iter.next() {
-                    if text_parts.is_empty() && redirect.is_none() && arg == "-n" {
-                        no_newline = true;
-                    } else if arg == ">>" || arg == ">" {
-                        let append = arg == ">>";
-                        match iter.next() {
-                            Some(target) => redirect = Some((target.clone(), append)),
-                            None => {
-                                return Some(format!("{}echo: syntax error: expected a filename after '{}'\n", icons::error().content, arg));
-                            }
-                        }
-                        break;
-                    } else if let Some(target) = arg.strip_prefix(">>") {
-                        redirect = Some((target.to_string(), true));
-                        break;
-                    } else if let Some(target) = arg.strip_prefix('>') {
-                        redirect = Some((target.to_string(), false));
-                        break;
-                    } else {
-                        text_parts.push(arg);
-                    }
-                }
-
-                let mut text = text_parts.join(" ");
+                // Redirection (> and >>) is applied by the sandbox shell
+                let no_newline = cmd.args.first().is_some_and(|a| a == "-n");
+                let words = if no_newline { &cmd.args[1..] } else { &cmd.args[..] };
+                let mut text = words.join(" ");
                 if !no_newline {
                     text.push('\n');
                 }
-
-                match redirect {
-                    Some((target, append)) => match vfs.write_file(&target, &text, append) {
-                        Ok(_) => Some(format!(
-                            "{}{} {}\n",
-                            icons::success().content,
-                            if append { "Appended to" } else { "Wrote" },
-                            target
-                        )),
-                        Err(e) => Some(format!("{}echo: {}\n", icons::error().content, e)),
-                    },
-                    None => Some(text),
-                }
+                Some(text)
             }
 
             "chmod" => {
@@ -1789,10 +1612,10 @@ impl App {
             // validates the command syntax)
             "ps" | "top" | "htop" | "kill" | "killall" | "git" | "apt" | "apt-get" | "yum"
             | "dnf" | "brew" | "ping" | "curl" | "wget" | "ssh" | "scp" | "sudo" | "man"
-            | "df" | "du" | "free" | "uname" | "whoami" | "tar" | "zip" | "unzip" | "gzip"
+            | "df" | "free" | "uname" | "whoami" | "zip" | "unzip"
             | "nano" | "vim" | "vi" | "less" | "more" | "netstat" | "ifconfig" | "ip" | "ss"
-            | "lsof" | "systemctl" | "journalctl" | "env" | "printenv" | "find" | "sed"
-            | "awk" | "ln" | "which" | "python" | "python3" | "pip"
+            | "lsof" | "systemctl" | "journalctl"
+            | "awk" | "ln" | "python" | "python3" | "pip"
             | "npm" | "node" => {
                 Some(format!(
                     "(lesson sandbox) '{}' isn't simulated here — this step checks your command syntax.\n",
@@ -1828,12 +1651,17 @@ impl App {
                 })
             }
 
-            other => Some(format!(
+            // A real command the sandbox doesn't run: say so, and let the
+            // step check what was typed
+            other if cmd.category != arct_core::CommandCategory::Unknown => Some(format!(
                 "{}{} doesn't run in the simulated sandbox, so this only checks what you typed. \
                  To see real output, switch lesson practice to real files in settings (Ctrl+S).\n",
                 icons::info().content,
                 other
             )),
+
+            // Not a command at all (a typo, or a script that isn't on PATH)
+            other => Some(format!("{}{}: command not found\n", icons::error().content, other)),
         }
     }
 
@@ -1957,7 +1785,7 @@ impl App {
                     reason
                 ))
             } else {
-                self.execute_virtual_fs_command(&cmd)
+                self.run_sandbox_line(&command_str)
             };
             if guard_refused {
                 self.record_feature_event("guard_refusal");
@@ -2686,6 +2514,7 @@ impl App {
                 match arct_core::VirtualFileSystem::new("nav-basics", &self.session_id) {
                     Ok(vfs) => {
                         self.virtual_fs = Some(vfs);
+                        self.sandbox = crate::sandbox::SandboxShell::new();
                         self.last_output = format!("{}Lesson mode activated! You're now in a safe virtual filesystem.\n\nPress Ctrl+L again to return to normal mode.\n\nNavigate through lessons using the Learning panel on the right.\n", icons::lesson().content);
                     }
                     Err(e) => {
@@ -2906,6 +2735,7 @@ impl App {
                         }
                     }
                     self.virtual_fs = Some(vfs);
+                    self.sandbox = crate::sandbox::SandboxShell::new();
                 }
                 Err(e) => {
                     tracing::warn!("Failed to initialize lesson sandbox: {}", e);
@@ -3525,7 +3355,7 @@ impl App {
 
     /// Record a one-shot feature-usage event, surface any newly unlocked
     /// achievements through the notification queue, and persist
-    fn record_feature_event(&mut self, key: &str) {
+    pub(crate) fn record_feature_event(&mut self, key: &str) {
         let newly_unlocked = self.user_stats.record_event(key);
         if !newly_unlocked.is_empty() {
             for achievement in &newly_unlocked {

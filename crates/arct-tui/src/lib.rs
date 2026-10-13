@@ -18,6 +18,7 @@ pub mod level;
 pub mod celebrate;
 pub mod streak;
 pub mod certificate;
+pub mod sandbox;
 
 pub use app::App;
 pub use theme::Theme;

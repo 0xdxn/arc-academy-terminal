@@ -113,7 +113,15 @@ When a check fails, the learner sees what's missing ("Not yet: there's no folder
 
 ## What runs in the simulated sandbox
 
-`pwd`, `ls` (`-a`, `-l`, `-h`, folders), `cd`, `cat`, `head`, `tail`, `wc`, `grep` (`-i -n -v -c -E`), `sort`, `uniq`, `cut`, `mkdir` (`-p`), `touch`, `rm` (`-r`), `mv`, `cp` (`-r`), `echo` (with `>` and `>>`), `chmod` (`+x`, `-x`, numbers), pipes into the text commands, and scripts (`sh file`, `bash file`, `./file` after `chmod +x`). Anything else is accepted by `CommandExercise` steps with a note that it only ran as a check; write those lessons for real-files mode.
+The sandbox is a small shell over the lesson's own files. It never touches anything else on the computer.
+
+**The shell itself:** quotes (`'...'` keeps text as it is, `"..."` still expands variables), variables (`NAME=value`, `$NAME`, `${NAME}`, `export`, `unset`, `env`, `printenv`, and `$HOME`, `$PATH`, `$USER`, `$PWD`, `$?`), `~`, globs (`*`, `?`, `[abc]`), redirection (`>`, `>>`, `2>`, `2>&1`, `< file`, `/dev/null`), pipes, and `&&`, `||` and `;`.
+
+**Commands:** `pwd`, `ls` (`-a`, `-l`, `-h`, folders), `cd`, `cat`, `head`, `tail`, `wc`, `grep` (`-i -n -v -c -E`), `sort`, `uniq`, `cut`, `sed` (`s/old/new/g`, `/word/d`, `-n '/word/p'`, `-i`), `tr` (after a pipe), `tee`, `diff`, `mkdir` (`-p`), `touch`, `rm` (`-r`), `mv`, `cp` (`-r`), `echo`, `chmod` (`+x`, `-x`, numbers), `find` (`-name`, `-iname`, `-type f|d`, `-maxdepth`), `du` (`-s`, `-h`), `tar` (`c`, `x`, `t`, `z`, `v`, `f`, `-C`), `gzip`, `gunzip`, `which`, `type`, and `ssh-keygen` (`-t`, `-f`, `-C`, `-N`), which writes a practice key pair with the real file layout and no real key.
+
+**Scripts:** `sh file`, `bash file`, `./file` after `chmod +x`, and any executable file in a folder on `$PATH` (try `export PATH=$HOME/bin:$PATH`). Scripts get their arguments as `$1`, `$2`, `$#` and `$@`, and `exit` ends them. One command per line: `if`, `for` and `while` need a real shell, and the sandbox says so.
+
+Real commands the sandbox doesn't run (`git`, `ps`, `curl`...) are accepted by `CommandExercise` steps with a note that they only ran as a check; write those lessons for real-files mode. A word that isn't a command at all gets "command not found", and the step doesn't pass.
 
 ## Test it
 
