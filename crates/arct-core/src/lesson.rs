@@ -219,6 +219,36 @@ pub trait PracticeWorld {
     fn locate(&self, lesson_path: &str) -> Option<std::path::PathBuf>;
     /// Current directory relative to the lesson home ("" at the home)
     fn cwd_relative(&self) -> String;
+    /// What is at a path relative to the lesson home; `None` when the path
+    /// would leave it. By default, the real file [`PracticeWorld::locate`]
+    /// gives.
+    fn kind_at(&self, lesson_path: &str) -> Option<EntryKind> {
+        let path = self.locate(lesson_path)?;
+        Some(if path.is_dir() {
+            EntryKind::Dir
+        } else if path.is_file() {
+            EntryKind::File
+        } else if path.exists() {
+            EntryKind::Other
+        } else {
+            EntryKind::Missing
+        })
+    }
+    /// A text file's contents, by a path relative to the lesson home. By
+    /// default, read from the real file [`PracticeWorld::locate`] gives.
+    fn read_text(&self, lesson_path: &str) -> Option<String> {
+        std::fs::read_to_string(self.locate(lesson_path)?).ok()
+    }
+}
+
+/// What a path in the practice environment holds
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryKind {
+    Missing,
+    File,
+    Dir,
+    /// Something that is neither (a device, a socket)
+    Other,
 }
 
 /// What the last command did, for outcome checks
@@ -237,18 +267,11 @@ pub fn evaluate_checks(
     let trim = |p: &str| p.trim_matches('/').to_string();
     for check in checks {
         let ok = match check {
-            Check::DirExists(path) => world
-                .and_then(|w| w.locate(path))
-                .is_some_and(|p| p.is_dir()),
-            Check::FileExists(path) => world
-                .and_then(|w| w.locate(path))
-                .is_some_and(|p| p.is_file()),
-            Check::Missing(path) => world
-                .and_then(|w| w.locate(path))
-                .is_some_and(|p| !p.exists()),
+            Check::DirExists(path) => world.and_then(|w| w.kind_at(path)) == Some(EntryKind::Dir),
+            Check::FileExists(path) => world.and_then(|w| w.kind_at(path)) == Some(EntryKind::File),
+            Check::Missing(path) => world.and_then(|w| w.kind_at(path)) == Some(EntryKind::Missing),
             Check::FileContains { path, text } => world
-                .and_then(|w| w.locate(path))
-                .and_then(|p| std::fs::read_to_string(p).ok())
+                .and_then(|w| w.read_text(path))
                 .is_some_and(|c| c.contains(text.as_str())),
             Check::CwdIs(path) => world.is_some_and(|w| trim(&w.cwd_relative()) == trim(path)),
             Check::OutputContains(text) => attempt.output.contains(text.as_str()),
