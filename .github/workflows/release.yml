@@ -29,9 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable, 2026-10
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable branch, 2026-10; the toolchain itself is pinned below
         with:
-          toolchain: stable
+          toolchain: 1.99.0
           targets: ${{ matrix.target }}
 
       - name: Install zig and cargo-zigbuild (Linux targets)
@@ -47,6 +47,7 @@ jobs:
       - name: Linux jail (bubblewrap)
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: |
+          sudo apt-get update
           sudo apt-get install -y bubblewrap
           if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
