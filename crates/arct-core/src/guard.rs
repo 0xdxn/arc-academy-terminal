@@ -596,14 +596,14 @@ impl PlaygroundGuard {
                     continue;
                 }
                 if let Some(script) = t.strip_prefix("--expression=") {
-                    // the path check still sees the whole token; the script
-                    // inside it is classified for w, r and e
-                    if matches!(sed_script_reach(script), SedReach::FilesOrPrograms) {
-                        found.push((j, script));
-                    }
+                    // the same as -e: the whole token is the script
+                    found.push((j, script));
                     saw_expression = true;
                 } else if t == "-f" || t == "--file" {
-                    j += 2; // a script file is a path: checked as one
+                    // a script file is a path (checked as one), and with a
+                    // script given, every operand after it is data: a path
+                    saw_expression = true;
+                    j += 2;
                     continue;
                 } else if !t.starts_with('-') && first_operand.is_none() {
                     first_operand = Some(j);
@@ -700,6 +700,7 @@ mod tests {
             "sed '1,/start/d;s|/usr|/opt|g' notes.txt",
             "sed -i.bak '/^#/d' notes.txt",
             "grep x f | sed '/debug/d'",
+            "sed --expression='/debug/d' app.log",
         ] {
             assert_allowed(cmd, &cwd);
         }
@@ -723,6 +724,22 @@ mod tests {
             let reason = assert_refused(cmd, &cwd);
             assert!(reason.contains("w, r and e"), "{cmd}: {reason}");
         }
+    }
+
+    #[test]
+    fn with_a_script_file_every_sed_operand_is_a_path() {
+        let cwd = lesson_cwd();
+        // /var/x and /etc/p would read as harmless sed commands (x, p): they
+        // are files here, because -f already gave the script
+        for cmd in [
+            "sed -f script.sed /var/x",
+            "sed -f script.sed /etc/p",
+            "sed -i -f script.sed /var/x",
+            "sed --file script.sed /var/x",
+        ] {
+            assert_refused(cmd, &cwd);
+        }
+        assert_allowed("sed -f script.sed notes.txt", &cwd);
     }
 
     #[test]
