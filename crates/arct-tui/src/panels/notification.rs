@@ -154,7 +154,8 @@ impl NotificationPanel {
                 theme.style_secondary(),
             )]),
         ])
-        .alignment(Alignment::Center);
+        .alignment(Alignment::Center)
+        .wrap(ratatui::widgets::Wrap { trim: true });
         frame.render_widget(description, chunks[2]);
 
         // Points and dismiss instruction

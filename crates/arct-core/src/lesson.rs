@@ -525,11 +525,12 @@ impl LessonLibrary {
         ordered
     }
 
-    /// Get lessons by difficulty
+    /// Operator-track lessons at this difficulty: the ladder the difficulty
+    /// badges measure (Explorer has its own badge)
     pub fn by_difficulty(&self, difficulty: Difficulty) -> Vec<&Lesson> {
         self.all()
             .into_iter()
-            .filter(|l| l.difficulty == difficulty)
+            .filter(|l| l.difficulty == difficulty && l.track == Track::Operator)
             .collect()
     }
 
@@ -544,7 +545,9 @@ impl LessonLibrary {
     /// Count lessons per difficulty level (used for achievement unlock checks)
     pub fn difficulty_counts(&self) -> HashMap<Difficulty, usize> {
         let mut counts = HashMap::new();
-        for lesson in self.lessons.values() {
+        // The difficulty badges belong to the Operator path; Explorer has
+        // its own badge for finishing the track
+        for lesson in self.lessons.values().filter(|l| l.track == Track::Operator) {
             *counts.entry(lesson.difficulty).or_insert(0) += 1;
         }
         counts

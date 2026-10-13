@@ -162,6 +162,15 @@ pub fn all_achievements() -> Vec<Achievement> {
             points: 200,
         },
         Achievement {
+            id: "station_crew".to_string(),
+            title: "Station Crew".to_string(),
+            description: "Finish every Explorer lesson on Arc Station.".to_string(),
+            icon: "\u{f197}", // Space shuttle
+            category: AchievementCategory::Lessons,
+            condition: UnlockCondition::CompleteChallenge("explorer_complete".to_string()),
+            points: 150,
+        },
+        Achievement {
             id: "beginner_complete".to_string(),
             title: "Beginner Graduate".to_string(),
             description: "Complete all beginner lessons. You've mastered the fundamentals!".to_string(),
@@ -431,7 +440,7 @@ mod tests {
     #[test]
     fn test_achievement_count() {
         let achievements = all_achievements();
-        assert_eq!(achievements.len(), 31, "Should have exactly 31 achievements");
+        assert_eq!(achievements.len(), 32, "Should have exactly 32 achievements");
     }
 
     #[test]
@@ -443,7 +452,7 @@ mod tests {
         let challenges = achievements.iter().filter(|a| matches!(a.category, AchievementCategory::Challenges)).count();
         let exploration = achievements.iter().filter(|a| matches!(a.category, AchievementCategory::Exploration)).count();
 
-        assert_eq!(lessons, 10, "Should have 10 lesson achievements");
+        assert_eq!(lessons, 11, "Should have 11 lesson achievements");
         assert_eq!(streaks, 8, "Should have 8 streak achievements");
         assert_eq!(commands, 5, "Should have 5 command achievements");
         assert_eq!(challenges, 3, "Should have 3 challenge achievements");

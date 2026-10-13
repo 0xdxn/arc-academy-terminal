@@ -1092,8 +1092,10 @@ impl App {
                         self.lesson_menu = None;
                     } else {
                         self.lesson_menu = Some(
-                            crate::panels::lesson_menu::LessonMenuPanel::with_library(
+                            crate::panels::lesson_menu::LessonMenuPanel::for_learner(
                                 self.lesson_library.clone(),
+                                self.preferred_track(),
+                                &self.completed_lessons,
                             ),
                         );
                         self.mark_panel_visited("lesson_menu");
@@ -2688,8 +2690,10 @@ impl App {
 
             // Show lesson menu to let user choose a lesson
             if self.lesson_menu.is_none() {
-                self.lesson_menu = Some(crate::panels::lesson_menu::LessonMenuPanel::with_library(
+                self.lesson_menu = Some(crate::panels::lesson_menu::LessonMenuPanel::for_learner(
                     self.lesson_library.clone(),
+                    self.preferred_track(),
+                    &self.completed_lessons,
                 ));
                 self.mark_panel_visited("lesson_menu");
             }
@@ -2711,6 +2715,15 @@ impl App {
         dirs::home_dir()
             .map(|home| home.join("ArcAcademy").join("playground"))
             .ok_or_else(|| anyhow::anyhow!("Could not find home directory"))
+    }
+
+    /// The learner's track from settings (Explorer unless set to operator)
+    fn preferred_track(&self) -> arct_core::Track {
+        if self.config.lessons.track.eq_ignore_ascii_case("operator") {
+            arct_core::Track::Operator
+        } else {
+            arct_core::Track::Explorer
+        }
     }
 
     /// Safe-mode home root: ~/ArcAcademy/home
@@ -3172,6 +3185,7 @@ impl App {
                 KeyCode::Down => {
                     let max_options = match wizard.step {
                         crate::panels::onboarding::OnboardingStep::AskAI => 2,
+                        crate::panels::onboarding::OnboardingStep::AskTrack => 2,
                         crate::panels::onboarding::OnboardingStep::AskAIProvider => 3,
                         _ => 1,
                     };
@@ -3199,6 +3213,10 @@ impl App {
         // Update config with onboarding results
         if !wizard.user_name.is_empty() {
             self.config.general.user_name = Some(wizard.user_name.clone());
+        }
+
+        if let Some(track) = &wizard.track {
+            self.config.lessons.track = track.clone();
         }
 
         if let Some(ai_enabled) = wizard.ai_enabled {
@@ -3616,9 +3634,18 @@ impl App {
         elapsed_secs: u64,
         wrong_answers: usize,
     ) {
-        // Record in stats
-        self.user_stats
-            .record_lesson_completion(lesson_id.clone(), difficulty);
+        // Record in stats. Explorer lessons count toward lessons completed
+        // and their own track badge, not the Operator difficulty badges.
+        let is_explorer = self
+            .lesson_library
+            .get(&lesson_id)
+            .is_some_and(|l| l.track == arct_core::Track::Explorer);
+        if is_explorer {
+            self.user_stats.lessons_completed.insert(lesson_id.clone());
+        } else {
+            self.user_stats
+                .record_lesson_completion(lesson_id.clone(), difficulty);
+        }
 
         // Add to completed lessons set and clear any step-level resume state
         self.completed_lessons.insert(lesson_id.clone());
@@ -3638,6 +3665,18 @@ impl App {
             self.last_output
         );
         self.output_scroll = 0;
+
+        if is_explorer {
+            let all_explorer_done = self
+                .lesson_library
+                .all()
+                .iter()
+                .filter(|l| l.track == arct_core::Track::Explorer)
+                .all(|l| self.completed_lessons.contains(&l.id));
+            if all_explorer_done {
+                self.record_feature_event("explorer_complete");
+            }
+        }
 
         // Speed / perfect lesson events
         if elapsed_secs < u64::from(estimated_minutes) * 60 {

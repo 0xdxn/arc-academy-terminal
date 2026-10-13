@@ -17,6 +17,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
     Frame,
 };
+use arct_core::Track;
 use std::collections::{HashMap, HashSet};
 
 /// Progression state of a lesson within the skill tree
@@ -42,12 +43,25 @@ pub fn lesson_state(lesson: &Lesson, completed: &HashSet<String>) -> LessonState
     }
 }
 
-/// Order lessons grouped by difficulty (Beginner → Expert), preserving the
-/// library's order within each group. This is the display order of the map.
+/// Order lessons grouped by track (the learner's first) and then difficulty
+/// (Beginner → Expert), preserving the library's order within each group.
+/// This is the display order of the map.
 pub fn grouped_lessons(library: &LessonLibrary) -> Vec<Lesson> {
+    grouped_lessons_for(library, Track::Explorer)
+}
+
+/// [`grouped_lessons`] with the given track listed first
+pub fn grouped_lessons_for(library: &LessonLibrary, first: Track) -> Vec<Lesson> {
     let mut lessons: Vec<Lesson> = library.all().into_iter().cloned().collect();
-    lessons.sort_by_key(|l| difficulty_rank(l.difficulty));
+    lessons.sort_by_key(|l| (l.track != first, difficulty_rank(l.difficulty)));
     lessons
+}
+
+fn track_name(track: Track) -> &'static str {
+    match track {
+        Track::Explorer => "Explorer",
+        Track::Operator => "Operator",
+    }
 }
 
 fn difficulty_rank(difficulty: Difficulty) -> u8 {
@@ -71,7 +85,7 @@ fn difficulty_name(difficulty: Difficulty) -> &'static str {
 /// One display row in the rendered map
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DisplayRow {
-    Header(Difficulty),
+    Header(Track, Difficulty),
     Lesson(usize),
 }
 
@@ -94,6 +108,30 @@ pub struct LessonMenuPanel {
 impl LessonMenuPanel {
     pub fn new() -> Self {
         Self::with_library(LessonLibrary::new())
+    }
+
+    /// A menu for this learner: their track first, the next open lesson
+    /// in it selected
+    pub fn for_learner(library: LessonLibrary, track: Track, completed: &HashSet<String>) -> Self {
+        let mut menu = Self {
+            lessons: grouped_lessons_for(&library, track),
+            selected_index: 0,
+            scroll_offset: 0,
+            status_message: None,
+            last_list_area: None,
+            last_row_map: Vec::new(),
+        };
+        if let Some(next) = menu.next_up(completed) {
+            menu.selected_index = next;
+        }
+        menu
+    }
+
+    /// The first lesson in display order that is ready to start
+    fn next_up(&self, completed: &HashSet<String>) -> Option<usize> {
+        self.lessons
+            .iter()
+            .position(|l| lesson_state(l, completed) == LessonState::Available)
     }
 
     /// Create a menu backed by a specific lesson library (built-ins merged
@@ -206,11 +244,12 @@ impl LessonMenuPanel {
     /// Build the display model: difficulty headers interleaved with lessons
     fn display_rows(&self) -> Vec<DisplayRow> {
         let mut rows = Vec::new();
-        let mut last_difficulty: Option<Difficulty> = None;
+        let mut last_group: Option<(Track, Difficulty)> = None;
         for (idx, lesson) in self.lessons.iter().enumerate() {
-            if last_difficulty != Some(lesson.difficulty) {
-                rows.push(DisplayRow::Header(lesson.difficulty));
-                last_difficulty = Some(lesson.difficulty);
+            let group = (lesson.track, lesson.difficulty);
+            if last_group != Some(group) {
+                rows.push(DisplayRow::Header(group.0, group.1));
+                last_group = Some(group);
             }
             rows.push(DisplayRow::Lesson(idx));
         }
@@ -291,14 +330,17 @@ impl LessonMenuPanel {
             .split(inner);
 
         // Recommended lesson (top pick)
-        let recommendations =
-            recommendation_engine.get_recommendations(completed_lessons, user_stats, 1);
-        let rec_line = match recommendations.first() {
-            Some(rec) => Line::from(vec![
+        // Next up: the first open lesson in the learner's track order
+        let _ = (recommendation_engine, user_stats);
+        let next_title = self
+            .next_up(completed_lessons)
+            .map(|i| self.lessons[i].title.clone());
+        let rec_line = match next_title {
+            Some(title) => Line::from(vec![
                 icons::target(),
-                Span::styled("Recommended: ", theme.style_dim()),
+                Span::styled("Next up: ", theme.style_dim()),
                 Span::styled(
-                    rec.lesson.title.clone(),
+                    title,
                     theme.style_accent().add_modifier(Modifier::BOLD),
                 ),
             ]),
@@ -326,13 +368,13 @@ impl LessonMenuPanel {
 
         for row in rows.iter().skip(self.scroll_offset).take(list_height) {
             match row {
-                DisplayRow::Header(difficulty) => {
-                    let name = difficulty_name(*difficulty);
+                DisplayRow::Header(track, difficulty) => {
+                    let name = format!("{} · {}", track_name(*track), difficulty_name(*difficulty));
                     let rule = "─".repeat(30usize.saturating_sub(name.len()));
                     items.push(ListItem::new(Line::from(vec![
                         Span::styled("  ── ", theme.style_dim()),
                         Span::styled(
-                            name,
+                            name.clone(),
                             Self::difficulty_style(theme, *difficulty)
                                 .add_modifier(Modifier::BOLD),
                         ),
@@ -424,7 +466,10 @@ impl LessonMenuPanel {
             },
             None => vec![Line::from("")],
         };
-        frame.render_widget(Paragraph::new(detail_lines), chunks[2]);
+        frame.render_widget(
+            Paragraph::new(detail_lines).wrap(ratatui::widgets::Wrap { trim: false }),
+            chunks[2],
+        );
 
         // Controls / status line
         let controls_line = match &self.status_message {
@@ -543,13 +588,21 @@ mod tests {
     }
 
     #[test]
-    fn test_grouped_lessons_are_ordered_by_difficulty() {
+    fn test_grouped_lessons_are_ordered_by_track_and_difficulty() {
         let lessons = grouped_lessons(&LessonLibrary::new());
         assert!(!lessons.is_empty());
-        let ranks: Vec<u8> = lessons.iter().map(|l| difficulty_rank(l.difficulty)).collect();
+        // Grouped by track (Explorer first by default), then difficulty
+        let ranks: Vec<(bool, u8)> = lessons
+            .iter()
+            .map(|l| (l.track != Track::Explorer, difficulty_rank(l.difficulty)))
+            .collect();
         let mut sorted = ranks.clone();
         sorted.sort();
-        assert_eq!(ranks, sorted, "lessons must be grouped by difficulty");
+        assert_eq!(ranks, sorted, "lessons must be grouped by track, then difficulty");
+
+        // An Operator learner sees their track first
+        let op = grouped_lessons_for(&LessonLibrary::new(), Track::Operator);
+        assert_eq!(op[0].track, Track::Operator);
 
         // Grouping is a reordering, not a filter: same set as the library
         let library = LessonLibrary::new();

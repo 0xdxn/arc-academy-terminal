@@ -165,6 +165,11 @@ pub struct LessonsConfig {
     #[serde(default = "default_practice_mode")]
     pub practice_mode: String,
 
+    /// Learning track shown first: "explorer" (younger learners, story
+    /// lessons) or "operator" (teens and adults)
+    #[serde(default = "default_track")]
+    pub track: String,
+
     /// Whether the one-time real-mode explainer has been shown
     #[serde(default = "default_false")]
     pub real_mode_intro_shown: bool,
@@ -359,6 +364,7 @@ impl Default for LessonsConfig {
     fn default() -> Self {
         Self {
             practice_mode: default_practice_mode(),
+            track: default_track(),
             real_mode_intro_shown: false,
         }
     }
@@ -429,6 +435,10 @@ fn default_max_tokens() -> usize {
 
 fn default_practice_mode() -> String {
     "simulated".to_string()
+}
+
+fn default_track() -> String {
+    "explorer".to_string()
 }
 
 fn default_true() -> bool {

@@ -13,6 +13,7 @@ use ratatui::{
 pub enum OnboardingStep {
     Welcome,
     AskName,
+    AskTrack,
     AskAI,
     AskAIProvider,
     Complete,
@@ -22,7 +23,8 @@ impl OnboardingStep {
     pub fn next(self) -> Self {
         match self {
             Self::Welcome => Self::AskName,
-            Self::AskName => Self::AskAI,
+            Self::AskName => Self::AskTrack,
+            Self::AskTrack => Self::AskAI,
             Self::AskAI => Self::AskAIProvider,
             Self::AskAIProvider => Self::Complete,
             Self::Complete => Self::Complete,
@@ -33,7 +35,8 @@ impl OnboardingStep {
         match self {
             Self::Welcome => Self::Welcome,
             Self::AskName => Self::Welcome,
-            Self::AskAI => Self::AskName,
+            Self::AskTrack => Self::AskName,
+            Self::AskAI => Self::AskTrack,
             Self::AskAIProvider => Self::AskAI,
             Self::Complete => Self::AskAIProvider,
         }
@@ -46,6 +49,8 @@ pub struct OnboardingWizard {
     pub user_name: String,
     pub ai_enabled: Option<bool>,
     pub ai_provider: Option<String>,
+    /// "explorer" or "operator"
+    pub track: Option<String>,
     pub selected_option: usize,
 }
 
@@ -56,6 +61,7 @@ impl OnboardingWizard {
             user_name: String::new(),
             ai_enabled: None,
             ai_provider: None,
+            track: None,
             selected_option: 0,
         }
     }
@@ -100,6 +106,12 @@ impl OnboardingWizard {
             OnboardingStep::AskName => {
                 // The name is optional and never leaves this computer
                 self.user_name = self.user_name.trim().to_string();
+                self.step = self.step.next();
+                self.selected_option = 0;
+            }
+            OnboardingStep::AskTrack => {
+                // 0 = Explorer (default), 1 = Operator
+                self.track = Some(if self.selected_option == 1 { "operator" } else { "explorer" }.to_string());
                 self.step = self.step.next();
                 self.selected_option = 0;
             }
@@ -167,6 +179,7 @@ impl OnboardingWizard {
         match self.step {
             OnboardingStep::Welcome => self.render_welcome(frame, inner, theme),
             OnboardingStep::AskName => self.render_ask_name(frame, inner, theme),
+            OnboardingStep::AskTrack => self.render_ask_track(frame, inner, theme),
             OnboardingStep::AskAI => self.render_ask_ai(frame, inner, theme),
             OnboardingStep::AskAIProvider => self.render_ask_provider(frame, inner, theme),
             OnboardingStep::Complete => self.render_complete(frame, inner, theme),
@@ -238,6 +251,45 @@ impl OnboardingWizard {
 
         let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
         frame.render_widget(paragraph, area);
+    }
+
+    fn render_ask_track(&self, frame: &mut Frame, area: Rect, theme: &Theme) {
+        let options = [
+            ("Explorer", "story lessons on Arc Station, ages 8 to 12"),
+            ("Operator", "real-world skills, teens and adults"),
+        ];
+        let mut lines = vec![
+            Line::from(""),
+            Line::from(vec![Span::styled("  Who's learning?", theme.style_accent())]),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "  Both paths are open either way; this picks where you start.",
+                theme.style_dim(),
+            )]),
+            Line::from(""),
+        ];
+        for (i, (name, about)) in options.iter().enumerate() {
+            let selected = i == self.selected_option;
+            let marker = if selected { "  ▶ " } else { "    " };
+            let style = if selected { theme.style_accent() } else { theme.style_normal() };
+            lines.push(Line::from(vec![
+                Span::styled(marker, theme.style_accent()),
+                Span::styled(*name, style),
+                Span::styled(format!(": {about}"), theme.style_dim()),
+            ]));
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("  Use ", theme.style_dim()),
+            Span::styled("↑/↓", theme.style_accent()),
+            Span::styled(" to select, ", theme.style_dim()),
+            Span::styled("Enter", theme.style_accent()),
+            Span::styled(" to continue, ", theme.style_dim()),
+            Span::styled("Esc", theme.style_accent()),
+            Span::styled(" to go back", theme.style_dim()),
+        ]));
+        frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), area);
     }
 
     fn render_ask_ai(&self, frame: &mut Frame, area: Rect, theme: &Theme) {

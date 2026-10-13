@@ -163,7 +163,7 @@ impl LessonPanel {
         if step.challenge {
             return ValidationResult::Failure {
                 message: gentle,
-                hint: Some("Challenge step: no hints. You know this one.".to_string()),
+                hint: None,
             };
         }
         let ladder = step.hint_ladder();
