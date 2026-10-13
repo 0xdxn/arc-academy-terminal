@@ -205,11 +205,12 @@ impl ShellExecutor {
             // Keep ANSI codes for colored output!
             result.push_str(&stdout);
         }
+        // Errors read like they do in a terminal: just the message, after
+        // anything the command printed
         if !stderr.is_empty() {
-            if !result.is_empty() {
-                result.push_str("\n");
+            if !result.is_empty() && !result.ends_with('\n') {
+                result.push('\n');
             }
-            result.push_str("stderr:\n");
             result.push_str(&stderr);
         }
 

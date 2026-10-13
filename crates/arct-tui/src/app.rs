@@ -3,6 +3,7 @@
 use crate::events::{Action, Event, EventHandler, key_to_action};
 use crate::icons;
 use crate::panels::PanelId;
+use crate::transcript::Tone;
 use crate::shell::ShellExecutor;
 use crate::theme::Theme;
 use crate::ui;
@@ -58,11 +59,23 @@ pub struct App {
     /// Shell executor
     shell_executor: ShellExecutor,
 
-    /// Last command output
+    /// Output of the turn in progress: what the current key press
+    /// printed. Each turn's output lands in `transcript` when it ends.
     pub last_output: String,
 
-    /// Output panel scroll offset
+    /// Legacy output scroll offset (the transcript keeps its own scroll)
     pub output_scroll: usize,
+
+    /// Everything run this session, with its output, newest last
+    pub transcript: crate::transcript::Transcript,
+
+    /// The side panel (where you are, the lesson world) is showing
+    pub sidebar_visible: bool,
+
+    /// Rows a long command explanation is scrolled down, and the
+    /// furthest it could scroll at the last render
+    pub explanation_scroll: usize,
+    pub explanation_max_scroll: usize,
 
     /// Command history
     command_history: Vec<String>,
@@ -399,6 +412,10 @@ impl App {
             shell_executor: ShellExecutor::new()?,
             last_output: welcome_message,
             output_scroll: 0,
+            transcript: crate::transcript::Transcript::new(),
+            sidebar_visible: true,
+            explanation_scroll: 0,
+            explanation_max_scroll: 0,
             command_history,
             history_position: None,
             environment_vars,
@@ -453,6 +470,7 @@ impl App {
         if app.config.lessons.is_real() {
             app.real_files_jail();
         }
+        app.transcript.note(&app.last_output);
         Ok(app)
     }
 
@@ -667,7 +685,19 @@ impl App {
             // Handle events; a closed channel means the event source is gone,
             // so exit instead of spinning
             match self.event_handler.next().await {
-                Some(event) => self.handle_event(event).await?,
+                Some(event) => {
+                    // A key or click is one turn: what it printed goes
+                    // into the transcript when it's done
+                    let turn = matches!(event, Event::Key(_) | Event::Mouse(_));
+                    if turn {
+                        self.transcript.begin_turn(&self.last_output);
+                    }
+                    let handled = self.handle_event(event).await;
+                    if turn {
+                        self.transcript.finish_turn(&self.last_output);
+                    }
+                    handled?
+                }
                 None => {
                     tracing::warn!("Event channel closed, exiting main loop");
                     break;
@@ -793,8 +823,12 @@ impl App {
                 // If in shell panel and not a special action, handle as text input or history
                 if self.active_panel == PanelId::Shell && !self.show_help && !self.ai_mode {
                     match key.code {
+                        // ? on an empty line opens help (no command starts with it)
+                        KeyCode::Char('?') if self.command_buffer.is_empty() => {}
                         KeyCode::Char(c) if key.modifiers == KeyModifiers::NONE || key.modifiers == KeyModifiers::SHIFT => {
                             self.command_buffer.push(c);
+                            // Typing brings a scrolled-back transcript to the end
+                            self.transcript.scroll_to_end();
                             // Reset history position when typing
                             self.history_position = None;
                             // Clear completion suggestions when typing
@@ -818,12 +852,12 @@ impl App {
                             }
                             // Empty buffer - let Tab fall through to cycle panels
                         }
-                        KeyCode::Up => {
+                        KeyCode::Up if key.modifiers == KeyModifiers::NONE => {
                             // Navigate backward in history (older commands)
                             self.history_previous();
                             return Ok(());
                         }
-                        KeyCode::Down => {
+                        KeyCode::Down if key.modifiers == KeyModifiers::NONE => {
                             // Navigate forward in history (newer commands)
                             self.history_next();
                             return Ok(());
@@ -940,20 +974,49 @@ impl App {
                     } else {
                         panel.scroll_up();
                     }
+                } else if self.panel_rects.panel_at(mouse.column, mouse.row) == Some(PanelId::Explanation) {
+                    // Wheel over the lesson step or explanation scrolls it
+                    self.scroll_top_panel(down, 2);
                 } else if down {
-                    // Wheel over the main view scrolls the output panel
-                    let total_lines = self.last_output.lines().count();
-                    if self.output_scroll < total_lines.saturating_sub(1) {
-                        self.output_scroll += 1;
-                    }
+                    // Wheel over the main view scrolls the transcript
+                    self.transcript.scroll_down(3);
                 } else {
-                    self.output_scroll = self.output_scroll.saturating_sub(1);
+                    self.transcript.scroll_up(3);
                 }
             }
             _ => {}
         }
 
         Ok(())
+    }
+
+    /// Open the lesson map
+    fn open_lesson_menu(&mut self) {
+        self.lesson_menu = Some(crate::panels::lesson_menu::LessonMenuPanel::for_learner(
+            self.lesson_library.clone(),
+            self.preferred_track(),
+            &self.completed_lessons,
+        ));
+        self.mark_panel_visited("lesson_menu");
+    }
+
+    /// Scroll the top panel: the lesson step in lessons, the command
+    /// explanation otherwise
+    fn scroll_top_panel(&mut self, down: bool, rows: usize) {
+        if self.lesson_mode {
+            if let Some(panel) = self.lesson_panel.as_mut() {
+                if down { panel.scroll_down(rows) } else { panel.scroll_up(rows) }
+            }
+        } else if down {
+            self.explanation_scroll = (self.explanation_scroll + rows).min(self.explanation_max_scroll);
+        } else {
+            self.explanation_scroll = self.explanation_scroll.saturating_sub(rows);
+        }
+    }
+
+    /// Rows one page of transcript scrolling moves
+    fn transcript_page_rows(&self) -> usize {
+        (self.panel_rects.output.height as usize).saturating_sub(3).max(1)
     }
 
     /// Start (or resume) the lesson currently selected in the lesson menu.
@@ -999,7 +1062,7 @@ impl App {
                     let resumed_at =
                         panel.resume_at(state.current_step_index, state.completed_steps);
                     self.last_output = format!(
-                        "{}Lesson loaded — resumed at step {}.\n\nUse Alt+R to restart from the beginning, Alt+Left to go back a step.\n",
+                        "{}Lesson loaded — resumed at step {}.\n\nCtrl+B goes back a step; Restart Lesson (Ctrl+K) starts it over.\n",
                         icons::lesson().content,
                         resumed_at + 1
                     );
@@ -1044,45 +1107,30 @@ impl App {
                     self.record_feature_event("use_context");
                 }
             }
-            Action::ScrollUp => {
-                // Only scroll when Output panel is focused
-                if self.active_panel == PanelId::Output {
-                    self.output_scroll = self.output_scroll.saturating_sub(1);
-                }
-            }
-            Action::ScrollDown => {
-                // Only scroll when Output panel is focused
-                if self.active_panel == PanelId::Output {
-                    let total_lines = self.last_output.lines().count();
-                    if self.output_scroll < total_lines.saturating_sub(1) {
-                        self.output_scroll += 1;
-                    }
-                }
-            }
-            Action::PageUp => {
-                // Only scroll when Output panel is focused
-                if self.active_panel == PanelId::Output {
-                    self.output_scroll = self.output_scroll.saturating_sub(10);
-                }
-            }
-            Action::PageDown => {
-                // Only scroll when Output panel is focused
-                if self.active_panel == PanelId::Output {
-                    let total_lines = self.last_output.lines().count();
-                    self.output_scroll = (self.output_scroll + 10).min(total_lines.saturating_sub(1));
+            Action::ScrollUp | Action::ScrollDown | Action::PageUp | Action::PageDown => {
+                // ↑↓ scroll the focused panel (the shell uses them for
+                // history); the page keys scroll the transcript from
+                // anywhere, or the lesson step when it has focus
+                let up = matches!(action, Action::ScrollUp | Action::PageUp);
+                let page = matches!(action, Action::PageUp | Action::PageDown);
+                let rows = if page { self.transcript_page_rows() } else { 1 };
+                if self.active_panel == PanelId::Explanation {
+                    self.scroll_top_panel(!up, rows);
+                } else if page || self.active_panel == PanelId::Output {
+                    if up { self.transcript.scroll_up(rows) } else { self.transcript.scroll_down(rows) }
                 }
             }
             Action::ScrollOutputUp => {
                 // Always scroll output regardless of which panel is focused
-                self.output_scroll = self.output_scroll.saturating_sub(1);
+                self.transcript.scroll_up(1);
             }
             Action::ScrollOutputDown => {
                 // Always scroll output regardless of which panel is focused
-                let total_lines = self.last_output.lines().count();
-                if self.output_scroll < total_lines.saturating_sub(1) {
-                    self.output_scroll += 1;
-                }
+                self.transcript.scroll_down(1);
             }
+            Action::ScrollOutputEnd => self.transcript.scroll_to_end(),
+            Action::ScrollOutputStart => self.transcript.scroll_to_start(),
+            Action::ToggleSidebar => self.sidebar_visible = !self.sidebar_visible,
             Action::Help => {
                 self.show_help = !self.show_help;
                 if self.show_help {
@@ -1108,7 +1156,20 @@ impl App {
                 }
             }
             Action::ToggleLesson => {
-                self.toggle_lesson_mode();
+                // In lessons, Ctrl+L opens the lesson map; from the map it
+                // leaves lessons
+                if self.lesson_mode && self.lesson_menu.is_none() {
+                    self.open_lesson_menu();
+                } else {
+                    self.lesson_menu = None;
+                    self.toggle_lesson_mode();
+                }
+            }
+            Action::ExitLessons => {
+                if self.lesson_mode {
+                    self.lesson_menu = None;
+                    self.toggle_lesson_mode();
+                }
             }
             Action::ShowLessonMenu => {
                 if self.lesson_mode {
@@ -1116,14 +1177,7 @@ impl App {
                     if self.lesson_menu.is_some() {
                         self.lesson_menu = None;
                     } else {
-                        self.lesson_menu = Some(
-                            crate::panels::lesson_menu::LessonMenuPanel::for_learner(
-                                self.lesson_library.clone(),
-                                self.preferred_track(),
-                                &self.completed_lessons,
-                            ),
-                        );
-                        self.mark_panel_visited("lesson_menu");
+                        self.open_lesson_menu();
                     }
                 } else {
                     // Outside lesson mode, 'm' enters lesson mode, which
@@ -1223,9 +1277,20 @@ impl App {
         }
 
         let mut command_str = self.command_buffer.clone();
+        if !command_str.is_empty() {
+            self.begin_command_entry(&command_str);
+        }
 
         // If in lesson mode with empty command, skip parsing and go to validation
         if self.lesson_mode && command_str.is_empty() {
+            // No lesson yet: nothing to continue
+            if self.lesson_panel.as_ref().is_none_or(|p| p.current_lesson.is_none()) {
+                return Ok(());
+            }
+            // Step text below the fold: Enter reads on before moving on
+            if self.lesson_panel.as_mut().is_some_and(|p| p.read_on()) {
+                return Ok(());
+            }
             // Extract lesson completion info outside the borrow scope
             let mut lesson_completed_info: Option<(String, arct_core::Difficulty, u32, u64, usize, bool)> =
                 None;
@@ -1235,15 +1300,7 @@ impl App {
                 let validation = lesson_panel.validate_current_step(&command_str);
 
                 if validation.is_success() {
-                    // Success! Move to next step
-                    self.last_output = format!("{}{}\n\nMoving to next step...\n",
-                        icons::success().content,
-                        match &validation {
-                            arct_core::ValidationResult::Success { message } => message,
-                            _ => "Success!",
-                        }
-                    );
-
+                    // Success! Move to next step (the lesson panel shows it)
                     if !lesson_panel.next_step() {
                         // Lesson complete! Extract info for later processing
                         if let Some(lesson) = lesson_panel.current_lesson.as_ref() {
@@ -1256,13 +1313,12 @@ impl App {
                                 lesson_panel.mastered_run(),
                             ));
                         }
-                        self.last_output.push_str(&format!("\n{}Congratulations! You've completed this lesson!\n\nPress Ctrl+L to exit lesson mode or 'm' to select another lesson.\n", icons::celebration().content));
                     } else {
                         step_advanced = true;
                     }
                 } else {
-                    // Information steps should always succeed with Enter
-                    self.last_output = "Press Enter to continue...\n".to_string();
+                    // Enter with nothing typed on a step that needs a command
+                    self.transcript.feedback_for(&validation);
                 }
 
                 self.command_buffer.clear();
@@ -1343,26 +1399,13 @@ impl App {
                     world,
                 );
 
-                // Build output: virtual FS output FIRST, then validation feedback
-                let mut output = String::new();
+                // The command's output, then the lesson's feedback on it
+                // (shown under the output as quieter lines)
+                let output = vfs_output.unwrap_or_default();
+                self.transcript.feedback_for(&validation);
 
-                // Show the command output from virtual filesystem
-                if let Some(vfs_out) = vfs_output {
-                    output.push_str(&vfs_out);
-                    output.push('\n');
-                }
-
-                // Then show validation feedback
                 if validation.is_success() {
                     // Success! Move to next step
-                    output.push_str(&format!("{}{}\n\n",
-                        icons::success().content,
-                        match &validation {
-                            arct_core::ValidationResult::Success { message } => message,
-                            _ => "Correct!",
-                        }
-                    ));
-
                     if !lesson_panel.next_step() {
                         // Lesson complete! Extract info for later processing
                         if let Some(lesson) = lesson_panel.current_lesson.as_ref() {
@@ -1375,27 +1418,9 @@ impl App {
                                 lesson_panel.mastered_run(),
                             ));
                         }
-                        output.push_str(&format!("{}Congratulations! You've completed this lesson!\n\nPress Ctrl+L to exit lesson mode or 'm' to select another lesson.\n", icons::celebration().content));
                     } else {
                         step_advanced = true;
-                        output.push_str("Moving to next step...\n");
                     }
-                } else {
-                    // Show validation failure
-                    output.push_str(&match validation {
-                        arct_core::ValidationResult::Failure { message, hint } => {
-                            let mut fail_output = format!("{}{}\n", icons::error().content, message);
-                            if let Some(h) = hint {
-                                fail_output.push_str(&format!("\n{}Hint: {}\n", icons::hint().content, h));
-                            }
-                            fail_output.push_str("\nTry again!\n");
-                            fail_output
-                        }
-                        arct_core::ValidationResult::Partial { message, progress } => {
-                            format!("{}{} ({:.0}% correct)\n\nKeep trying!\n", icons::warning().content, message, progress)
-                        }
-                        _ => "Try again!\n".to_string(),
-                    });
                 }
 
                 self.last_output = output;
@@ -1438,6 +1463,7 @@ impl App {
         // Generate explanation
         let explanation = self.educator.explain(&cmd)?;
         self.last_explanation = Some(explanation);
+        self.explanation_scroll = 0;
 
         // Check if this is a shell builtin command
         match cmd.program.as_str() {
@@ -1730,6 +1756,66 @@ impl App {
                 Ok(())
             }
         }
+    }
+
+    /// The folder a command typed now would run in, as the prompt shows
+    /// it: the lesson folder in simulated lessons, the playground folder
+    /// in real-files lessons, the safe-mode home in the free shell
+    pub fn prompt_folder(&self) -> String {
+        if self.lesson_mode {
+            if self.lesson_runs_real() {
+                if let Some(playground) = &self.playground {
+                    let shown = playground.display_cwd();
+                    return shown
+                        .strip_prefix("~/ArcAcademy/")
+                        .map(str::to_string)
+                        .unwrap_or(shown);
+                }
+            } else if let Some(vfs) = &self.virtual_fs {
+                return vfs.get_current_dir().display().to_string();
+            }
+        } else if self.config.shell.safe_mode {
+            return self
+                .explore
+                .as_ref()
+                .map(|home| home.display_cwd())
+                .unwrap_or_else(|| EXPLORE_DISPLAY.to_string());
+        }
+        let cwd = &self.session.state.working_directory;
+        match dirs::home_dir().and_then(|home| cwd.strip_prefix(home).ok().map(|p| p.to_path_buf())) {
+            Some(rel) if rel.as_os_str().is_empty() => "~".to_string(),
+            Some(rel) => format!("~/{}", rel.display()),
+            None => cwd.display().to_string(),
+        }
+    }
+
+    /// The real folder behind the prompt, when commands run on real files
+    pub fn prompt_real_dir(&self) -> Option<std::path::PathBuf> {
+        if self.lesson_mode {
+            return self
+                .lesson_runs_real()
+                .then(|| self.playground.as_ref().map(|p| p.cwd().to_path_buf()))
+                .flatten();
+        }
+        if self.config.shell.safe_mode {
+            return self.explore.as_ref().map(|home| home.cwd().to_path_buf());
+        }
+        Some(self.session.state.working_directory.clone())
+    }
+
+    /// The learner pressed Enter on `command`: open its transcript entry
+    /// (the prompt line) before it runs, so it shows where it ran
+    fn begin_command_entry(&mut self, command: &str) {
+        let answering = self.lesson_mode
+            && self.lesson_panel.as_ref().is_some_and(|p| p.expects_answer());
+        if answering {
+            // A quiz answer isn't run, so it gets no prompt
+            self.transcript.begin_answer(command);
+        } else {
+            let folder = self.prompt_folder();
+            self.transcript.begin_command(&folder, command);
+        }
+        self.last_output.clear();
     }
 
     /// Update context (e.g., when directory changes)
@@ -2039,7 +2125,7 @@ impl App {
                 match self.ensure_playground() {
                     Ok(()) => {
                         let mut msg = format!(
-                            "{}Lesson mode activated in REAL practice mode.\n\nCommands run for real inside ~/ArcAcademy/playground.\n\nPress Ctrl+L again to return to normal mode.\n",
+                            "{}Lessons on, with REAL files: commands run inside ~/ArcAcademy/playground.\n\nCtrl+L opens the lesson map; Ctrl+L in the map leaves lessons.\n",
                             icons::lesson().content
                         );
                         if let Some(intro) = self.real_mode_intro_if_needed() {
@@ -2064,7 +2150,7 @@ impl App {
                     Ok(vfs) => {
                         self.virtual_fs = Some(vfs);
                         self.sandbox = crate::sandbox::SandboxShell::new();
-                        self.last_output = format!("{}Lesson mode activated! You're now in a safe virtual filesystem.\n\nPress Ctrl+L again to return to normal mode.\n\nNavigate through lessons using the Learning panel on the right.\n", icons::lesson().content);
+                        self.last_output = format!("{}Lessons on. Commands run in a practice world, so nothing on your computer changes.\n\nCtrl+L opens the lesson map; Ctrl+L in the map leaves lessons.\n", icons::lesson().content);
                     }
                     Err(e) => {
                         self.last_output = format!("{}Failed to initialize lesson environment: {}\n", icons::error().content, e);
@@ -2092,7 +2178,7 @@ impl App {
             // Clean up virtual filesystem (playground dirs are real files the
             // learner owns — they persist until an explicit reset)
             self.virtual_fs = None;
-            self.last_output = format!("{}Lesson mode deactivated. Back to normal shell mode and real filesystem.\n", icons::learning().content);
+            self.last_output = format!("{}Lessons off. Back to the free shell.\n", icons::learning().content);
         }
     }
 
@@ -3163,12 +3249,10 @@ impl App {
             .map(|l| l.title.clone())
             .unwrap_or_else(|| lesson_id.clone());
         let xp = crate::level::lesson_xp(difficulty);
-        self.last_output = format!(
-            "{}\n{}",
+        self.transcript.feedback(
+            Tone::Success,
             crate::celebrate::banner("LESSON COMPLETE!", &lesson_title, xp),
-            self.last_output
         );
-        self.output_scroll = 0;
 
         // Track badges: finished every lesson, and finished them all
         // without needing the answer
@@ -3187,10 +3271,13 @@ impl App {
             self.record_feature_event(&format!("{key}_complete"));
         }
         if progress.is_complete() && first_time {
-            self.last_output.push_str(&format!(
-                "\nYou finished the {} track. Print your certificate with: arct certificate --track {key}\n",
-                crate::streak::track_name(track)
-            ));
+            self.transcript.feedback(
+                Tone::Info,
+                format!(
+                    "You finished the {} track. Print your certificate with: arct certificate --track {key}",
+                    crate::streak::track_name(track)
+                ),
+            );
         }
         if progress.is_mastered() {
             self.record_feature_event(&format!("{key}_mastered"));
@@ -3220,13 +3307,11 @@ impl App {
             &self.user_stats,
             1,
         );
-        if let Some(rec) = recommendations.first() {
-            self.last_output.push_str(&format!(
-                "\n{}Next up: {} — press m for the menu\n",
-                icons::target().content,
-                rec.lesson.title
-            ));
-        }
+        let next = match recommendations.first() {
+            Some(rec) => format!("Next up: {}. Ctrl+L opens the lesson map.", rec.lesson.title),
+            None => "Ctrl+L opens the lesson map.".to_string(),
+        };
+        self.transcript.feedback(Tone::Info, next);
     }
 
     /// Persist the current lesson's step position for step-level resume

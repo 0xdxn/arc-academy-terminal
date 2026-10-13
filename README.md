@@ -47,16 +47,18 @@ The first run asks three things: a name to call you (optional), who's learning (
 
 | Key | Does |
 |-----|------|
-| `Ctrl+L` | Lesson map |
+| `Ctrl+L` | Lessons; in a lesson, the lesson map; in the map, leave lessons |
 | `Ctrl+K` | Command palette: every feature, searchable |
+| `Ctrl+U` / `Ctrl+D` | Scroll the terminal back / forward (the mouse wheel works too) |
+| `Ctrl+B` | Back one lesson step |
+| `Ctrl+P` | Progress |
+| `Ctrl+F` | Show or hide the side panel |
 | `Ctrl+S` | Settings (track, safe mode, practice mode, AI, theme) |
-| `Alt+←` / `Alt+R` | Previous lesson step / restart the lesson |
-| `Alt+A` / `Alt+P` / `Alt+C` | Badges / progress / challenges |
 | `Ctrl+T` | Next theme |
-| `?` | Help |
-| `q` or `Ctrl+C` | Quit |
+| `?` (on an empty line) or `F1` | Help |
+| `Ctrl+C` | Quit |
 
-The bar at the bottom always shows the keys that matter where you are.
+The bar at the bottom always shows the keys that matter where you are. Restart a lesson, and open badges and challenges, from the palette. Where the terminal sends them, `PgUp`/`PgDn`, `Shift+↑↓`, `Alt+←` (back a step), `Alt+R` (restart) and `Alt+A`/`Alt+P`/`Alt+C` work too; on a Mac the Option key usually types a character instead.
 
 ## Settings
 

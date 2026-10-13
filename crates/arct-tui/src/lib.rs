@@ -20,6 +20,7 @@ pub mod streak;
 pub mod certificate;
 pub mod sandbox;
 pub mod jail;
+pub mod transcript;
 
 pub use app::App;
 pub use theme::Theme;
