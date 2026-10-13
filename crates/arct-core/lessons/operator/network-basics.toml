@@ -4,6 +4,8 @@ description = "Learn essential networking commands: ping for connectivity testin
 difficulty = "Beginner"
 estimated_minutes = 12
 prerequisites = ["nav-basics"]
+# Real files run with no network, so this lesson always uses the simulated sandbox
+simulated_only = true
 tags = [
     "beginner",
     "network",

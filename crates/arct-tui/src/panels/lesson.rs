@@ -603,6 +603,7 @@ mod ladder_tests {
             tags: vec![],
             setup: vec![],
             track: Track::Explorer,
+            simulated_only: false,
         }
     }
 

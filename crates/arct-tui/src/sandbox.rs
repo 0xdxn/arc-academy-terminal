@@ -278,7 +278,9 @@ pub(crate) fn fresh_shell_lookup(name: &str, pwd: &str, vars: &dyn Fn(&str) -> O
 /// matches when typed (`glob_match`). Relative patterns are relative to
 /// `cwd`. A pattern whose fixed start already lies outside `root` isn't
 /// expanded at all (the guard refuses it as typed), so this never lists a
-/// folder outside the playground. No match: empty, and the word stays as
+/// folder outside the playground, and folders are compared by their real
+/// path, so a symlink out of the playground isn't followed (the OS jail is
+/// what holds against the rest). No match: empty, and the word stays as
 /// typed, as in sh.
 fn real_glob(pattern: &str, cwd: &Path, root: &Path) -> Vec<String> {
     let is_glob = |part: &str| part.contains(['*', '?', '[']);
@@ -295,6 +297,8 @@ fn real_glob(pattern: &str, cwd: &Path, root: &Path) -> Vec<String> {
         _ => format!("{prefix}/{part}"),
     };
     let on_disk = |text: &str| if absolute { PathBuf::from(text) } else { cwd.join(text) };
+    let real_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let really_inside = |dir: &Path| dir.canonicalize().is_ok_and(|real| real.starts_with(&real_root));
     let mut found: Vec<String> = vec![if absolute { "/".to_string() } else { String::new() }];
     for part in &parts {
         let mut next = Vec::new();
@@ -304,6 +308,9 @@ fn real_glob(pattern: &str, cwd: &Path, root: &Path) -> Vec<String> {
                 continue;
             }
             let dir = if prefix.is_empty() { cwd.to_path_buf() } else { on_disk(prefix) };
+            if !really_inside(&dir) {
+                continue;
+            }
             let Ok(entries) = std::fs::read_dir(&dir) else { continue };
             let mut names: Vec<String> = entries
                 .filter_map(|e| e.ok()?.file_name().into_string().ok())
@@ -318,6 +325,7 @@ fn real_glob(pattern: &str, cwd: &Path, root: &Path) -> Vec<String> {
     found
         .into_iter()
         .filter(|text| std::fs::symlink_metadata(on_disk(text)).is_ok())
+        .filter(|text| on_disk(text).parent().is_some_and(really_inside))
         .filter(|text| !dirs_only || on_disk(text).is_dir())
         .map(|text| if dirs_only { format!("{text}/") } else { text })
         .collect()
@@ -1410,8 +1418,32 @@ mod tests {
         assert!(out.contains(".hidden") && !out.contains("..\n") && !out.contains(".. "), "{out}");
         let out = real(&mut app, "ls .[.]/.[.]").await;
         assert!(out.contains("No such file"), "{out}");
+        // and the OS jail holds where the guard can't see: a script that
+        // climbs out (probe: an empty file in the temp folder)
+        assert!(matches!(app.real_jail, Some(Some(_))), "real files run jailed");
+        let escape = root.parent().unwrap().join(format!("arct-escape-probe-{}", std::process::id()));
+        std::fs::write(lesson.join("x.sh"), format!("cd ..; cd ..; touch '{}'\n", escape.display())).unwrap();
+        real(&mut app, "sh x.sh").await;
+        assert!(!escape.exists(), "the script wrote outside the playground");
 
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn network_lessons_stay_simulated_with_real_files_on() {
+        let lessons = arct_core::LessonLibrary::new();
+        let network = lessons.get("network-basics").expect("lesson exists");
+        assert!(network.simulated_only);
+        assert!(!lessons.get("variables").unwrap().simulated_only);
+    }
+
+    #[test]
+    fn real_files_practice_needs_a_jail() {
+        let mut app = app("nojail");
+        app.real_jail = Some(None);
+        app.toggle_practice_mode();
+        assert_eq!(app.config.lessons.practice_mode, "simulated");
+        assert!(app.last_output.contains("simulated sandbox"), "{}", app.last_output);
     }
 
     #[test]
@@ -1444,6 +1476,14 @@ mod tests {
         assert_eq!(at(&lesson, "ls /etc/*"), "ls '/etc/*'");
         assert!(!allowed(&lesson, "ls /etc/*"));
         assert!(!allowed(&lesson, "ls ~/*"));
+        // a symlink out of the playground isn't followed
+        let outside = root.parent().unwrap().join(format!("arct-globs-outside-{}", std::process::id()));
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.txt"), "x").unwrap();
+        std::os::unix::fs::symlink(&outside, lesson.join("x")).unwrap();
+        assert_eq!(at(&lesson, "ls x/*"), "ls 'x/*'");
+        assert_eq!(at(&lesson, "ls */secret.txt"), "ls '*/secret.txt'");
+        std::fs::remove_dir_all(&outside).unwrap();
 
         std::fs::remove_dir_all(&root).unwrap();
     }
@@ -1476,6 +1516,11 @@ mod tests {
         assert!(shell(&mut app, "ls -d ../*").await.contains("Blocked"));
         assert!(shell(&mut app, "echo $(date)").await.contains("Blocked"));
         assert!(shell(&mut app, "(ls)").await.contains("Blocked"));
+        // the free shell runs jailed too (probe: an empty file in the temp folder)
+        let escape = root.parent().unwrap().join(format!("arct-free-escape-probe-{}", std::process::id()));
+        std::fs::write(root.join("x.sh"), format!("cd ..; touch '{}'\n", escape.display())).unwrap();
+        shell(&mut app, "sh x.sh").await;
+        assert!(!escape.exists(), "the free shell wrote outside its home");
         // what chmod -R 000 .* would have run here (not executed)
         let vars = |_: &str| None;
         assert_eq!(

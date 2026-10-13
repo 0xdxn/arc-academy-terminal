@@ -135,6 +135,18 @@ pub struct App {
     /// first use when shell.safe_mode is on
     pub explore: Option<arct_core::Playground>,
 
+    /// The OS jail for real-files lessons (None: not looked for yet;
+    /// Some(None): this system has none that passes its self-test, so
+    /// real-files practice isn't offered)
+    pub(crate) real_jail: Option<Option<crate::jail::Jail>>,
+
+    /// The OS jail for the safe-mode free shell, found the same way. With
+    /// none, the free shell still has the safety guard.
+    explore_jail: Option<Option<crate::jail::Jail>>,
+
+    /// The learner has been told safe mode runs without the OS sandbox here
+    told_unjailed: bool,
+
     /// Lesson menu for selecting lessons
     pub lesson_menu: Option<crate::panels::lesson_menu::LessonMenuPanel>,
 
@@ -372,7 +384,7 @@ impl App {
             None
         };
 
-        Ok(Self {
+        let mut app = Self {
             should_quit: false,
             active_panel: PanelId::Shell,
             session,
@@ -410,6 +422,9 @@ impl App {
             sandbox: crate::sandbox::SandboxShell::new(),
             playground: None,
             explore: None,
+            real_jail: None,
+            explore_jail: None,
+            told_unjailed: false,
             lesson_menu: None,
             completed_lessons,
             user_stats,
@@ -434,7 +449,11 @@ impl App {
             show_dashboard,
             notification_ticks: 0,
             panel_rects: crate::ui::PanelRects::default(),
-        })
+        };
+        if app.config.lessons.is_real() {
+            app.real_files_jail();
+        }
+        Ok(app)
     }
 
     /// Initialize empty lesson panel (user will select lesson from menu)
@@ -1834,7 +1853,7 @@ impl App {
             let answering = self.lesson_panel.as_ref().is_some_and(|p| p.expects_answer());
             let vfs_output = if answering {
                 None
-            } else if self.practice_mode_is_real() {
+            } else if self.lesson_runs_real() {
                 Some(self.execute_playground_command(&cmd, &command_str).await)
             } else if let arct_core::GuardVerdict::Refuse { reason } =
                 arct_core::PlaygroundGuard::check_catastrophic(&command_str)
@@ -1861,7 +1880,7 @@ impl App {
                 None;
             let mut step_advanced = false;
 
-            let practice_real = self.practice_mode_is_real();
+            let practice_real = self.lesson_runs_real();
             if let Some(ref mut lesson_panel) = self.lesson_panel {
                 // Task steps check the practice environment itself
                 let world: Option<&dyn arct_core::PracticeWorld> = if practice_real {
@@ -2064,6 +2083,8 @@ impl App {
         } else {
             (arct_core::PlaygroundGuard::check_catastrophic(&command_str), None)
         };
+        // Safe mode also runs inside the OS jail when this system has one
+        let jail = if self.config.shell.safe_mode { self.explore_jail() } else { None };
         if let arct_core::GuardVerdict::Refuse { reason } = verdict {
             self.last_output = format!(
                 "{}Blocked. Nothing ran.\n\n{}\n\n{}The safety guard turns dangerous commands into lessons.\n",
@@ -2090,7 +2111,7 @@ impl App {
         let env_vars = self.environment_vars.clone();
         let output_result = self
             .shell_executor
-            .execute(to_run.unwrap_or_else(|| command_str.clone()), env_vars, timeout_duration, run_cwd)
+            .execute(to_run.unwrap_or_else(|| command_str.clone()), env_vars, timeout_duration, run_cwd, jail.as_ref())
             .await;
 
         let output = match output_result {
@@ -2108,6 +2129,12 @@ impl App {
 
         // Determine if command was successful
         let success = !Self::output_reports_failure(&output);
+
+        // Safe mode without a working OS sandbox: say so, once
+        if self.config.shell.safe_mode && jail.is_none() && !self.told_unjailed {
+            self.told_unjailed = true;
+            self.last_output.push_str(&format!("\n{}{}\n", icons::hint().content, Self::unjailed_note()));
+        }
 
         // Reset scroll to top for new output
         self.output_scroll = 0;
@@ -2627,7 +2654,70 @@ impl App {
 
     /// Whether lesson practice runs on the real filesystem playground
     fn practice_mode_is_real(&self) -> bool {
-        self.config.lessons.is_real()
+        self.config.lessons.is_real() && matches!(self.real_jail, Some(Some(_)))
+    }
+
+    /// The current lesson runs on real files: real-files practice is on and
+    /// the lesson isn't one that only works in the simulated sandbox
+    fn lesson_runs_real(&self) -> bool {
+        self.practice_mode_is_real()
+            && !self
+                .lesson_panel
+                .as_ref()
+                .and_then(|p| p.current_lesson.as_ref())
+                .is_some_and(|l| l.simulated_only)
+    }
+
+    /// The jail for real-files lessons, looked for once (opening the
+    /// playground) and kept. None: real-files practice isn't offered here.
+    fn real_files_jail(&mut self) -> Option<crate::jail::Jail> {
+        if self.real_jail.is_none() {
+            let jail = self
+                .ensure_playground()
+                .ok()
+                .and_then(|()| crate::jail::Jail::for_root(self.playground.as_ref()?.root()));
+            if jail.is_none() {
+                tracing::warn!("no working OS sandbox: real-files practice is off");
+            }
+            self.real_jail = Some(jail);
+        }
+        self.real_jail.clone().flatten()
+    }
+
+    /// The jail for the safe-mode free shell (call after ensure_explore)
+    fn explore_jail(&mut self) -> Option<crate::jail::Jail> {
+        if self.explore_jail.is_none() {
+            let jail = self.explore.as_ref().and_then(|home| crate::jail::Jail::for_root(home.root()));
+            self.explore_jail = Some(jail);
+        }
+        self.explore_jail.clone().flatten()
+    }
+
+    /// Safe mode is running on the safety guard alone
+    fn unjailed_note() -> String {
+        let how = if cfg!(target_os = "linux") {
+            " Installing the bwrap package (bubblewrap) adds the sandbox."
+        } else {
+            ""
+        };
+        format!(
+            "Safe mode here has the safety guard but not the system sandbox: the guard reads each \
+             command before it runs, but can't see what a script or program does once it starts.{how}"
+        )
+    }
+
+    /// Why real-files practice isn't available on this system
+    fn no_jail_message() -> String {
+        let how = if cfg!(target_os = "linux") {
+            "On Linux it uses bubblewrap: install the bwrap package to turn it on."
+        } else {
+            "It uses the system sandbox (sandbox-exec), which isn't working here."
+        };
+        format!(
+            "Real-files practice runs every command inside the operating system's sandbox, so \
+             nothing outside ~/ArcAcademy/playground can be changed. {how} Lessons stay in the \
+             simulated sandbox."
+        )
     }
 
     /// Default playground root: ~/ArcAcademy/playground
@@ -2758,7 +2848,7 @@ impl App {
             .and_then(|p| p.current_lesson.as_ref())
             .map(|l| (l.id.clone(), l.setup.clone()));
 
-        if self.practice_mode_is_real() {
+        if self.lesson_runs_real() {
             // Each lesson starts with no variables left over from the last
             self.sandbox = crate::sandbox::SandboxShell::new();
             if let Err(e) = self.ensure_playground() {
@@ -2826,8 +2916,13 @@ impl App {
 
     /// Toggle lesson practice between the simulated sandbox and the real
     /// filesystem playground ("Toggle Real-Filesystem Practice")
-    fn toggle_practice_mode(&mut self) {
+    pub(crate) fn toggle_practice_mode(&mut self) {
         let to_real = !self.practice_mode_is_real();
+        if to_real && self.real_files_jail().is_none() {
+            self.last_output = format!("{}{}\n", icons::warning().content, Self::no_jail_message());
+            self.output_scroll = 0;
+            return;
+        }
         self.config.lessons.practice_mode = if to_real { "real" } else { "simulated" }.to_string();
         if let Err(e) = self.config.save() {
             tracing::warn!("Failed to save config: {}", e);
@@ -2866,7 +2961,7 @@ impl App {
     /// ("Reset Lesson Playground"). Deletion is confined to
     /// ~/ArcAcademy/playground with canonical-prefix verification.
     fn reset_playground(&mut self) {
-        if !self.lesson_mode || !self.practice_mode_is_real() {
+        if !self.lesson_mode || !self.lesson_runs_real() {
             self.last_output = format!(
                 "{}Playground reset applies to lessons in real practice mode. Enable it with \"Toggle Real-Filesystem Practice\" (Ctrl+K) and start a lesson first.\n",
                 icons::hint().content
@@ -2985,14 +3080,18 @@ impl App {
             };
         }
 
-        // Real execution, pinned to the tracked playground cwd, with the
-        // same timeout-kill behavior as the normal shell
+        // Real execution inside the OS jail (never without one), pinned to
+        // the tracked playground cwd, with the same timeout-kill behavior
+        // as the normal shell
+        let Some(jail) = self.real_files_jail() else {
+            return format!("{}{}\n", icons::warning().content, Self::no_jail_message());
+        };
         let timeout = std::time::Duration::from_secs(self.config.general.command_timeout);
         let mut env_vars = self.environment_vars.clone();
         env_vars.extend(self.sandbox.real_env());
         match self
             .shell_executor
-            .execute(to_run.to_string(), env_vars, timeout, Some(cwd))
+            .execute(to_run.to_string(), env_vars, timeout, Some(cwd), Some(&jail))
             .await
         {
             Ok(output) => output,
@@ -3769,7 +3868,7 @@ impl App {
             // In real practice mode, restarting also wipes and re-materializes
             // the lesson's playground directory (safe: deletion is confined to
             // ~/ArcAcademy/playground with canonical-prefix verification)
-            if self.practice_mode_is_real() {
+            if self.lesson_runs_real() {
                 if self.playground.as_ref().map(|p| p.has_lesson()) != Some(true) {
                     self.prepare_lesson_environment();
                 }
@@ -3934,5 +4033,96 @@ mod playthrough_tests {
             );
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Safe mode without a jail says so, once. Runs only `echo`, in the
+    /// test's own folder; no safe-mode home is opened.
+    #[tokio::test]
+    async fn safe_mode_without_a_jail_says_so_once() {
+        let dir = std::env::temp_dir().join(format!("arct-unjailed-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("ARCT_DATA_DIR", &dir);
+        let config = dir.join("config.toml");
+        std::fs::write(&config, "[general]\nsetup_complete = true\n[shell]\nsafe_mode = true\n").unwrap();
+        let mut app = App::new_with_options(crate::RunOptions {
+            config_path: Some(config),
+            ..Default::default()
+        })
+        .unwrap();
+        app.explore_jail = Some(None);
+        app.command_buffer = "echo hi".to_string();
+        app.execute_command().await.unwrap();
+        assert!(app.last_output.contains("hi"), "{}", app.last_output);
+        assert!(app.last_output.contains("not the system sandbox"), "{}", app.last_output);
+        app.command_buffer = "echo again".to_string();
+        app.execute_command().await.unwrap();
+        assert!(!app.last_output.contains("not the system sandbox"), "{}", app.last_output);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Plays every real-files lesson on real files inside the jail, so a
+    /// jail rule that breaks an ordinary lesson command shows up here.
+    /// Ignored by default: it writes a real playground under $HOME, so it
+    /// refuses to run unless HOME is a scratch folder under the temp dir.
+    /// Run: HOME=<scratch> CARGO_HOME=~/.cargo RUSTUP_HOME=~/.rustup
+    ///      cargo test -p arct-tui real_files_lessons -- --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn real_files_lessons_can_be_completed_in_the_jail() {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let scratch_home = std::path::Path::new(&home)
+            .canonicalize()
+            .ok()
+            .zip(std::env::temp_dir().canonicalize().ok())
+            .is_some_and(|(h, t)| h.starts_with(&t) && h != t)
+            || home.contains("/.synap/scratch/");
+        assert!(scratch_home, "HOME must be a scratch folder, not {home}");
+
+        let dir = std::path::Path::new(&home).join("arct-data");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("ARCT_DATA_DIR", &dir);
+        let config = dir.join("config.toml");
+        std::fs::write(
+            &config,
+            "[general]\nsetup_complete = true\n[lessons]\npractice_mode = \"real\"\n",
+        )
+        .unwrap();
+
+        let library = arct_core::LessonLibrary::new();
+        let mut played = 0;
+        let mut failures = Vec::new();
+        for lesson in library.all().into_iter().filter(|l| !l.simulated_only) {
+            let mut app = App::new_with_options(crate::RunOptions {
+                config_path: Some(config.clone()),
+                ..Default::default()
+            })
+            .unwrap();
+            assert!(app.practice_mode_is_real(), "no jail, so no real files");
+            app.lesson_mode = true;
+            app.lesson_panel
+                .as_mut()
+                .expect("lesson panel")
+                .load_lesson(lesson.clone());
+            app.prepare_lesson_environment();
+            for step in &lesson.steps {
+                let before = app.lesson_panel.as_ref().unwrap().current_step_index();
+                for input in step_inputs(&lesson.id, step) {
+                    app.command_buffer = input;
+                    app.execute_command().await.unwrap();
+                }
+                let after = app.lesson_panel.as_ref().unwrap().current_step_index();
+                let finished = app.completed_lessons.contains(&lesson.id);
+                if !(after == before + 1 || finished) {
+                    failures.push(format!(
+                        "{} step {} '{}':\n{}",
+                        lesson.id, step.step_number, step.title, app.last_output
+                    ));
+                    break;
+                }
+            }
+            played += 1;
+        }
+        assert!(played > 0);
+        assert!(failures.is_empty(), "{} of {played} lessons stuck on real files:\n\n{}", failures.len(), failures.join("\n\n"));
     }
 }

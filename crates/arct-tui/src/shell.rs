@@ -122,16 +122,28 @@ impl ShellExecutor {
         env_vars: std::collections::HashMap<String, String>,
         timeout: std::time::Duration,
         cwd: Option<std::path::PathBuf>,
+        jail: Option<&crate::jail::Jail>,
     ) -> Result<String> {
         use std::process::Stdio;
         use tokio::io::AsyncReadExt;
         use tokio::process::Command;
 
-        // Build command with environment variables
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c")
-           .arg(&command)
-           .env("TERM", "xterm-256color")
+        // Build command with environment variables: sh -c, inside the OS
+        // jail when one is given
+        let mut cmd = match jail {
+            Some(jail) => {
+                let (program, args) = jail.wrap(&command);
+                let mut cmd = Command::new(program);
+                cmd.args(args).env("TMPDIR", jail.tmp());
+                cmd
+            }
+            None => {
+                let mut cmd = Command::new("sh");
+                cmd.arg("-c").arg(&command);
+                cmd
+            }
+        };
+        cmd.env("TERM", "xterm-256color")
            .stdin(Stdio::null())
            .stdout(Stdio::piped())
            .stderr(Stdio::piped())
@@ -293,6 +305,7 @@ mod tests {
                 std::collections::HashMap::new(),
                 std::time::Duration::from_secs(5),
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -313,6 +326,7 @@ mod tests {
                 std::collections::HashMap::new(),
                 std::time::Duration::from_secs(5),
                 Some(canonical.clone()),
+                None,
             )
             .await
             .unwrap();
@@ -341,7 +355,7 @@ mod tests {
 
         let start = Instant::now();
         let result = executor
-            .execute(command, std::collections::HashMap::new(), Duration::from_secs(1), None)
+            .execute(command, std::collections::HashMap::new(), Duration::from_secs(1), None, None)
             .await;
 
         // Must report the timeout and return promptly
