@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.1] (2026-10-13)
+
+### Install
+- Prebuilt downloads for macOS (Apple silicon and Intel) and Linux (x86_64 and arm64); the installer checks each against `SHA256SUMS` before installing.
+- The AI assistant connects over rustls on every platform; arct has no OpenSSL dependency.
+
+Everything else is as in 1.1.0.
+
 ## [1.1.0] (2026-10-13)
 
 ### Safety

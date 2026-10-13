@@ -16,7 +16,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 authors = ["Arc Academy"]
 license = "GPL-2.0-only"
@@ -62,7 +62,7 @@ portable-pty = "0.8"
 vte = "0.13"
 
 # AI & HTTP
-reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
 async-trait = "0.1"
 futures = "0.3"
 

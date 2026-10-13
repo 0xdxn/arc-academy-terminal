@@ -16,10 +16,10 @@ name = "arct"
 path = "src/main.rs"
 
 [dependencies]
-arct-core = { path = "../arct-core", version = "1.1.0" }
-arct-tui = { path = "../arct-tui", version = "1.1.0" }
-arct-config = { path = "../arct-config", version = "1.1.0" }
-arct-telemetry = { path = "../arct-telemetry", version = "1.1.0" }
+arct-core = { path = "../arct-core", version = "1.1.1" }
+arct-tui = { path = "../arct-tui", version = "1.1.1" }
+arct-config = { path = "../arct-config", version = "1.1.1" }
+arct-telemetry = { path = "../arct-telemetry", version = "1.1.1" }
 tokio.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
