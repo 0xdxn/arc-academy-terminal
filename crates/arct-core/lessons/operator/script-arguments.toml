@@ -1,0 +1,16 @@
+id = "script-arguments"
+title = "Script Arguments"
+description = "Write scripts that take arguments: $1, $#, $@ and exit."
+difficulty = "Advanced"
+estimated_minutes = 15
+prerequisites = ["first-scripts", "variables"]
+tags = ["operator", "placeholder"]
+
+[[steps]]
+step_number = 1
+title = "Coming soon"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+This lesson is being written."""

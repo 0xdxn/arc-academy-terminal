@@ -1,0 +1,16 @@
+id = "compare-files"
+title = "Comparing Files with diff"
+description = "See exactly what changed between two versions of a file."
+difficulty = "Intermediate"
+estimated_minutes = 12
+prerequisites = ["file-viewing"]
+tags = ["operator", "placeholder"]
+
+[[steps]]
+step_number = 1
+title = "Coming soon"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+This lesson is being written."""

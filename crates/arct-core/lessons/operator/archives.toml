@@ -1,0 +1,16 @@
+id = "archives"
+title = "Archives: tar and gzip"
+description = "Pack folders into one file, look inside, and unpack them."
+difficulty = "Intermediate"
+estimated_minutes = 15
+prerequisites = ["file-mgmt"]
+tags = ["operator", "placeholder"]
+
+[[steps]]
+step_number = 1
+title = "Coming soon"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+This lesson is being written."""

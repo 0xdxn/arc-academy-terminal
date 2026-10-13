@@ -1,0 +1,16 @@
+id = "environment"
+title = "The Environment: export and env"
+description = "See what every program inherits, and pass values on with export."
+difficulty = "Intermediate"
+estimated_minutes = 12
+prerequisites = ["variables"]
+tags = ["operator", "placeholder"]
+
+[[steps]]
+step_number = 1
+title = "Coming soon"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+This lesson is being written."""

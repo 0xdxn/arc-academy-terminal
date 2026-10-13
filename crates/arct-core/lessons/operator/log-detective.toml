@@ -1,0 +1,16 @@
+id = "log-detective"
+title = "Capstone: Log Detective"
+description = "Use everything so far to answer real questions from a pile of logs."
+difficulty = "Advanced"
+estimated_minutes = 20
+prerequisites = ["pipelines", "find-files"]
+tags = ["operator", "placeholder"]
+
+[[steps]]
+step_number = 1
+title = "Coming soon"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+This lesson is being written."""

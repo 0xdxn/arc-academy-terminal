@@ -1,0 +1,16 @@
+id = "path-and-which"
+title = "PATH: How the Shell Finds Commands"
+description = "Learn how the shell finds programs, and make your own command."
+difficulty = "Advanced"
+estimated_minutes = 15
+prerequisites = ["environment", "first-scripts"]
+tags = ["operator", "placeholder"]
+
+[[steps]]
+step_number = 1
+title = "Coming soon"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+This lesson is being written."""

@@ -1,0 +1,16 @@
+id = "command-lists"
+title = "Chaining Commands: && || ;"
+description = "Run commands one after another, and only when the last one worked."
+difficulty = "Beginner"
+estimated_minutes = 10
+prerequisites = ["file-mgmt"]
+tags = ["operator", "placeholder"]
+
+[[steps]]
+step_number = 1
+title = "Coming soon"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+This lesson is being written."""

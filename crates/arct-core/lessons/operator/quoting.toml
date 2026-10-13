@@ -1,0 +1,16 @@
+id = "quoting"
+title = "Spaces, Quotes and Escapes"
+description = "Handle file names with spaces, and know what quotes do."
+difficulty = "Beginner"
+estimated_minutes = 12
+prerequisites = ["wildcards"]
+tags = ["operator", "placeholder"]
+
+[[steps]]
+step_number = 1
+title = "Coming soon"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+This lesson is being written."""
