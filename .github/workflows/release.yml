@@ -21,43 +21,58 @@ jobs:
         include:
           - { os: macos-14, target: aarch64-apple-darwin }
           - { os: macos-14, target: x86_64-apple-darwin }
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
-          - { os: ubuntu-latest, target: aarch64-unknown-linux-musl }
+          - { os: ubuntu-24.04, target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04, target: aarch64-unknown-linux-musl }
     runs-on: ${{ matrix.os }}
     env:
       TARGET: ${{ matrix.target }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable, 2026-10
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       - name: Install zig and cargo-zigbuild (Linux targets)
         if: contains(matrix.target, 'linux')
         run: |
-          pip install ziglang
-          cargo install --locked cargo-zigbuild
+          pip install --require-hashes -r .github/zig-requirements.txt
+          cargo install --locked cargo-zigbuild --version 0.23.4
+
+      # The tests prove the OS jail on both platforms: sandbox-exec is always
+      # there on macOS; on Linux, bubblewrap needs unprivileged user
+      # namespaces, which Ubuntu restricts by default. With
+      # ARCT_REQUIRE_JAIL set, a jail that doesn't work fails the release.
+      - name: Linux jail (bubblewrap)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get install -y bubblewrap
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
 
       - name: Test
         if: matrix.target == 'x86_64-unknown-linux-musl' || matrix.target == 'aarch64-apple-darwin'
+        env:
+          ARCT_REQUIRE_JAIL: "1"
         run: cargo test --workspace --locked
 
       - name: Package
         run: scripts/package.sh "$TARGET"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: arct-${{ matrix.target }}
           path: dist/arct-*.tar.gz
 
   release:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: dist
           merge-multiple: true
