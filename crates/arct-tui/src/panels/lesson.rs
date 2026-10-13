@@ -2,7 +2,7 @@
 
 use crate::icons;
 use crate::theme::Theme;
-use arct_core::{Attempt, Lesson, LessonStep, LessonValidator, PracticeWorld, StepType, ValidationResult};
+use arct_core::{Attempt, Coach, Lesson, LessonStep, LessonValidator, PracticeWorld, StepType, ValidationResult};
 use ratatui::{
     layout::Rect,
     style::Style,
@@ -21,12 +21,8 @@ pub struct LessonPanel {
     completed_steps: Vec<usize>,
     /// When this lesson run started (for the "speed_lesson" achievement)
     started_at: Option<std::time::Instant>,
-    /// Wrong answers in this lesson run (for the "perfect_lesson" achievement)
-    wrong_answers: usize,
-    /// Misses on the current step: each one reveals the next hint rung
-    step_misses: usize,
-    /// The answer was shown at some point in this run
-    answer_revealed: bool,
+    /// The hint ladder: misses, wrong answers, whether the answer was shown
+    coach: Coach,
     /// This run was resumed from a save, so its earlier steps are unknown
     resumed: bool,
 }
@@ -41,9 +37,7 @@ impl LessonPanel {
             last_validation: None,
             completed_steps: Vec::new(),
             started_at: None,
-            wrong_answers: 0,
-            step_misses: 0,
-            answer_revealed: false,
+            coach: Coach::new(),
             resumed: false,
         }
     }
@@ -56,9 +50,7 @@ impl LessonPanel {
         self.last_validation = None;
         self.completed_steps.clear();
         self.started_at = Some(std::time::Instant::now());
-        self.wrong_answers = 0;
-        self.step_misses = 0;
-        self.answer_revealed = false;
+        self.coach = Coach::new();
         self.resumed = false;
     }
 
@@ -70,7 +62,7 @@ impl LessonPanel {
         if let Some(lesson) = &self.current_lesson {
             let max = lesson.steps.len().saturating_sub(1);
             self.current_step_index = step_index.min(max);
-            self.step_misses = 0;
+            self.coach.new_step();
             self.resumed = true;
             self.completed_steps = completed_steps
                 .into_iter()
@@ -87,9 +79,7 @@ impl LessonPanel {
         self.last_validation = None;
         self.completed_steps.clear();
         self.started_at = Some(std::time::Instant::now());
-        self.wrong_answers = 0;
-        self.step_misses = 0;
-        self.answer_revealed = false;
+        self.coach = Coach::new();
         self.resumed = false;
     }
 
@@ -112,13 +102,13 @@ impl LessonPanel {
 
     /// Wrong answers recorded during this lesson run
     pub fn wrong_answers(&self) -> usize {
-        self.wrong_answers
+        self.coach.wrong_answers()
     }
 
     /// This run counts toward mastery: it was played from the start and
     /// the answer was never revealed (hints are fine)
     pub fn mastered_run(&self) -> bool {
-        !self.answer_revealed && !self.resumed
+        !self.coach.answer_revealed() && !self.resumed
     }
 
     /// The current step is a quiz: what's typed is an answer, not a command
@@ -160,53 +150,12 @@ impl LessonPanel {
             };
         };
         let attempt = Attempt { input, output };
-        let mut result =
-            arct_core::validate_step(&step, &self.validator, &attempt, command_failed, world);
-
-        if !result.is_success() {
-            self.wrong_answers += 1;
-            self.step_misses += 1;
-            if !step.challenge && self.step_misses > step.hint_ladder().len() {
-                self.answer_revealed = true;
-            }
-            result = Self::coach(&step, result, self.step_misses);
-        }
+        let result = self
+            .coach
+            .check(&step, &self.validator, &attempt, command_failed, world);
 
         self.last_validation = Some(result.clone());
         result
-    }
-
-    /// Turn a raw failure into coaching: a hint per miss, the answer last
-    fn coach(step: &LessonStep, raw: ValidationResult, misses: usize) -> ValidationResult {
-        let ValidationResult::Failure { message, hint } = raw else {
-            return raw;
-        };
-        // Task-style failures say what is missing without giving the answer
-        let outcome_based = matches!(
-            step.step_type,
-            StepType::Task { .. } | StepType::Practice { .. }
-        );
-        let gentle = if outcome_based { message.clone() } else { "Not quite.".to_string() };
-
-        if step.challenge {
-            return ValidationResult::Failure {
-                message: gentle,
-                hint: None,
-            };
-        }
-        let ladder = step.hint_ladder();
-        if misses <= ladder.len() {
-            ValidationResult::Failure {
-                message: gentle,
-                hint: Some(ladder[misses - 1].to_string()),
-            }
-        } else {
-            // Out of hints: show what the validator knows (the answer)
-            ValidationResult::Failure {
-                message,
-                hint: hint.or_else(|| ladder.last().map(|h| h.to_string())),
-            }
-        }
     }
 
     /// Lines showing the last validation result
@@ -259,7 +208,7 @@ impl LessonPanel {
                 self.current_step_index += 1;
                 self.user_input.clear();
                 self.last_validation = None;
-                self.step_misses = 0;
+                self.coach.new_step();
                 true
             } else {
                 false // Lesson complete
@@ -275,7 +224,7 @@ impl LessonPanel {
             self.current_step_index -= 1;
             self.user_input.clear();
             self.last_validation = None;
-            self.step_misses = 0;
+            self.coach.new_step();
         }
     }
 
