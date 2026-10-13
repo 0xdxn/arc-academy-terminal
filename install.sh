@@ -79,7 +79,7 @@ install_prebuilt() {
     [ -n "$target" ] || return 1
     archive="arct-$VERSION-$target.tar.gz"
     work="$(mktemp -d 2>/dev/null || mktemp -d -t arct)"
-    trap 'rm -rf "$work"' EXIT
+    trap 'rm -rf "${work:?}"' EXIT
 
     say "Downloading $archive"
     fetch "$BASE/v$VERSION/$archive" "$work/$archive" || return 1
@@ -115,9 +115,12 @@ else
     say "and Rust isn't installed, so arct can't be built here yet."
     say ""
     if ask "Install Rust from https://rustup.rs and build arct? (about 1 GB, several minutes)"; then
-        fetch https://sh.rustup.rs "${TMPDIR:-/tmp}/rustup-init.sh"
-        sh "${TMPDIR:-/tmp}/rustup-init.sh" -y --profile minimal
-        rm -f "${TMPDIR:-/tmp}/rustup-init.sh"
+        # A private directory, never a fixed name in a shared /tmp: another
+        # user could swap the file between the download and the run.
+        rustup_dir="$(mktemp -d 2>/dev/null || mktemp -d -t rustup)"
+        trap 'rm -rf "${rustup_dir:?}"; [ -z "${work:-}" ] || rm -rf "$work"' EXIT
+        fetch https://sh.rustup.rs "$rustup_dir/rustup-init.sh"
+        sh "$rustup_dir/rustup-init.sh" -y --profile minimal
         # shellcheck disable=SC1091
         . "$HOME/.cargo/env"
         install_with_cargo || fail "cargo could not build arct"
