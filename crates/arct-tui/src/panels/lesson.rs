@@ -29,6 +29,13 @@ pub struct LessonPanel {
     answer_revealed: bool,
     /// This run was resumed from a save, so its earlier steps are unknown
     resumed: bool,
+    /// Rows the step text is scrolled down (long steps)
+    scroll: usize,
+    /// From the last render: rows of step text below the view, the
+    /// furthest it can scroll, and how many text rows fit
+    hidden_below: std::cell::Cell<usize>,
+    max_scroll: std::cell::Cell<usize>,
+    view_rows: std::cell::Cell<usize>,
 }
 
 impl LessonPanel {
@@ -45,7 +52,17 @@ impl LessonPanel {
             step_misses: 0,
             answer_revealed: false,
             resumed: false,
+            scroll: 0,
+            hidden_below: std::cell::Cell::new(0),
+            max_scroll: std::cell::Cell::new(0),
+            view_rows: std::cell::Cell::new(0),
         }
+    }
+
+    /// A different step is showing: start at its top
+    fn reset_scroll(&mut self) {
+        self.scroll = 0;
+        self.hidden_below.set(0);
     }
 
     /// Load a lesson (fresh run starting at step 0)
@@ -60,6 +77,7 @@ impl LessonPanel {
         self.step_misses = 0;
         self.answer_revealed = false;
         self.resumed = false;
+        self.reset_scroll();
     }
 
     /// Resume a previously started lesson at a saved step.
@@ -71,6 +89,8 @@ impl LessonPanel {
             let max = lesson.steps.len().saturating_sub(1);
             self.current_step_index = step_index.min(max);
             self.step_misses = 0;
+            self.scroll = 0;
+            self.hidden_below.set(0);
             self.resumed = true;
             self.completed_steps = completed_steps
                 .into_iter()
@@ -91,6 +111,7 @@ impl LessonPanel {
         self.step_misses = 0;
         self.answer_revealed = false;
         self.resumed = false;
+        self.reset_scroll();
     }
 
     /// Current (0-based) step index
@@ -260,6 +281,7 @@ impl LessonPanel {
                 self.user_input.clear();
                 self.last_validation = None;
                 self.step_misses = 0;
+                self.reset_scroll();
                 true
             } else {
                 false // Lesson complete
@@ -276,6 +298,7 @@ impl LessonPanel {
             self.user_input.clear();
             self.last_validation = None;
             self.step_misses = 0;
+            self.reset_scroll();
         }
     }
 
@@ -292,7 +315,22 @@ impl LessonPanel {
         }
     }
 
-    /// Header line describing where lesson commands execute
+    /// Title-bar label saying where lesson commands run
+    fn practice_mode_span(practice_real: bool, theme: &Theme) -> Span<'static> {
+        if practice_real {
+            Span::styled(
+                " REAL FILES: ~/ArcAcademy/playground ",
+                theme
+                    .style_warning()
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            )
+        } else {
+            Span::styled(" simulated sandbox ", theme.style_dim())
+        }
+    }
+
+    /// Header line describing where lesson commands execute (lesson
+    /// selection screen)
     fn practice_mode_line(practice_real: bool, theme: &Theme) -> Line<'static> {
         if practice_real {
             Line::from(vec![Span::styled(
@@ -309,9 +347,149 @@ impl LessonPanel {
         }
     }
 
+    /// Rows the panel would like (borders included) to show the whole
+    /// step at `width` columns
+    pub fn wanted_height(&self, theme: &Theme, width: u16) -> u16 {
+        let inner = width.saturating_sub(2);
+        let rows = match self.current_step() {
+            Some(step) => Paragraph::new(self.step_lines(step, theme))
+                .wrap(Wrap { trim: false })
+                .line_count(inner),
+            None => 20,
+        };
+        (rows as u16).saturating_add(2)
+    }
+
+    /// The current step is reading only (Enter moves on)
+    pub fn is_reading_step(&self) -> bool {
+        matches!(
+            self.current_step().map(|s| &s.step_type),
+            Some(StepType::Information { .. })
+        )
+    }
+
+    /// Step text sits below the visible part of the panel
+    pub fn has_more_below(&self) -> bool {
+        self.hidden_below.get() > 0
+    }
+
+    /// Enter on a step whose text runs past the panel: show the next
+    /// page instead of moving on. False when everything has been shown.
+    pub fn read_on(&mut self) -> bool {
+        if !self.has_more_below() {
+            return false;
+        }
+        let page = self.view_rows.get().saturating_sub(1).max(1);
+        self.scroll_down(page);
+        true
+    }
+
+    pub fn scroll_down(&mut self, rows: usize) {
+        self.scroll = (self.scroll + rows).min(self.max_scroll.get());
+    }
+
+    pub fn scroll_up(&mut self, rows: usize) {
+        self.scroll = self.scroll.saturating_sub(rows);
+    }
+
+    /// The step's text, call to action last
+    fn step_lines(&self, step: &LessonStep, theme: &Theme) -> Vec<Line<'static>> {
+        let mut lines = Vec::new();
+        let cta = |text: String| Line::from(Span::styled(text, theme.style_warning()));
+
+        lines.push(Line::from(vec![
+            Span::styled(format!("Step {}: ", step.step_number), theme.style_accent()),
+            Span::styled(step.title.clone(), theme.style_header()),
+        ]));
+
+        match &step.step_type {
+            StepType::CommandExercise { .. } => {
+                if !step.instruction.is_empty() {
+                    lines.push(Line::from(Span::styled(
+                        step.instruction.clone(),
+                        theme.style_normal(),
+                    )));
+                }
+                lines.extend(Self::challenge_line(step, theme));
+                // Hints are earned: they appear after a miss
+                lines.extend(self.validation_lines(theme));
+                lines.push(Line::from(""));
+                lines.push(cta("▶ Type the command below and press Enter".into()));
+            }
+            StepType::MultipleChoice {
+                question,
+                options,
+                explanation,
+                ..
+            } => {
+                lines.push(Line::from(vec![
+                    icons::question(),
+                    Span::styled(question.clone(), theme.style_normal()),
+                ]));
+                for (i, option) in options.iter().enumerate() {
+                    lines.push(Line::from(vec![
+                        Span::styled(format!("  {}. ", i), theme.style_accent()),
+                        Span::styled(option.clone(), theme.style_normal()),
+                    ]));
+                }
+                // Show explanation if answered correctly
+                if let Some(ValidationResult::Success { .. }) = &self.last_validation {
+                    lines.push(Line::from(vec![
+                        icons::success(),
+                        Span::styled(explanation.clone(), theme.style_success()),
+                    ]));
+                } else {
+                    lines.extend(self.validation_lines(theme));
+                }
+                lines.push(Line::from(""));
+                lines.push(cta(format!(
+                    "▶ Type the number of your answer (0-{}) and press Enter",
+                    options.len().saturating_sub(1)
+                )));
+            }
+            StepType::Information { content } => {
+                for line in content.lines() {
+                    lines.push(Line::from(Span::styled(line.to_string(), theme.style_normal())));
+                }
+                lines.push(Line::from(""));
+                lines.push(cta("▶ Press Enter to continue".into()));
+            }
+            StepType::FillInBlank { template, .. } => {
+                lines.push(Line::from(Span::styled(
+                    step.instruction.clone(),
+                    theme.style_normal(),
+                )));
+                lines.push(Line::from(vec![
+                    Span::styled("Template: ", theme.style_accent()),
+                    Span::styled(template.clone(), theme.style_dim()),
+                ]));
+                lines.extend(self.validation_lines(theme));
+                lines.push(Line::from(""));
+                lines.push(cta("▶ Type it with the blank filled in and press Enter".into()));
+            }
+            StepType::Practice { goal, .. } | StepType::Task { goal, .. } => {
+                lines.push(Line::from(vec![
+                    Span::styled("Goal: ", theme.style_accent()),
+                    Span::styled(goal.clone(), theme.style_normal()),
+                ]));
+                if !step.instruction.is_empty() && step.instruction != *goal {
+                    lines.push(Line::from(Span::styled(
+                        step.instruction.clone(),
+                        theme.style_normal(),
+                    )));
+                }
+                lines.extend(Self::challenge_line(step, theme));
+                lines.extend(self.validation_lines(theme));
+                lines.push(Line::from(""));
+                lines.push(cta("▶ Use any commands you like to get there".into()));
+            }
+        }
+        lines
+    }
+
     /// Render the lesson panel.
     ///
-    /// `practice_real` selects the header badge: real-filesystem playground
+    /// `practice_real` selects the title badge: real-filesystem playground
     /// vs the simulated sandbox.
     pub fn render(
         &self,
@@ -368,126 +546,73 @@ impl LessonPanel {
         title_style: Style,
         practice_real: bool,
     ) {
-        let mut lines = Vec::new();
-
-        // Practice-mode header: where do the commands actually run?
-        lines.push(Self::practice_mode_line(practice_real, theme));
-
-        // Step title - always show
-        lines.push(Line::from(vec![
-            Span::styled(format!("Step {}: ", step.step_number), theme.style_accent()),
-            Span::styled(&step.title, theme.style_header()),
-        ]));
-
-        // Render based on step type
-        match &step.step_type {
-            StepType::CommandExercise { .. } => {
-                // HOW TO instruction
-                lines.push(Line::from(vec![
-                    Span::styled("▶ Type command in Shell → Enter", theme.style_warning()),
-                ]));
-                // Task instruction
-                if !step.instruction.is_empty() {
-                    lines.push(Line::from(vec![
-                        Span::styled("Task: ", theme.style_accent()),
-                        Span::styled(&step.instruction, theme.style_normal()),
-                    ]));
-                }
-                lines.extend(Self::challenge_line(step, theme));
-                // Hints are earned: they appear after a miss
-                lines.extend(self.validation_lines(theme));
-            }
-            StepType::MultipleChoice {
-                question,
-                options,
-                explanation,
-                ..
-            } => {
-                // HOW TO + Question combined
-                lines.push(Line::from(vec![
-                    Span::styled(format!("▶ Type 0-{} → ", options.len() - 1), theme.style_warning()),
-                    icons::question(),
-                    Span::styled(question, theme.style_normal()),
-                ]));
-                // Options
-                for (i, option) in options.iter().enumerate() {
-                    lines.push(Line::from(vec![
-                        Span::styled(format!("  {}. ", i), theme.style_accent()),
-                        Span::styled(option, theme.style_normal()),
-                    ]));
-                }
-                // Show explanation if answered correctly
-                if let Some(ValidationResult::Success { .. }) = &self.last_validation {
-                    lines.push(Line::from(vec![
-                        icons::success(),
-                        Span::styled(explanation, theme.style_success()),
-                    ]));
-                }
-            }
-            StepType::Information { content } => {
-                // HOW TO
-                lines.push(Line::from(vec![
-                    Span::styled("▶ Press Enter to continue", theme.style_warning()),
-                ]));
-                // Display information
-                for line in content.lines() {
-                    lines.push(Line::from(vec![Span::styled(line, theme.style_normal())]));
-                }
-            }
-            StepType::FillInBlank { template, .. } => {
-                // HOW TO
-                lines.push(Line::from(vec![
-                    Span::styled("▶ Fill blank, type in Shell → Enter", theme.style_warning()),
-                ]));
-                lines.push(Line::from(vec![
-                    icons::note(),
-                    Span::styled(&step.instruction, theme.style_normal()),
-                ]));
-                lines.push(Line::from(vec![
-                    Span::styled("Template: ", theme.style_accent()),
-                    Span::styled(template, theme.style_dim()),
-                ]));
-                lines.extend(self.validation_lines(theme));
-            }
-            StepType::Practice { goal, .. } | StepType::Task { goal, .. } => {
-                // Any commands that reach the goal count
-                lines.push(Line::from(vec![
-                    Span::styled("▶ Use any commands you like → ", theme.style_warning()),
-                    icons::target(),
-                    Span::styled(goal, theme.style_normal()),
-                ]));
-                if !step.instruction.is_empty() && step.instruction != *goal {
-                    lines.push(Line::from(vec![Span::styled(
-                        &step.instruction,
-                        theme.style_normal(),
-                    )]));
-                }
-                lines.extend(Self::challenge_line(step, theme));
-                lines.extend(self.validation_lines(theme));
-            }
-        }
-
-        // Build title with progress info (compact)
-        let progress = self.completion_percentage();
-        let title = format!(
-            " {} {}/{} | {:.0}% ",
-            lesson.title,
-            self.current_step_index + 1,
-            lesson.steps.len(),
-            progress
-        );
+        use ratatui::widgets::block::{Position, Title};
 
         let block = Block::default()
-            .title(title)
-            .title_style(title_style)
+            .title(Title::from(Span::styled(
+                format!(
+                    " {} · step {} of {} ",
+                    lesson.title,
+                    self.current_step_index + 1,
+                    lesson.steps.len()
+                ),
+                title_style,
+            )))
+            .title(
+                Title::from(Self::practice_mode_span(practice_real, theme))
+                    .alignment(ratatui::layout::Alignment::Right)
+                    .position(Position::Top),
+            )
             .borders(Borders::ALL)
             .border_style(border_style)
             .style(theme.style_block());
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        if inner.height == 0 || inner.width == 0 {
+            return;
+        }
 
-        let paragraph = Paragraph::new(lines)
-            .block(block)
-            .wrap(Wrap { trim: false });
-        frame.render_widget(paragraph, area);
+        let paragraph = Paragraph::new(self.step_lines(step, theme)).wrap(Wrap { trim: false });
+        let total = paragraph.line_count(inner.width);
+        let rows = inner.height as usize;
+
+        if total <= rows {
+            self.view_rows.set(rows);
+            self.max_scroll.set(0);
+            self.hidden_below.set(0);
+            frame.render_widget(paragraph, inner);
+            return;
+        }
+
+        // Too long for the panel: scroll, and say there's more
+        let view = rows.saturating_sub(1).max(1);
+        let max_scroll = total.saturating_sub(view);
+        let scroll = self.scroll.min(max_scroll);
+        let below = total - view - scroll;
+        self.view_rows.set(view);
+        self.max_scroll.set(max_scroll);
+        self.hidden_below.set(below);
+
+        let text_area = Rect { height: view as u16, ..inner };
+        frame.render_widget(paragraph.scroll((scroll as u16, 0)), text_area);
+
+        let cue = if below > 0 {
+            format!(
+                "▼ {below} more line{} below: press Enter to read on, or scroll",
+                if below == 1 { "" } else { "s" }
+            )
+        } else {
+            "▲ more above: scroll up to reread".to_string()
+        };
+        let cue_area = Rect {
+            y: inner.y + view as u16,
+            height: 1,
+            ..inner
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(cue, theme.style_accent()))),
+            cue_area,
+        );
     }
 
     fn render_lesson_selection(
@@ -535,8 +660,8 @@ impl LessonPanel {
             Line::from(""),
             Line::from(vec![
                 Span::styled("  Press ", theme.style_dim()),
-                Span::styled("m", theme.style_accent()),
-                Span::styled(" to open the lesson menu", theme.style_dim()),
+                Span::styled("Ctrl+L", theme.style_accent()),
+                Span::styled(" to open the lesson map", theme.style_dim()),
             ]),
             Line::from(vec![
                 Span::styled("  Use ", theme.style_dim()),
