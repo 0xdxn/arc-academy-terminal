@@ -703,6 +703,29 @@ impl VirtualFileSystem {
         }
     }
 
+    /// Like prim_stat, but a symbolic link on disk is described as itself,
+    /// never followed (find, du and tar start here)
+    pub(crate) fn prim_lstat(&self, path: &Path) -> Option<Meta> {
+        match &self.store {
+            Store::Disk { .. } => {
+                let meta = fs::symlink_metadata(self.real_of(path).ok()?).ok()?;
+                #[cfg(unix)]
+                let mode = {
+                    use std::os::unix::fs::PermissionsExt;
+                    Some(meta.permissions().mode())
+                };
+                #[cfg(not(unix))]
+                let mode = None;
+                Some(Meta {
+                    is_dir: meta.is_dir(),
+                    len: meta.len(),
+                    mode,
+                })
+            }
+            Store::Memory(tree) => tree_lock(tree).stat(&key(path)),
+        }
+    }
+
     pub(crate) fn prim_read(&self, path: &Path) -> io::Result<Vec<u8>> {
         match &self.store {
             Store::Disk { .. } => fs::read(self.real_io(path)?),
@@ -899,6 +922,15 @@ struct MemTree {
     nodes: BTreeMap<String, Node>,
 }
 
+/// Largest file the in-memory world holds, and all files together: a
+/// browser tab has to stay usable whatever a learner types
+const MEM_MAX_FILE: usize = 4 * 1024 * 1024;
+const MEM_MAX_TOTAL: usize = 32 * 1024 * 1024;
+
+fn no_space() -> io::Error {
+    os_error("No space left on device")
+}
+
 fn key(path: &Path) -> String {
     path.to_string_lossy().to_string()
 }
@@ -963,6 +995,22 @@ impl MemTree {
     }
 
     fn write(&mut self, key: &str, bytes: &[u8], append: bool) -> io::Result<()> {
+        let current = match self.nodes.get(key) {
+            Some(Node::File { data, .. }) => data.len(),
+            _ => 0,
+        };
+        let new_len = if append { current.saturating_add(bytes.len()) } else { bytes.len() };
+        let total: usize = self
+            .nodes
+            .values()
+            .map(|n| match n {
+                Node::File { data, .. } => data.len(),
+                _ => 0,
+            })
+            .sum();
+        if new_len > MEM_MAX_FILE || total - current + new_len > MEM_MAX_TOTAL {
+            return Err(no_space());
+        }
         match self.nodes.get_mut(key) {
             Some(Node::File { data, .. }) => {
                 if !append {
@@ -1138,6 +1186,34 @@ pub struct TreeNode {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn the_in_memory_world_has_a_size_limit() {
+        let vfs = VirtualFileSystem::in_memory();
+        let mb = "x".repeat(1024 * 1024);
+        // one file stops growing at the per-file limit
+        let mut err = None;
+        for _ in 0..(MEM_MAX_FILE / mb.len() + 2) {
+            if let Err(e) = vfs.write_file("big.txt", &mb, true) {
+                err = Some(e.to_string());
+                break;
+            }
+        }
+        assert!(err.unwrap().contains("No space left on device"));
+        // many files stop at the total limit
+        let mut written = 0;
+        for i in 0..(MEM_MAX_TOTAL / mb.len() + 2) {
+            if vfs.write_file(&format!("f{i}.txt"), &mb, false).is_err() {
+                break;
+            }
+            written += 1;
+        }
+        assert!(written * mb.len() <= MEM_MAX_TOTAL);
+        // rewriting a file in place still works at the limit
+        assert!(vfs.write_file("f0.txt", "small", false).is_ok());
+    }
+
     use super::*;
 
     /// The same sandbox on disk and in memory, both with the generic home

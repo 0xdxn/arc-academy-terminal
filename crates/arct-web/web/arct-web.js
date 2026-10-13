@@ -14,9 +14,11 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+// Resolves to {module, instance}: the module is kept so a fresh instance
+// can replace one that trapped
 async function instantiate(source) {
   if (source instanceof ArrayBuffer || ArrayBuffer.isView(source)) {
-    return (await WebAssembly.instantiate(source, {})).instance;
+    return WebAssembly.instantiate(source, {});
   }
   const response = await fetch(source);
   if (!response.ok) {
@@ -24,19 +26,20 @@ async function instantiate(source) {
   }
   if (WebAssembly.instantiateStreaming) {
     try {
-      return (await WebAssembly.instantiateStreaming(response.clone(), {})).instance;
+      return await WebAssembly.instantiateStreaming(response.clone(), {});
     } catch (_) {
       // Served without application/wasm: fall back to bytes
     }
   }
-  return (await WebAssembly.instantiate(await response.arrayBuffer(), {})).instance;
+  return WebAssembly.instantiate(await response.arrayBuffer(), {});
 }
 
 /// Load the engine. `source` is the .wasm's URL (next to this file by
 /// default) or its bytes.
 export async function load(source = new URL("./arct_web.wasm", import.meta.url)) {
-  const instance = await instantiate(source);
-  const wasm = instance.exports;
+  const { module, instance } = await instantiate(source);
+  let wasm = instance.exports;
+  let lesson = null;
 
   // A result is a 4-byte little-endian length, then that much UTF-8 JSON
   function take(ptr) {
@@ -58,11 +61,28 @@ export async function load(source = new URL("./arct_web.wasm", import.meta.url))
     }
   }
 
+  // If the engine traps (it ran out of memory, say), it can't be used
+  // again: start a fresh one and the same lesson from the top
+  function guarded(run) {
+    try {
+      return run();
+    } catch (err) {
+      if (!(err instanceof WebAssembly.RuntimeError)) throw err;
+      wasm = new WebAssembly.Instance(module, {}).exports;
+      const state = lesson === null ? {} : call(wasm.arct_start, lesson);
+      return { ...state, restarted: true, error: "The lesson engine had to restart, so this lesson starts over." };
+    }
+  }
+
   return {
-    listLessons: () => take(wasm.arct_list_lessons()),
-    start: (lessonId) => call(wasm.arct_start, String(lessonId)),
-    submit: (line) => call(wasm.arct_submit, String(line)),
-    reset: () => take(wasm.arct_reset()),
-    state: () => take(wasm.arct_state()),
+    listLessons: () => guarded(() => take(wasm.arct_list_lessons())),
+    start: (lessonId) => guarded(() => {
+      const state = call(wasm.arct_start, String(lessonId));
+      if (!state.error) lesson = String(lessonId);
+      return state;
+    }),
+    submit: (line) => guarded(() => call(wasm.arct_submit, String(line))),
+    reset: () => guarded(() => take(wasm.arct_reset())),
+    state: () => guarded(() => take(wasm.arct_state())),
   };
 }

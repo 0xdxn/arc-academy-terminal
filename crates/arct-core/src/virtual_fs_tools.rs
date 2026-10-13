@@ -140,7 +140,7 @@ impl VirtualFileSystem {
     pub fn find(&self, start: &str, query: &FindQuery) -> Result<Vec<String>> {
         let at = self.virtual_path(start)?;
         let meta = self
-            .prim_stat(&at)
+            .prim_lstat(&at)
             .with_context(|| format!("'{start}': No such file or directory"))?;
         let mut out = Vec::new();
         let start_name = Path::new(start)
@@ -176,7 +176,7 @@ impl VirtualFileSystem {
     pub fn disk_usage(&self, path: &str, summarize: bool) -> Result<Vec<(String, u64)>> {
         let at = self.virtual_path(path)?;
         let meta = self
-            .prim_stat(&at)
+            .prim_lstat(&at)
             .with_context(|| format!("cannot access '{path}': No such file or directory"))?;
         if !meta.is_dir {
             return Ok(vec![(path.to_string(), meta.len)]);
@@ -220,7 +220,7 @@ impl VirtualFileSystem {
                     .with_context(|| format!("tar: pack files from here down ({input})"))?;
                 let at = self.virtual_path(input)?;
                 let meta = self
-                    .prim_stat(&at)
+                    .prim_lstat(&at)
                     .with_context(|| format!("tar: {input}: No such file or directory"))?;
                 if meta.is_dir {
                     self.tar_dir(&mut builder, &at, &rel, &mut names)?;

@@ -297,9 +297,16 @@ fn tr(args: &[String], input: &str) -> Result<String, String> {
 
 /// Compare two texts line by line, in diff's classic format
 /// (`2c2`, `< old`, `---`, `> new`). Empty when they match.
+/// Largest comparison `diff` will build (lines in one file times the other)
+const DIFF_MAX_CELLS: usize = 4_000_000;
+
 pub fn diff(old: &str, new: &str) -> String {
     let a: Vec<&str> = old.lines().collect();
     let b: Vec<&str> = new.lines().collect();
+    // The comparison table grows with both lengths; practice files are small
+    if (a.len() + 1).saturating_mul(b.len() + 1) > DIFF_MAX_CELLS {
+        return "diff: these files are too long to compare in the practice sandbox\n".to_string();
+    }
     // Longest common subsequence table
     let mut lcs = vec![vec![0usize; b.len() + 1]; a.len() + 1];
     for i in (0..a.len()).rev() {
@@ -442,6 +449,14 @@ fn cut(args: &[String], lines: &[&str]) -> Result<Vec<String>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn diff_refuses_files_too_long_to_compare() {
+        let a: String = (0..3000).map(|i| format!("a{i}\n")).collect();
+        let b: String = (0..3000).map(|i| format!("b{i}\n")).collect();
+        assert!(diff(&a, &b).contains("too long to compare"));
+        assert!(!diff("x\n", "y\n").contains("too long"));
+    }
 
     fn run(program: &str, args: &[&str], input: &str) -> String {
         let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();

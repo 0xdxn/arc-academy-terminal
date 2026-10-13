@@ -1,6 +1,9 @@
 //! Integration tests for Arc Academy Terminal core functionality
 //!
 //! These tests verify that the major components work together correctly.
+//! They use the terminal app's records (stats, challenges), so they need
+//! the default "progress" feature.
+#![cfg(feature = "progress")]
 
 use arct_core::*;
 
