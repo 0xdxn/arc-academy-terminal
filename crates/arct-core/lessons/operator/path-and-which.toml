@@ -4,13 +4,182 @@ description = "Learn how the shell finds programs, and make your own command."
 difficulty = "Advanced"
 estimated_minutes = 15
 prerequisites = ["environment", "first-scripts"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "path", "which", "type", "export", "scripts"]
+
+[[setup]]
+path = "pathlab/todo.txt"
+contents = """Today:
+- water the ferns
+- answer Omar about the shelf
+- back up the photos
+"""
+
+[[setup]]
+path = "pathlab/shared-tools/todo"
+contents = """#!/bin/sh
+# Grace's old todo tool. Retired: its list is out of date.
+echo "Old todo list (out of date): - buy a shelf"
+"""
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "Where commands come from"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+When you type a command name like ls, the shell checks
+whether it is a builtin: a command inside the shell itself,
+like cd. If not, it searches the folders listed in PATH,
+left to right, and runs the first file with that name that
+is marked executable.
+
+  echo $PATH        the folders, separated by :
+  which NAME        the file that would run for NAME
+  type NAME         the same, and it also knows builtins
+  export PATH="$HOME/bin:$PATH"
+                    add your own bin folder at the front
+
+In this practice shell, the system commands are built in,
+and PATH searches find programs you put in folders under
+your home. That's what you'll do: make your own command."""
+
+[[steps]]
+step_number = 2
+title = "Look at PATH"
+instruction = "Show the folders in PATH with echo."
+hints = ["PATH is a variable; $ fills it in.", "Type: echo $PATH"]
+solution = ["echo $PATH"]
+
+[steps.step_type.Task]
+goal = "Print PATH"
+success_message = "Folders separated by colons. Most programs on a real system live in /usr/bin or /bin."
+checks = [{ Used = "echo" }, { OutputContains = "/usr/bin" }]
+
+[[steps]]
+step_number = 3
+title = "Which ls?"
+instruction = "Ask which file runs when you type ls."
+hints = ["which takes the command's name.", "Type: which ls"]
+solution = ["which ls"]
+
+[steps.step_type.Task]
+goal = "Find where ls lives"
+success_message = "ls is an ordinary program, a file in one of the PATH folders. Typing ls runs that file."
+checks = [{ Used = "which" }, { OutputContains = "bin/ls" }]
+
+[[steps]]
+step_number = 4
+title = "A builtin"
+instruction = "Now ask what cd is, using type this time."
+hints = ["type works like which, and also knows the shell's own commands.", "Type: type cd"]
+solution = ["type cd"]
+
+[steps.step_type.Task]
+goal = "Find out what cd is"
+success_message = "cd is part of the shell. It has to be: a separate program can't change the folder your shell is in. which usually searches only PATH, so it may not know about builtins. type is part of the shell, so it always does."
+checks = [{ Used = "type" }, { OutputContains = "builtin" }]
+
+[[steps]]
+step_number = 5
+title = "Quick check: first match wins"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "Ada's PATH is /home/ada/bin:/usr/bin:/bin. Both /home/ada/bin/backup and /usr/bin/backup exist and are executable. What runs when she types backup?"
+options = ["/usr/bin/backup, because system programs come first", "/home/ada/bin/backup, because its folder is first in PATH", "Both, one after the other"]
+correct_index = 1
+explanation = "The shell stops at the first match, reading PATH left to right. Order matters: a folder at the front can override a program with the same name further back."
+
+[[steps]]
+step_number = 6
+title = "Make your own command"
+instruction = "Make a bin folder in your home, ~/bin. In it, write a script called todo with two lines: #!/bin/sh, then cat \"$HOME/pathlab/todo.txt\". Mark it executable, then run it by its full path: ~/bin/todo"
+hints = ["mkdir ~/bin first. Then echo each line into ~/bin/todo, using single quotes so $HOME is written as it is.", "echo '#!/bin/sh' > ~/bin/todo writes the first line; >> adds the second. Then chmod +x ~/bin/todo.", "Type: mkdir ~/bin   then: echo '#!/bin/sh' > ~/bin/todo   then: echo 'cat \"$HOME/pathlab/todo.txt\"' >> ~/bin/todo   then: chmod +x ~/bin/todo   then: ~/bin/todo"]
+solution = ["mkdir ~/bin", "echo '#!/bin/sh' > ~/bin/todo", "echo 'cat \"$HOME/pathlab/todo.txt\"' >> ~/bin/todo", "chmod +x ~/bin/todo", "~/bin/todo"]
+
+[steps.step_type.Task]
+goal = "Make ~/bin/todo and run it by its path"
+success_message = "It works by its full path. Commands on PATH usually have no .sh at the end: you type ls, not ls.sh. Using $HOME in the script means it finds the list from any folder."
+checks = [{ FileContains = { path = "bin/todo", text = "#!/bin/sh" } }, { OutputContains = "water the ferns" }]
+
+[[steps]]
+step_number = 7
+title = "Not found, yet"
+instruction = "Try running it by name: todo"
+hints = ["Just the name, nothing else.", "Type: todo"]
+solution = ["todo"]
+
+[steps.step_type.Task]
+goal = "Try todo by name"
+success_message = "Command not found means no folder on PATH has a program by that name. ~/bin isn't on PATH yet, so the shell never looks there."
+checks = [{ OutputContains = "not found" }]
+
+[[steps]]
+step_number = 8
+title = "Put ~/bin on PATH"
+instruction = "Add ~/bin to the front of PATH with export, keeping everything already there. Then run todo by name."
+hints = ["The new PATH is your folder, a colon, then the old PATH: \"$HOME/bin:$PATH\".", "Type: export PATH=\"$HOME/bin:$PATH\"   then: todo"]
+solution = ["export PATH=\"$HOME/bin:$PATH\"", "todo"]
+
+[steps.step_type.Task]
+goal = "Run todo by name"
+success_message = "Your own command. Forgetting the :$PATH part is a classic mistake: PATH would hold only ~/bin, and ls, cat and the rest would stop being found."
+checks = [{ Used = "todo" }, { OutputContains = "water the ferns" }]
+
+[[steps]]
+step_number = 9
+title = "From anywhere"
+instruction = "Go into the pathlab folder, then ask which file runs for todo."
+hints = ["cd there, then which.", "Type: cd pathlab   then: which todo"]
+solution = ["cd pathlab", "which todo"]
+
+[steps.step_type.Task]
+goal = "Find todo from inside pathlab"
+success_message = "PATH is searched the same way from every folder, so your command works wherever you are."
+checks = [{ CwdIs = "pathlab" }, { Used = "which" }, { OutputContains = "bin/todo" }]
+
+[[steps]]
+step_number = 10
+title = "Order matters"
+instruction = "Grace left an old tool with the same name in shared-tools. Make shared-tools/todo executable, put $HOME/pathlab/shared-tools at the front of PATH, and run todo."
+hints = ["chmod +x first, then the same export pattern with the other folder.", "export PATH=\"$HOME/pathlab/shared-tools:$PATH\" puts it in front of ~/bin.", "Type: chmod +x shared-tools/todo   then: export PATH=\"$HOME/pathlab/shared-tools:$PATH\"   then: todo"]
+solution = ["chmod +x shared-tools/todo", "export PATH=\"$HOME/pathlab/shared-tools:$PATH\"", "todo"]
+
+[steps.step_type.Task]
+goal = "Run todo with shared-tools first"
+success_message = "Same name, different program. shared-tools is now first in PATH, so its todo wins. When a command acts strangely, which or type shows which file is really running."
+checks = [{ Used = "todo" }, { OutputContains = "Old todo list" }]
+
+[[steps]]
+step_number = 11
+title = "On your own"
+instruction = "No hints. Make the plain word todo run your own ~/bin version again, not Grace's old one. Then run it."
+challenge = true
+solution = ["export PATH=\"$HOME/bin:$PATH\"", "todo"]
+
+[steps.step_type.Task]
+goal = "Run your own todo by name again"
+success_message = "Your folder is first again, so your todo wins. Putting ~/bin at the front, or taking the old tool's execute permission away, both work."
+checks = [{ Used = "todo" }, { OutputContains = "water the ferns" }]
+
+[[steps]]
+step_number = 12
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  echo $PATH        the folders the shell searches, in order
+  which NAME        the file that runs for NAME
+  type NAME         also tells you about builtins like cd
+  export PATH="$HOME/bin:$PATH"   your folder first
+
+The shell checks builtins, then PATH, left to right; the
+first match wins. "command not found" means no folder on
+PATH has an executable file with that name.
+
+An export lasts until the shell closes. To keep ~/bin on
+PATH, put that export line in a startup file such as
+~/.profile. Some systems already add ~/bin or ~/.local/bin
+for you when the folder exists."""

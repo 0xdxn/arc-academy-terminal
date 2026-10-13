@@ -4,13 +4,174 @@ description = "Store values in variables and use them in commands."
 difficulty = "Intermediate"
 estimated_minutes = 15
 prerequisites = ["quoting"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "variables", "echo", "unset", "quoting"]
+
+[[setup]]
+path = "tour/dates.txt"
+contents = """Thu 14 Nov  Port Ellis    The Lantern Hall
+Fri 15 Nov  Kestrel Bay   Harbor Room
+Sat 16 Nov  Millford      The Old Mill
+"""
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "A name for a value"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+A variable is a name the shell remembers a value under.
+You set it once and use it as often as you like.
+
+  NAME=value      store a value (no spaces around =)
+  $NAME           use it: the shell swaps in the value
+  ${NAME}         the same, with clear edges: ${NAME}s
+  "$NAME"         double quotes: the value is swapped in
+  '$NAME'         single quotes: stays exactly as typed
+  unset NAME      forget it
+
+The swap happens before the command runs. When you type
+echo $BAND, echo never sees $BAND, only the value.
+
+This lesson follows a small band on tour. Its files are
+in the tour folder."""
+
+[[steps]]
+step_number = 2
+title = "Set and use one"
+instruction = "Store the band's name: set BAND to Nightjar. Then show it with echo $BAND."
+hints = ["Two commands: one sets the variable, one uses it.", "NAME=value sets it. Then echo $NAME shows it.", "Type: BAND=Nightjar   then: echo $BAND"]
+solution = ["BAND=Nightjar", "echo $BAND"]
+
+[steps.step_type.Task]
+goal = "Set BAND and echo it"
+success_message = "Setting a variable prints nothing. Using it is where you see the value."
+checks = [{ Used = "echo" }, { OutputContains = "Nightjar" }]
+
+[[steps]]
+step_number = 3
+title = "No spaces around ="
+instruction = "People often type spaces around the = sign. Try it once to see what happens: BAND = Nightjar"
+hints = ["Type it with a space on each side of the =.", "Type: BAND = Nightjar"]
+solution = ["BAND = Nightjar"]
+
+[steps.step_type.Task]
+goal = "See what spaces around = do"
+success_message = "With spaces, the shell reads BAND as the name of a command, with = and Nightjar as its arguments. There is no command called BAND. Without spaces, BAND=Nightjar is one word, and the shell knows that shape means 'set a variable'."
+checks = [{ OutputContains = "command not found" }]
+
+[[steps]]
+step_number = 4
+title = "Values with spaces"
+instruction = "Tonight's venue is The Lantern Hall. Store it in VENUE, then print: Tonight: The Lantern Hall. The value has spaces, so it needs quotes."
+hints = ["Without quotes the value stops at the first space. Put double quotes around the value.", "Set it with VENUE=\"The Lantern Hall\", then use $VENUE inside double quotes in echo.", "Type: VENUE=\"The Lantern Hall\"   then: echo \"Tonight: $VENUE\""]
+solution = ["VENUE=\"The Lantern Hall\"", "echo \"Tonight: $VENUE\""]
+
+[steps.step_type.Task]
+goal = "Store and print the venue"
+success_message = "Without the quotes, VENUE=The Lantern Hall sets VENUE to just The, for one command only, and then tries to run a command called Lantern."
+checks = [{ Used = "echo" }, { OutputContains = "Tonight: The Lantern Hall" }]
+
+[[steps]]
+step_number = 5
+title = "Quick check: which quotes?"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "BAND is set to Nightjar. What does echo '$BAND plays tonight' print?"
+options = ["Nightjar plays tonight", "$BAND plays tonight", "plays tonight"]
+correct_index = 1
+explanation = "Single quotes keep everything exactly as typed, $ included. Double quotes would print Nightjar plays tonight."
+
+[[steps]]
+step_number = 6
+title = "Where does the name end?"
+instruction = "Set SHOW to matinee. Now print: two matinees. If you write $SHOWs, the shell looks for a variable called SHOWs, which doesn't exist. Use braces to mark where the name ends."
+hints = ["Letters, digits and _ right after $ all count as part of the name.", "${SHOW}s means: the value of SHOW, then an s.", "Type: SHOW=matinee   then: echo \"two ${SHOW}s\""]
+solution = ["SHOW=matinee", "echo \"two ${SHOW}s\""]
+
+[steps.step_type.Task]
+goal = "Print two matinees using SHOW"
+success_message = "Braces are only needed when a letter, digit or _ comes straight after the name. They never hurt, so use them when in doubt."
+checks = [{ Used = "echo" }, { OutputContains = "two matinees" }]
+
+[[steps]]
+step_number = 7
+title = "A file name in a variable"
+instruction = "Variables often hold file names. Set LIST to \"tour/encore songs.txt\" (it has a space), then write the line Starlight Road into that file with echo and >. Put \"$LIST\" in double quotes."
+hints = ["The file name has a space, so quote it when you set it and when you use it.", "Set LIST=\"tour/encore songs.txt\", then echo the song into \"$LIST\".", "Type: LIST=\"tour/encore songs.txt\"   then: echo \"Starlight Road\" > \"$LIST\""]
+solution = ["LIST=\"tour/encore songs.txt\"", "echo \"Starlight Road\" > \"$LIST\""]
+
+[steps.step_type.Task]
+goal = "Write a song into the file named in LIST"
+success_message = "Why the quotes: a real shell splits an unquoted $LIST at the space, so cat $LIST would look for two files, tour/encore and songs.txt. After >, bash refuses with 'ambiguous redirect'. Quoted, it stays one file name."
+checks = [{ FileContains = { path = "tour/encore songs.txt", text = "Starlight Road" } }]
+
+[[steps]]
+step_number = 8
+title = "Any command can use one"
+instruction = "Put the path tour/dates.txt in a variable called DATES. Then use grep with \"$DATES\" to find the Friday show (the line starts with Fri)."
+hints = ["Set DATES first. grep takes a word, then a file.", "grep Fri \"$DATES\" searches the file whose name is in DATES.", "Type: DATES=tour/dates.txt   then: grep Fri \"$DATES\""]
+solution = ["DATES=tour/dates.txt", "grep Fri \"$DATES\""]
+
+[steps.step_type.Task]
+goal = "Find Friday's show through DATES"
+success_message = "Kestrel Bay, Harbor Room. grep only ever saw tour/dates.txt; the shell filled it in."
+checks = [{ Used = "grep" }, { OutputContains = "Harbor Room" }]
+
+[[steps]]
+step_number = 9
+title = "Forget a variable"
+instruction = "unset removes a variable. Unset LIST, then look at what it holds now with: echo \"[$LIST]\" (the brackets show where the value starts and ends)."
+hints = ["unset takes the name, without a $.", "Type: unset LIST   then: echo \"[$LIST]\""]
+solution = ["unset LIST", "echo \"[$LIST]\""]
+
+[steps.step_type.Task]
+goal = "Unset LIST and see it's empty"
+success_message = "[] means empty. An unset variable, or a misspelled one, quietly becomes nothing. The shell does not warn you."
+checks = [{ Used = "echo" }, { OutputContains = "[]" }]
+
+[[steps]]
+step_number = 10
+title = "Quick check: the empty variable"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "You meant to set DIR=tour but never did. What does rm -r $DIR/drafts really run?"
+options = ["rm -r tour/drafts", "rm -r /drafts", "Nothing. The shell stops and warns you."]
+correct_index = 1
+explanation = "$DIR becomes nothing, leaving /drafts: a folder at the very top of the disk. Before a risky command, preview it with echo: echo rm -r $DIR/drafts shows exactly what would run. Quotes don't save you here (\"$DIR\"/drafts is still /drafts), but they do keep a value in one piece: an empty \"$FILE\" stays an empty word that commands complain about, instead of vanishing."
+
+[[steps]]
+step_number = 11
+title = "On your own"
+instruction = "No hints. Set DAY to friday. Then, using $DAY rather than typing friday again, write the line Load in at 4pm into tour/friday_notes.txt. Careful: _ can be part of a variable name."
+challenge = true
+solution = ["DAY=friday", "echo \"Load in at 4pm\" > \"tour/${DAY}_notes.txt\""]
+
+[steps.step_type.Task]
+goal = "Write tour/friday_notes.txt using $DAY"
+success_message = "If you wrote $DAY_notes, the shell looked for a variable called DAY_notes and made tour/.txt instead. The braces in ${DAY}_notes are what make it work."
+checks = [{ FileContains = { path = "tour/friday_notes.txt", text = "Load in at 4pm" } }]
+
+[[steps]]
+step_number = 12
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  NAME=value          set (no spaces around =)
+  NAME="two words"    quote values with spaces
+  $NAME  ${NAME}      use it; braces mark where the name ends
+  "$NAME"             expands, and stays one word
+  '$NAME'             stays exactly as typed
+  unset NAME          forget it
+
+Habits worth keeping:
+  Quote your variables: "$FILE", not $FILE.
+  An unset or misspelled variable becomes nothing, silently.
+  Before rm or mv with a variable, preview with echo.
+
+These variables live in this shell only. The next lesson
+shows how to pass them on to the programs you run."""

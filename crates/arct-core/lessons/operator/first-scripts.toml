@@ -4,13 +4,184 @@ description = "Save commands in a script, make it executable, and run it."
 difficulty = "Intermediate"
 estimated_minutes = 15
 prerequisites = ["permissions", "redirection"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "scripts", "sh", "chmod", "shebang"]
+
+[[setup]]
+path = "bakery/today/deliveries.txt"
+contents = """07:00 Flour, 4 sacks
+09:30 Butter and eggs
+"""
+
+[[setup]]
+path = "bakery/open-shop.sh"
+contents = """#!/bin/sh
+# Morning routine for the bakery.
+# Starts today's checklist in the today folder.
+echo Opening the bakery.
+echo "Ovens on" > today/checklist.txt
+echo "Sign turned to OPEN" >> today/checklist.txt
+echo Done. The checklist is in today/checklist.txt
+"""
+
+[[setup]]
+path = "bakery/orders.txt"
+contents = """Ada: 2 sourdough
+Omar: 6 cinnamon buns
+Mei: 1 rye
+Sam: 12 croissants
+Grace: 1 birthday cake
+Ada: 1 baguette
+Omar: 3 scones
+"""
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "A file of commands"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+A script is a file of commands. Running it runs each line,
+top to bottom, as if you had typed them yourself.
+
+  #!/bin/sh            first line: which program runs this file
+  # a note             a comment; the shell skips it
+  sh script.sh         run a script with sh
+  chmod +x script.sh   mark it executable
+  ./script.sh          then run it by its path
+
+The #! line (say "shebang") matters when you run the file
+directly, as ./script.sh: the system reads it to learn which
+program should run the rest. When you type sh script.sh you
+have already chosen sh, so the line is just a comment.
+
+This lesson automates a small bakery's routines."""
+
+[[steps]]
+step_number = 2
+title = "Read it before you run it"
+instruction = "Go into the bakery folder and read open-shop.sh. Always read a script before running it: it can do anything you could."
+hints = ["cd into the folder, then cat the file.", "Type: cd bakery   then: cat open-shop.sh"]
+solution = ["cd bakery", "cat open-shop.sh"]
+
+[steps.step_type.Task]
+goal = "Read open-shop.sh"
+success_message = "It prints two lines and writes a checklist. Nothing is deleted or moved. Safe to run."
+checks = [{ Used = "cat" }, { OutputContains = "Morning routine" }]
+
+[[steps]]
+step_number = 3
+title = "Run it with sh"
+instruction = "Run open-shop.sh with sh."
+hints = ["sh, then the script's name.", "Type: sh open-shop.sh"]
+solution = ["sh open-shop.sh"]
+
+[steps.step_type.Task]
+goal = "Run open-shop.sh"
+success_message = "Four commands from one line. Check the result with: cat today/checklist.txt"
+checks = [{ FileContains = { path = "bakery/today/checklist.txt", text = "Sign turned to OPEN" } }]
+
+[[steps]]
+step_number = 4
+title = "Try it as a program"
+instruction = "Now try running it directly, by its path: ./open-shop.sh. It won't work yet. Read the message."
+hints = ["./ means 'the file right here, in this folder'.", "Type: ./open-shop.sh"]
+solution = ["./open-shop.sh"]
+
+[steps.step_type.Task]
+goal = "Run ./open-shop.sh and read the error"
+success_message = "Permission denied: the file is not marked executable, so the system refuses to run it as a program."
+checks = [{ OutputContains = "ermission denied" }]
+
+[[steps]]
+step_number = 5
+title = "Quick check: why the difference?"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "Why did sh open-shop.sh work when ./open-shop.sh was refused?"
+options = ["sh skips the permission check because it is a special command", "sh is the program running; it only needs to read the file. ./ asks the system to run the file itself, and that needs execute permission.", "The ./ form only works for files in the home folder"]
+correct_index = 1
+explanation = "With sh, the file is just text that sh reads. With ./, the file is the program, and only files marked executable may run."
+
+[[steps]]
+step_number = 6
+title = "Make it executable"
+instruction = "Mark open-shop.sh executable with chmod, then run it with ./ again."
+hints = ["+x adds execute permission.", "Type: chmod +x open-shop.sh   then: ./open-shop.sh"]
+solution = ["chmod +x open-shop.sh", "./open-shop.sh"]
+
+[steps.step_type.Task]
+goal = "Run ./open-shop.sh"
+success_message = "Now it runs like any other program. The system read the #!/bin/sh line and handed the file to sh."
+checks = [{ OutputContains = "Opening the bakery" }]
+
+[[steps]]
+step_number = 7
+title = "Start your own"
+instruction = "Write a new script, close-shop.sh. Start it with the #! line. Use single quotes so the shell writes the text as it is: echo '#!/bin/sh' > close-shop.sh"
+hints = ["On a real system you'd use an editor such as nano. Here, echo with > writes the first line.", "Type: echo '#!/bin/sh' > close-shop.sh"]
+solution = ["echo '#!/bin/sh' > close-shop.sh"]
+
+[steps.step_type.Task]
+goal = "Start close-shop.sh with #!/bin/sh"
+success_message = "One line in. Remember: > replaces a file, >> adds to the end."
+checks = [{ FileContains = { path = "bakery/close-shop.sh", text = "#!/bin/sh" } }]
+
+[[steps]]
+step_number = 8
+title = "Add a comment and a command"
+instruction = "Add two lines to close-shop.sh: a comment, # Evening routine, and a command, echo Ovens off >> today/checklist.txt. Keep each line in single quotes, so its > and # go into the script instead of being used now."
+hints = ["Use >> twice, once per line, so you add instead of replacing.", "echo '# Evening routine' >> close-shop.sh adds the comment.", "Type: echo '# Evening routine' >> close-shop.sh   then: echo 'echo Ovens off >> today/checklist.txt' >> close-shop.sh"]
+solution = ["echo '# Evening routine' >> close-shop.sh", "echo 'echo Ovens off >> today/checklist.txt' >> close-shop.sh"]
+
+[steps.step_type.Task]
+goal = "Add a comment and a command to close-shop.sh"
+success_message = "Read it with cat close-shop.sh: three lines, top to bottom."
+checks = [{ FileContains = { path = "bakery/close-shop.sh", text = "# Evening routine" } }, { FileContains = { path = "bakery/close-shop.sh", text = "echo Ovens off >> today/checklist.txt" } }]
+
+[[steps]]
+step_number = 9
+title = "Run your script"
+instruction = "Run close-shop.sh, any way you like. Then the checklist should say Ovens off."
+hints = ["sh close-shop.sh works without chmod. ./close-shop.sh needs chmod +x first.", "Type: sh close-shop.sh"]
+solution = ["sh close-shop.sh"]
+
+[steps.step_type.Task]
+goal = "Run close-shop.sh"
+success_message = "Your script changed a file. cat today/checklist.txt shows the whole day."
+checks = [{ FileContains = { path = "bakery/today/checklist.txt", text = "Ovens off" } }]
+
+[[steps]]
+step_number = 10
+title = "On your own"
+instruction = "No hints. Write count-orders.sh that prints Orders today: and then the number of lines in orders.txt. Make it executable and run it with ./count-orders.sh."
+challenge = true
+solution = ["echo '#!/bin/sh' > count-orders.sh", "echo 'echo Orders today:' >> count-orders.sh", "echo 'wc -l orders.txt' >> count-orders.sh", "chmod +x count-orders.sh", "./count-orders.sh"]
+
+[steps.step_type.Task]
+goal = "Write and run ./count-orders.sh"
+success_message = "Seven orders. Tomorrow it's one command to count them again."
+checks = [{ Used = "./count-orders.sh" }, { OutputContains = "Orders today:" }, { OutputContains = "7" }]
+
+[[steps]]
+step_number = 11
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  #!/bin/sh            which program runs the file
+  # note               a comment, skipped
+  sh script.sh         run it with sh (needs read permission)
+  chmod +x script.sh   mark it executable
+  ./script.sh          run it as a program
+
+"Permission denied" on ./script.sh means it isn't
+executable yet. Read a script before you run it.
+
+Next steps on a real system: scripts there can also make
+decisions and repeat work, with if, for and while. This
+practice shell runs one command per line, so those need a
+real shell. On a real system you'd also write scripts in a
+text editor such as nano instead of with echo."""
