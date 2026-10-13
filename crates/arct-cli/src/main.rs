@@ -63,13 +63,17 @@ enum Commands {
         action: TelemetryAction,
     },
 
-    /// Make a printable certificate for a finished track
+    /// First Keys: a safe screen for children who can't read yet.
+    /// Letters appear big and are spoken; a grown-up leaves with Ctrl+G, then q u i t
+    FirstKeys,
+
+    /// Make a printable certificate for a finished track, or for First Keys
     Certificate {
-        /// Track to certify (default: every finished track)
+        /// Track to certify, or first-keys (default: every finished track and First Keys)
         #[arg(long, value_enum)]
         track: Option<TrackArg>,
 
-        /// Name to print (default: the name from setup; none leaves a line to write on)
+        /// Name to print (default: the name from setup, except on First Keys; none leaves a line to write on)
         #[arg(long)]
         name: Option<String>,
 
@@ -87,13 +91,16 @@ enum Commands {
 enum TrackArg {
     Explorer,
     Operator,
+    FirstKeys,
 }
 
-impl From<TrackArg> for arct_core::Track {
+impl From<TrackArg> for arct_tui::certificate::Award {
     fn from(t: TrackArg) -> Self {
+        use arct_tui::certificate::Award;
         match t {
-            TrackArg::Explorer => arct_core::Track::Explorer,
-            TrackArg::Operator => arct_core::Track::Operator,
+            TrackArg::Explorer => Award::Track(arct_core::Track::Explorer),
+            TrackArg::Operator => Award::Track(arct_core::Track::Operator),
+            TrackArg::FirstKeys => Award::FirstKeys,
         }
     }
 }
@@ -165,7 +172,7 @@ async fn main() -> Result<()> {
     }
 
     match cli.command {
-        None | Some(Commands::Start { .. }) => {
+        None | Some(Commands::Start { .. }) | Some(Commands::FirstKeys) => {
             // Default: run TUI
             run_tui(cli.command, cli.config).await?;
         }
@@ -204,7 +211,7 @@ fn handle_certificate(
     config_path: Option<&std::path::Path>,
 ) -> Result<bool> {
     use arct_core::Track;
-    use arct_tui::certificate::Certificate;
+    use arct_tui::certificate::{Award, Certificate};
 
     let session = arct_tui::persistence::load_session()?;
     let mut library = arct_core::LessonLibrary::new();
@@ -212,6 +219,7 @@ fn handle_certificate(
         // Same lesson packs the app loads, so totals match what the learner saw
         let _ = library.load_from_dir(&config_dir.join("arct").join("lessons"));
     }
+    let given_name = name.clone();
     let name = name.or_else(|| {
         let config = match config_path {
             Some(path) => arct_config::Config::load_from(path),
@@ -220,15 +228,27 @@ fn handle_certificate(
         config.ok().and_then(|c| c.general.user_name)
     });
 
-    let tracks: Vec<Track> = match track {
+    let awards: Vec<Award> = match track {
         Some(t) => vec![t.into()],
-        None => vec![Track::Explorer, Track::Operator],
+        None => vec![
+            Award::Track(Track::Explorer),
+            Award::Track(Track::Operator),
+            Award::FirstKeys,
+        ],
     };
     let mut certificates = Vec::new();
     let mut not_yet = Vec::new();
-    for t in tracks {
-        match Certificate::for_track(&session.user_stats, &library, t, name.clone()) {
+    for award in awards {
+        let made = match award {
+            Award::Track(t) => Certificate::for_track(&session.user_stats, &library, t, name.clone()),
+            // The child in First Keys is rarely whoever set arct up: only a
+            // name given here goes on it
+            Award::FirstKeys => Certificate::first_keys(&session.user_stats, given_name.clone()),
+        };
+        match made {
             Ok(cert) => certificates.push(cert),
+            // Unasked, an unearned First Keys certificate isn't worth a mention
+            Err(why) if why.award == Award::FirstKeys && track.is_none() => {}
             Err(why) => not_yet.push(why),
         }
     }
@@ -273,6 +293,7 @@ async fn run_tui(command: Option<Commands>, config_path: Option<PathBuf>) -> Res
     let mut options = arct_tui::RunOptions {
         config_path,
         theme: None,
+        first_keys: matches!(command, Some(Commands::FirstKeys)),
     };
 
     // Apply any start options

@@ -38,6 +38,7 @@ const ENTRIES: &[PaletteEntry] = &[
     PaletteEntry { name: "Restart Lesson", hint: "", command: PaletteCommand::Action(Action::LessonRestart) },
     PaletteEntry { name: "Toggle Real-Filesystem Practice", hint: "", command: PaletteCommand::Action(Action::TogglePracticeMode) },
     PaletteEntry { name: "Reset Lesson Playground", hint: "", command: PaletteCommand::Action(Action::ResetPlayground) },
+    PaletteEntry { name: "First Keys (for children who can't read yet)", hint: "", command: PaletteCommand::Action(Action::StartFirstKeys) },
     PaletteEntry { name: "Show Achievements", hint: "", command: PaletteCommand::Action(Action::ShowAchievements) },
     PaletteEntry { name: "Show Progress", hint: "Ctrl+P", command: PaletteCommand::Action(Action::ShowProgress) },
     PaletteEntry { name: "Show Challenges", hint: "", command: PaletteCommand::Action(Action::ShowChallenges) },

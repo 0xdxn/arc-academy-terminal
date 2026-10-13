@@ -62,6 +62,8 @@ pub enum Action {
     ShowAchievements,
     ShowProgress,
     ShowChallenges,
+    /// Open First Keys, the full-screen mode for pre-readers
+    StartFirstKeys,
     DismissNotification,
     None,
 }

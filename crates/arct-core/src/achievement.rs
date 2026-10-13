@@ -189,6 +189,15 @@ pub fn all_achievements() -> Vec<Achievement> {
             points: 300,
         },
         Achievement {
+            id: "first_keys".to_string(),
+            title: "First Keys".to_string(),
+            description: "Use the magic words ls, cd and pwd in First Keys.".to_string(),
+            icon: "\u{f11c}", // Keyboard
+            category: AchievementCategory::Exploration,
+            condition: UnlockCondition::CompleteChallenge("first_keys_complete".to_string()),
+            points: 50,
+        },
+        Achievement {
             id: "senior_operator".to_string(),
             title: "Senior Operator".to_string(),
             description: "Finish every Operator lesson without needing the answer.".to_string(),
@@ -458,7 +467,7 @@ mod tests {
     #[test]
     fn test_achievement_count() {
         let achievements = all_achievements();
-        assert_eq!(achievements.len(), 34, "Should have exactly 34 achievements");
+        assert_eq!(achievements.len(), 35, "Should have exactly 35 achievements");
     }
 
     #[test]
@@ -474,7 +483,7 @@ mod tests {
         assert_eq!(streaks, 7, "Should have 7 streak achievements");
         assert_eq!(commands, 5, "Should have 5 command achievements");
         assert_eq!(challenges, 3, "Should have 3 challenge achievements");
-        assert_eq!(exploration, 5, "Should have 5 exploration achievements");
+        assert_eq!(exploration, 6, "Should have 6 exploration achievements");
     }
 
     #[test]

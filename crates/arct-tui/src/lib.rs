@@ -21,6 +21,7 @@ pub mod certificate;
 pub mod sandbox;
 pub mod jail;
 pub mod transcript;
+pub mod first_keys;
 
 pub use app::App;
 pub use theme::Theme;
@@ -36,6 +37,10 @@ pub struct RunOptions {
 
     /// Override the theme by name (`arct start --theme <name>`)
     pub theme: Option<String>,
+
+    /// Open straight into First Keys, the pre-reader mode (`arct first-keys`).
+    /// Leaving it quits arct.
+    pub first_keys: bool,
 }
 
 /// Resolve a theme by name, case-insensitively (`-` and `_` are treated as
