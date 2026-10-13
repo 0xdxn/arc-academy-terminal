@@ -69,6 +69,11 @@ pub struct Lesson {
     /// existing lesson packs keep their place.
     #[serde(default)]
     pub track: Track,
+    /// Runs in the simulated sandbox even when real-files practice is on:
+    /// real files run with no network, so a lesson whose commands reach
+    /// other computers (ping, curl) can't pass there
+    #[serde(default)]
+    pub simulated_only: bool,
 }
 
 /// Learning track: Explorer is written for younger learners (story-led,

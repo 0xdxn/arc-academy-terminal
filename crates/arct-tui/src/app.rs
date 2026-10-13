@@ -1849,7 +1849,7 @@ impl App {
             let answering = self.lesson_panel.as_ref().is_some_and(|p| p.expects_answer());
             let vfs_output = if answering {
                 None
-            } else if self.practice_mode_is_real() {
+            } else if self.lesson_runs_real() {
                 Some(self.execute_playground_command(&cmd, &command_str).await)
             } else if let arct_core::GuardVerdict::Refuse { reason } =
                 arct_core::PlaygroundGuard::check_catastrophic(&command_str)
@@ -1876,7 +1876,7 @@ impl App {
                 None;
             let mut step_advanced = false;
 
-            let practice_real = self.practice_mode_is_real();
+            let practice_real = self.lesson_runs_real();
             if let Some(ref mut lesson_panel) = self.lesson_panel {
                 // Task steps check the practice environment itself
                 let world: Option<&dyn arct_core::PracticeWorld> = if practice_real {
@@ -2647,6 +2647,17 @@ impl App {
         self.config.lessons.is_real() && matches!(self.real_jail, Some(Some(_)))
     }
 
+    /// The current lesson runs on real files: real-files practice is on and
+    /// the lesson isn't one that only works in the simulated sandbox
+    fn lesson_runs_real(&self) -> bool {
+        self.practice_mode_is_real()
+            && !self
+                .lesson_panel
+                .as_ref()
+                .and_then(|p| p.current_lesson.as_ref())
+                .is_some_and(|l| l.simulated_only)
+    }
+
     /// The jail for real-files lessons, looked for once (opening the
     /// playground) and kept. None: real-files practice isn't offered here.
     fn real_files_jail(&mut self) -> Option<crate::jail::Jail> {
@@ -2814,7 +2825,7 @@ impl App {
             .and_then(|p| p.current_lesson.as_ref())
             .map(|l| (l.id.clone(), l.setup.clone()));
 
-        if self.practice_mode_is_real() {
+        if self.lesson_runs_real() {
             // Each lesson starts with no variables left over from the last
             self.sandbox = crate::sandbox::SandboxShell::new();
             if let Err(e) = self.ensure_playground() {
@@ -2927,7 +2938,7 @@ impl App {
     /// ("Reset Lesson Playground"). Deletion is confined to
     /// ~/ArcAcademy/playground with canonical-prefix verification.
     fn reset_playground(&mut self) {
-        if !self.lesson_mode || !self.practice_mode_is_real() {
+        if !self.lesson_mode || !self.lesson_runs_real() {
             self.last_output = format!(
                 "{}Playground reset applies to lessons in real practice mode. Enable it with \"Toggle Real-Filesystem Practice\" (Ctrl+K) and start a lesson first.\n",
                 icons::hint().content
@@ -3834,7 +3845,7 @@ impl App {
             // In real practice mode, restarting also wipes and re-materializes
             // the lesson's playground directory (safe: deletion is confined to
             // ~/ArcAcademy/playground with canonical-prefix verification)
-            if self.practice_mode_is_real() {
+            if self.lesson_runs_real() {
                 if self.playground.as_ref().map(|p| p.has_lesson()) != Some(true) {
                     self.prepare_lesson_environment();
                 }

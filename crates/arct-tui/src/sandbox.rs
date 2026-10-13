@@ -1430,6 +1430,14 @@ mod tests {
     }
 
     #[test]
+    fn network_lessons_stay_simulated_with_real_files_on() {
+        let lessons = arct_core::LessonLibrary::new();
+        let network = lessons.get("network-basics").expect("lesson exists");
+        assert!(network.simulated_only);
+        assert!(!lessons.get("variables").unwrap().simulated_only);
+    }
+
+    #[test]
     fn real_files_practice_needs_a_jail() {
         let mut app = app("nojail");
         app.real_jail = Some(None);
