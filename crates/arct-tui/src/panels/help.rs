@@ -2,9 +2,9 @@
 
 use crate::theme::Theme;
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Rect},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
 
@@ -16,158 +16,88 @@ impl HelpPanel {
         Self
     }
 
-    /// Render the help overlay (centered popup)
+    /// The help text: every key here works in any terminal (the Alt keys
+    /// are listed as extras, since a Mac's Option key often types a
+    /// character instead)
+    pub fn lines(theme: &Theme) -> Vec<Line<'static>> {
+        let section = |name: &'static str| Line::from(Span::styled(name, theme.style_header()));
+        let row = |keys: &'static str, what: &'static str| {
+            Line::from(vec![
+                Span::styled(format!("  {keys:<18}"), theme.style_accent()),
+                Span::styled(what, theme.style_normal()),
+            ])
+        };
+        vec![
+            section("Typing"),
+            row("Type, then Enter", "Run a command"),
+            row("Tab", "Complete a command or file name"),
+            row("↑ / ↓", "Earlier commands"),
+            Line::from(""),
+            section("Scrolling"),
+            row("Ctrl+U / Ctrl+D", "Scroll the terminal back / forward"),
+            row("Mouse wheel", "Scroll what is under the pointer"),
+            row("Enter", "Read on, when a lesson step says there is more"),
+            row("Type anything", "Back to the newest output"),
+            row("Tab / Shift+Tab", "Move between panels (input line empty)"),
+            Line::from(""),
+            section("Actions"),
+            row("Ctrl+K", "Every action, searchable"),
+            row("Ctrl+L", "Lessons; in a lesson the map; in the map, leave"),
+            row("Ctrl+B", "Back one lesson step"),
+            row("Ctrl+P", "Your progress"),
+            row("Ctrl+F", "Show or hide the side panel"),
+            row("Ctrl+T / Ctrl+S", "Theme / settings"),
+            row("Ctrl+A", "AI assistant (turn it on in settings)"),
+            row("? or F1", "This help (? on an empty input line)"),
+            row("Ctrl+C", "Quit"),
+            Line::from(""),
+            Line::from(Span::styled(
+                "  Where the terminal sends them: PgUp/PgDn, Shift+↑↓, End, Alt+←",
+                theme.style_dim(),
+            )),
+        ]
+    }
+
+    /// Render the help overlay (centered popup, sized to its text)
     pub fn render(&self, frame: &mut Frame, theme: &Theme) {
-        let area = Self::centered_rect(60, 80, frame.size());
+        let lines = Self::lines(theme);
+        let screen = frame.size();
+        let width = 74.min(screen.width.saturating_sub(4));
+        let room = screen.height.saturating_sub(2);
+        // A blank row above the text when there's room for it
+        let pad = u16::from(lines.len() as u16 + 3 <= room);
+        let height = (lines.len() as u16 + 2 + pad).min(room);
+        let area = Rect {
+            x: screen.x + (screen.width.saturating_sub(width)) / 2,
+            y: screen.y + (screen.height.saturating_sub(height)) / 2,
+            width,
+            height,
+        };
 
         // Clear the background
         frame.render_widget(Clear, area);
 
         let block = Block::default()
-            .title(" Arc Academy Terminal - Help ")
+            .title(" Help ")
             .title_alignment(Alignment::Center)
+            .title(
+                ratatui::widgets::block::Title::from(Span::styled(" Esc closes ", theme.style_dim()))
+                    .position(ratatui::widgets::block::Position::Bottom)
+                    .alignment(Alignment::Center),
+            )
             .borders(Borders::ALL)
             .border_style(theme.style_border_focused())
             .style(theme.style_block());  // Set background for light themes
 
         let inner = block.inner(area);
         frame.render_widget(block, area);
-
-        // Split into sections
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(8),  // Navigation
-                Constraint::Length(6),  // Editing
-                Constraint::Length(10), // Actions
-                Constraint::Min(1),     // Info
-            ])
-            .split(inner);
-
-        // Navigation section
-        let nav_items = vec![
-            ListItem::new(Line::from(vec![
-                Span::styled("Navigation", theme.style_header()),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  Tab", theme.style_accent()),
-                Span::raw(" / "),
-                Span::styled("Shift+Tab", theme.style_accent()),
-                Span::raw("  →  Switch panels"),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  Ctrl+↑/↓", theme.style_accent()),
-                Span::raw("         →  Scroll output (any panel)"),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  ↑/↓", theme.style_accent()),
-                Span::raw(" or "),
-                Span::styled("j/k", theme.style_accent()),
-                Span::raw("       →  Scroll (when Output focused)"),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  PgUp/PgDn", theme.style_accent()),
-                Span::raw("        →  Page scroll output"),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  Mouse", theme.style_accent()),
-                Span::raw("             →  Click to focus, wheel to scroll"),
-            ])),
-        ];
-        frame.render_widget(List::new(nav_items), chunks[0]);
-
-        // Editing section
-        let edit_items = vec![
-            ListItem::new(Line::from(vec![
-                Span::styled("Command Editing", theme.style_header()),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  Type", theme.style_accent()),
-                Span::raw("              →  Enter command"),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  Enter", theme.style_accent()),
-                Span::raw("            →  Explain command"),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  Backspace", theme.style_accent()),
-                Span::raw("        →  Delete character"),
-            ])),
-        ];
-        frame.render_widget(List::new(edit_items), chunks[1]);
-
-        // Actions section
-        let action_items = vec![
-            ListItem::new(Line::from(vec![
-                Span::styled("Actions", theme.style_header()),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  Ctrl+k", theme.style_accent()),
-                Span::raw("           →  Command palette (all actions)"),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  Ctrl+t", theme.style_accent()),
-                Span::raw("           →  Toggle theme"),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  Ctrl+l", theme.style_accent()),
-                Span::raw(" / "),
-                Span::styled("m", theme.style_accent()),
-                Span::raw("       →  Lesson mode / lesson map"),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  Alt+←", theme.style_accent()),
-                Span::raw(" / "),
-                Span::styled("Alt+r", theme.style_accent()),
-                Span::raw("    →  Previous lesson step / restart lesson"),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  Alt+a/p/c", theme.style_accent()),
-                Span::raw("        →  Achievements / Progress / Challenges"),
-            ])),
-            ListItem::new(Line::from(vec![
-                Span::styled("  q", theme.style_accent()),
-                Span::raw(" or "),
-                Span::styled("Ctrl+c", theme.style_accent()),
-                Span::raw("    →  Quit"),
-            ])),
-        ];
-        frame.render_widget(List::new(action_items), chunks[2]);
-
-        // Info section
-        let info = Paragraph::new(vec![
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("Press ", theme.style_dim()),
-                Span::styled("?", theme.style_accent()),
-                Span::styled(" or ", theme.style_dim()),
-                Span::styled("Esc", theme.style_accent()),
-                Span::styled(" to close this help", theme.style_dim()),
-            ]),
-        ])
-        .alignment(Alignment::Center);
-        frame.render_widget(info, chunks[3]);
-    }
-
-    /// Helper function to create a centered rectangle
-    fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-        let popup_layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Percentage((100 - percent_y) / 2),
-                Constraint::Percentage(percent_y),
-                Constraint::Percentage((100 - percent_y) / 2),
-            ])
-            .split(r);
-
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage((100 - percent_x) / 2),
-                Constraint::Percentage(percent_x),
-                Constraint::Percentage((100 - percent_x) / 2),
-            ])
-            .split(popup_layout[1])[1]
+        let inner = Rect {
+            x: inner.x + 1,
+            y: inner.y + pad,
+            width: inner.width.saturating_sub(2),
+            height: inner.height.saturating_sub(pad),
+        };
+        frame.render_widget(Paragraph::new(lines), inner);
     }
 }
 

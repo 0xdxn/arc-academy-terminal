@@ -42,10 +42,10 @@ pub enum FooterMode {
 pub fn hints(mode: FooterMode) -> Vec<(&'static str, &'static str)> {
     match mode {
         FooterMode::Normal => vec![
-            ("Ctrl+K", "palette"),
             ("Ctrl+L", "lessons"),
-            ("Ctrl+A", "ai"),
-            ("Ctrl+T", "theme"),
+            ("Ctrl+U/D", "scroll"),
+            ("Ctrl+F", "side panel"),
+            ("Ctrl+K", "all actions"),
             ("?", "help"),
         ],
         FooterMode::Dashboard => vec![
@@ -54,16 +54,19 @@ pub fn hints(mode: FooterMode) -> Vec<(&'static str, &'static str)> {
             ("any key", "dismiss"),
         ],
         FooterMode::Lesson => vec![
-            ("Enter", "submit"),
-            ("Alt+←", "back"),
-            ("Alt+R", "restart"),
-            ("Ctrl+L", "exit"),
+            ("Enter", "run"),
+            ("Ctrl+B", "back a step"),
+            ("Ctrl+L", "lesson map"),
+            ("Ctrl+U/D", "scroll"),
+            ("Ctrl+K", "more"),
+            ("?", "help"),
         ],
         FooterMode::LessonMenu => vec![
             ("↑↓", "select"),
             ("Enter", "start"),
             ("1-9", "jump"),
             ("Esc", "close"),
+            ("Ctrl+L", "leave lessons"),
         ],
         FooterMode::Overlay => vec![("↑↓", "scroll"), ("Esc", "close")],
         FooterMode::Palette => vec![
@@ -120,7 +123,7 @@ mod tests {
         let keys = keys(FooterMode::Normal);
         assert!(keys.contains(&"Ctrl+K"));
         assert!(keys.contains(&"Ctrl+L"));
-        assert!(keys.contains(&"Ctrl+A"));
+        assert!(keys.contains(&"Ctrl+U/D"));
         assert!(keys.contains(&"?"));
     }
 
@@ -128,9 +131,26 @@ mod tests {
     fn test_lesson_mode_shows_lesson_keys() {
         let keys = keys(FooterMode::Lesson);
         assert!(keys.contains(&"Enter"));
-        assert!(keys.contains(&"Alt+←"));
-        assert!(keys.contains(&"Alt+R"));
+        assert!(keys.contains(&"Ctrl+B"));
         assert!(keys.contains(&"Ctrl+L"));
+    }
+
+    #[test]
+    fn test_footer_keys_dont_rely_on_alt() {
+        // Option/Alt types a character in most Mac terminals
+        for mode in [
+            FooterMode::Normal,
+            FooterMode::Dashboard,
+            FooterMode::Lesson,
+            FooterMode::LessonMenu,
+            FooterMode::Overlay,
+            FooterMode::Palette,
+            FooterMode::Settings,
+            FooterMode::Ai,
+            FooterMode::Notification,
+        ] {
+            assert!(!keys(mode).iter().any(|k| k.contains("Alt")), "{mode:?}");
+        }
     }
 
     #[test]
