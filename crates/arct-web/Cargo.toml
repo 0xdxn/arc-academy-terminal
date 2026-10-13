@@ -1,0 +1,20 @@
+[package]
+name = "arct-web"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Arc Academy Terminal lessons in a web browser: the lesson engine as WebAssembly"
+publish = false
+
+[lib]
+# cdylib: the .wasm for the browser; rlib: the same API for Rust and tests
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Without the "progress" feature (sessions, stats, streaks): it needs
+# randomness and the time zone, which the browser build has no source for
+arct-core = { path = "../arct-core", version = "1.1.0", default-features = false }
+serde_json.workspace = true

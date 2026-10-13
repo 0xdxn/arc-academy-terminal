@@ -3,6 +3,7 @@
 **/*.rs.bk
 *.pdb
 dist/
+dist-web/
 build/
 *.deb
 *.rpm

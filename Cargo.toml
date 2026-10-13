@@ -7,6 +7,7 @@ members = [
     "crates/arct-config",
     "crates/arct-telemetry",
     "crates/arct-cli",
+    "crates/arct-web",
 ]
 exclude = [
     "examples",
@@ -87,3 +88,8 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
+
+# The browser lesson engine (scripts/build-web.sh): small rather than fast
+[profile.web]
+inherits = "release"
+opt-level = "z"

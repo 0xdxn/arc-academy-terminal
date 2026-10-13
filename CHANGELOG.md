@@ -25,6 +25,8 @@
 - Sandbox: `ls` with folders, `-l` and `-h`; pipes into grep, head, tail, wc, sort, uniq and cut; scripts with `sh`, `bash` and `./`; `chmod +x` works.
 - Operator lessons use their own practice files instead of system files; `top` is explained rather than run; the curl example fetches example.com.
 - New badges: Safe Hands (the guard stopped you) and Station Crew (finish the Explorer track).
+- Explorer lessons start with only their own files on Arc Station; Operator lessons also get the sample home folders.
+- The lessons can run in a web browser: `crates/arct-web` is the same lesson engine compiled to WebAssembly, with the practice files in memory. It saves nothing and sends nothing. `scripts/build-web.sh` builds it, with a plain test page.
 
 ### Rewards
 - Streaks count learning days, in your own time zone. Up to two rest days in between keep a run going; after a longer break a new run starts and your best one is kept. A day counts when you do something, not when you open the app.
