@@ -2708,10 +2708,16 @@ impl App {
 
     /// Why real-files practice isn't available on this system
     fn no_jail_message() -> String {
-        let how = if cfg!(target_os = "linux") {
+        let how = if crate::jail::Jail::sandbox_installed() {
+            // There, but it didn't prove itself: most likely an operating
+            // system update changed something. Worth a bug report.
+            "This system has a sandbox, but it didn't pass arct's safety check, which can happen \
+             after an operating system update. Please report it at \
+             github.com/0xdxn/arc-academy-terminal/issues with your system version."
+        } else if cfg!(target_os = "linux") {
             "On Linux it uses bubblewrap: install the bwrap package to turn it on."
         } else {
-            "It uses the system sandbox (sandbox-exec), which isn't working here."
+            "This system has no sandbox arct can use."
         };
         format!(
             "Real-files practice runs every command inside the operating system's sandbox, so \
