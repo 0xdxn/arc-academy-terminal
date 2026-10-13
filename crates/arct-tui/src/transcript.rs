@@ -28,6 +28,30 @@ pub const MAX_ENTRIES: usize = 300;
 /// Output lines kept per entry; a huge output keeps its last lines
 pub const MAX_LINES_PER_ENTRY: usize = 2000;
 
+/// Output bytes kept per entry, whatever its line count (one huge line, or
+/// `yes` until the timeout); the end is kept
+pub const MAX_BYTES_PER_ENTRY: usize = 256 * 1024;
+
+/// The end of `text`, at most MAX_BYTES_PER_ENTRY, cut at a character
+fn kept(text: &str) -> &str {
+    if text.len() <= MAX_BYTES_PER_ENTRY {
+        return text;
+    }
+    let mut start = text.len() - MAX_BYTES_PER_ENTRY;
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    &text[start..]
+}
+
+/// A cheap fingerprint of the output text, to tell whether a turn changed it
+fn fingerprint(text: &str) -> (usize, u64) {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut h);
+    (text.len(), h.finish())
+}
+
 /// What kind of lesson feedback a line is
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tone {
@@ -82,9 +106,18 @@ impl Entry {
         &self.output
     }
 
-    fn set_output(&mut self, text: &str) {
+    /// Store what this entry printed; false if it already held exactly that
+    fn set_output(&mut self, text: &str) -> bool {
+        let cut = text.len() > MAX_BYTES_PER_ENTRY;
+        let text = kept(text);
+        if self.output == text {
+            return false;
+        }
         self.output = text.to_string();
         let mut lines = crate::ansi::parse_ansi(text.trim_end_matches('\n'));
+        if cut {
+            lines.insert(0, Line::from("(the start of this output was not kept)"));
+        }
         while lines.last().is_some_and(|l| l.width() == 0) {
             lines.pop();
         }
@@ -97,6 +130,7 @@ impl Entry {
             );
         }
         self.lines = lines;
+        true
     }
 }
 
@@ -116,8 +150,8 @@ pub struct Transcript {
     cap: usize,
     /// The newest entry belongs to the turn in progress
     open: bool,
-    /// What `last_output` held when the turn began
-    turn_start: Option<String>,
+    /// Fingerprint of what `last_output` held when the turn began
+    turn_start: Option<(usize, u64)>,
     /// Rows scrolled back from the bottom (0 = following new output)
     scroll: usize,
     /// The furthest back the last render could scroll
@@ -192,14 +226,14 @@ impl Transcript {
     /// A turn (one key or mouse event) begins; `output` is what the
     /// output text holds now
     pub fn begin_turn(&mut self, output: &str) {
-        self.turn_start = Some(output.to_string());
+        self.turn_start = Some(fingerprint(output));
         self.open = false;
     }
 
     /// The learner ran `command` in `folder`: open its entry
     pub fn begin_command(&mut self, folder: &str, command: &str) {
         if self.turn_start.is_none() {
-            self.turn_start = Some(String::new());
+            self.turn_start = Some(fingerprint(""));
         }
         self.push(Entry::new(EntryKind::Command {
             folder: folder.to_string(),
@@ -210,7 +244,7 @@ impl Transcript {
     /// The learner answered a lesson question: open its entry
     pub fn begin_answer(&mut self, answer: &str) {
         if self.turn_start.is_none() {
-            self.turn_start = Some(String::new());
+            self.turn_start = Some(fingerprint(""));
         }
         self.push(Entry::new(EntryKind::Answer {
             answer: answer.to_string(),
@@ -254,19 +288,22 @@ impl Transcript {
 
     /// The turn is over; `output` is what the output text holds now
     pub fn finish_turn(&mut self, output: &str) {
-        self.generation += 1;
         let start = self.turn_start.take();
-        let changed = start.as_deref() != Some(output);
+        let changed = start != Some(fingerprint(output));
         match self.entries.back_mut() {
             Some(entry)
                 if self.open
                     && matches!(entry.kind, EntryKind::Command { .. } | EntryKind::Answer { .. }) =>
             {
-                entry.set_output(output);
+                if entry.set_output(output) {
+                    self.generation += 1;
+                }
             }
             Some(entry) if self.open && changed => {
                 // A note opened by feedback: what the turn printed goes first
-                entry.set_output(output);
+                if entry.set_output(output) {
+                    self.generation += 1;
+                }
             }
             _ if changed && !output.trim().is_empty() => {
                 let mut entry = Entry::new(EntryKind::Note);
@@ -464,6 +501,32 @@ fn spans_of(cells: &[(char, Style)]) -> Line<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_huge_output_keeps_only_its_end_in_memory() {
+        let mut t = Transcript::new();
+        t.begin_turn("");
+        t.begin_command("~", "yes");
+        let huge = "y".repeat(MAX_BYTES_PER_ENTRY * 4) + "é" + "end";
+        t.finish_turn(&huge);
+        let e = t.last().unwrap();
+        assert!(e.output().len() <= MAX_BYTES_PER_ENTRY);
+        assert!(e.output().ends_with("éend"));
+    }
+
+    #[test]
+    fn a_turn_that_changes_nothing_keeps_the_wrapped_rows() {
+        let mut t = Transcript::new();
+        t.begin_turn("");
+        t.begin_command("~", "ls");
+        t.finish_turn("a\n");
+        let generation = t.generation;
+        for _ in 0..5 {
+            t.begin_turn("a\n");
+            t.finish_turn("a\n");
+        }
+        assert_eq!(t.generation, generation, "an unchanged turn re-wrapped everything");
+    }
 
     fn text(lines: &[Line]) -> Vec<String> {
         lines

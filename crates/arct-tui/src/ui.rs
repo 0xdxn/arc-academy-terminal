@@ -103,6 +103,10 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             "Terminal too small ({} x {})\nMinimum: {} x {}",
             size.width, size.height, MIN_WIDTH, MIN_HEIGHT
         );
+        if let Some(panel) = app.lesson_panel.as_ref() {
+            panel.not_shown();
+        }
+        app.active_panel = PanelId::Shell;
         let paragraph = Paragraph::new(msg)
             .style(app.theme.style_warning())
             .wrap(Wrap { trim: false });
@@ -325,6 +329,25 @@ fn draw_content(frame: &mut Frame, area: Rect, app: &mut App) {
     app.panel_rects.explanation = right_chunks[0];
     app.panel_rects.output = right_chunks[1];
     app.panel_rects.shell = right_chunks[2];
+
+    // A panel that isn't on screen can't hold focus (keys typed there would
+    // go nowhere), and a lesson step that isn't drawn has nothing below
+    // to read on to
+    let hidden = |r: Rect| r.width == 0 || r.height == 0;
+    let focused_rect = match app.active_panel {
+        PanelId::Shell => app.panel_rects.shell,
+        PanelId::Output => app.panel_rects.output,
+        PanelId::Context => app.panel_rects.context,
+        PanelId::Explanation => app.panel_rects.explanation,
+    };
+    if hidden(focused_rect) {
+        app.active_panel = PanelId::Shell;
+    }
+    if hidden(right_chunks[0]) {
+        if let Some(panel) = app.lesson_panel.as_ref() {
+            panel.not_shown();
+        }
+    }
 
     // Explanation panel OR Lesson panel (top - high visibility for learning)
     if right_chunks[0].height > 0 {

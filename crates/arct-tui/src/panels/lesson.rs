@@ -322,6 +322,14 @@ impl LessonPanel {
         self.hidden_below.get() > 0
     }
 
+    /// The panel wasn't drawn this frame (terminal too small): nothing is
+    /// waiting below, so Enter goes back to checking the step
+    pub fn not_shown(&self) {
+        self.hidden_below.set(0);
+        self.max_scroll.set(0);
+        self.view_rows.set(0);
+    }
+
     /// Enter on a step whose text runs past the panel: show the next
     /// page instead of moving on. False when everything has been shown.
     pub fn read_on(&mut self) -> bool {

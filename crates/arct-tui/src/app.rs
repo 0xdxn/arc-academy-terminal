@@ -699,7 +699,12 @@ impl App {
                 Some(event) => {
                     // A key or click is one turn: what it printed goes
                     // into the transcript when it's done
-                    let turn = matches!(event, Event::Key(_) | Event::Mouse(_));
+                    // (the pointer just moving is not a turn: it changes nothing)
+                    let turn = match &event {
+                        Event::Key(_) => true,
+                        Event::Mouse(m) => !matches!(m.kind, crossterm::event::MouseEventKind::Moved),
+                        _ => false,
+                    };
                     if turn {
                         self.transcript.begin_turn(&self.last_output);
                     }
@@ -3800,6 +3805,40 @@ mod first_keys_wiring_tests {
         }
         assert!(app.first_keys.as_ref().unwrap().finished());
         assert!(app.user_stats.achievements.is_unlocked("first_keys"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn focus_never_stays_on_a_panel_that_is_not_on_screen() {
+        let (mut app, dir) = app("focus", false);
+        app.active_panel = PanelId::Context;
+        // 60 columns: the side panel is hidden
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 30)).unwrap();
+        terminal.draw(|f| crate::ui::draw(f, &mut app)).unwrap();
+        assert_eq!(app.active_panel, PanelId::Shell);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn enter_never_reads_on_into_a_lesson_panel_that_is_not_drawn() {
+        let (mut app, dir) = app("readon", false);
+        app.lesson_mode = true;
+        let library = arct_core::LessonLibrary::new();
+        let lesson = library
+            .all()
+            .into_iter()
+            .max_by_key(|l| l.steps.first().map(|s| s.instruction.len()).unwrap_or(0))
+            .unwrap()
+            .clone();
+        app.lesson_panel.as_mut().unwrap().load_lesson(lesson);
+        // a short terminal: long step text runs past the panel
+        let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 20)).unwrap();
+        terminal.draw(|f| crate::ui::draw(f, &mut app)).unwrap();
+        assert!(app.lesson_panel.as_ref().unwrap().has_more_below(), "test needs a step that overflows");
+        // then too small to draw it at all
+        let mut tiny = ratatui::Terminal::new(ratatui::backend::TestBackend::new(30, 8)).unwrap();
+        tiny.draw(|f| crate::ui::draw(f, &mut app)).unwrap();
+        assert!(!app.lesson_panel.as_mut().unwrap().read_on());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
