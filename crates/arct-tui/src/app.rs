@@ -2314,17 +2314,15 @@ impl App {
             // same lesson is re-entered in the same session
             self.virtual_fs = None;
 
-            let lesson_id = lesson_info
-                .as_ref()
-                .map(|(id, _)| id.as_str())
-                .unwrap_or("lesson");
-            match arct_core::VirtualFileSystem::new(lesson_id, &self.session_id) {
+            // The lesson's own setup files; Operator lessons also get the
+            // generic practice home
+            let lesson = self.lesson_panel.as_ref().and_then(|p| p.current_lesson.as_ref());
+            let made = match lesson {
+                Some(lesson) => arct_core::VirtualFileSystem::for_lesson(lesson, &self.session_id),
+                None => arct_core::VirtualFileSystem::new("lesson", &self.session_id),
+            };
+            match made {
                 Ok(vfs) => {
-                    if let Some((_, setup)) = &lesson_info {
-                        if let Err(e) = vfs.seed_setup(setup) {
-                            tracing::warn!("Failed to seed lesson setup files: {}", e);
-                        }
-                    }
                     self.virtual_fs = Some(vfs);
                     self.sandbox = crate::sandbox::SandboxShell::new();
                 }

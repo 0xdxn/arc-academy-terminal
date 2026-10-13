@@ -1392,6 +1392,34 @@ mod tests {
     }
 
     #[test]
+    fn explorer_lessons_see_only_their_own_files() {
+        let library = crate::lesson::LessonLibrary::new();
+        let explorer = library.get("explorer-look-around").unwrap();
+        let operator = library.get("nav-basics").unwrap();
+        let names = |vfs: &VirtualFileSystem| -> Vec<String> {
+            vfs.list_directory(None).unwrap().into_iter().map(|e| e.name).collect()
+        };
+        let disk = VirtualFileSystem::for_lesson(explorer, "session-world").unwrap();
+        let memory = VirtualFileSystem::for_lesson_in_memory(explorer).unwrap();
+        let mut tops: Vec<String> = explorer
+            .setup
+            .iter()
+            .map(|f| f.path.split('/').next().unwrap().to_string())
+            .collect();
+        tops.dedup();
+        assert_eq!(names(&disk), tops);
+        assert_eq!(names(&memory), tops);
+
+        let disk = VirtualFileSystem::for_lesson(operator, "session-world-op").unwrap();
+        let memory = VirtualFileSystem::for_lesson_in_memory(operator).unwrap();
+        for vfs in [&disk, &memory] {
+            assert!(vfs.is_dir("Documents") && vfs.is_file(".bashrc"));
+            assert!(operator.setup.iter().all(|f| vfs.is_file(&f.path)));
+        }
+        assert_eq!(names(&disk), names(&memory));
+    }
+
+    #[test]
     fn tree_shows_folders_first_and_the_current_one() {
         for mut vfs in both("session-tree-view") {
             vfs.change_directory("Documents").unwrap();
