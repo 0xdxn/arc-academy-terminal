@@ -1753,7 +1753,7 @@ impl App {
     }
 
     /// Execute the current command
-    async fn execute_command(&mut self) -> Result<()> {
+    pub(crate) async fn execute_command(&mut self) -> Result<()> {
         // In lesson mode, allow empty commands (for Information steps that just need Enter)
         if self.command_buffer.is_empty() && !self.lesson_mode {
             return Ok(());
@@ -2028,6 +2028,10 @@ impl App {
         // a destructive command. Safe mode keeps the free shell inside
         // ~/ArcAcademy/home; with it off, catastrophic patterns are still
         // refused everywhere.
+        // In safe mode the line is also expanded here (variables from the
+        // environment, ~, globs against the real files) and quoted back, so
+        // the guard checks exactly what runs, and that is what runs.
+        let mut to_run: Option<String> = None;
         let (verdict, run_cwd) = if self.config.shell.safe_mode {
             if let Err(e) = self.ensure_explore() {
                 self.last_output = format!(
@@ -2040,10 +2044,23 @@ impl App {
             }
             let home = self.explore.as_ref().expect("ensured above");
             let guard = arct_core::PlaygroundGuard::with_display(home.root(), EXPLORE_DISPLAY);
-            (
-                guard.check(&command_str, home.cwd()),
-                Some(home.cwd().to_path_buf()),
-            )
+            let vars = |n: &str| self.environment_vars.get(n).cloned().or_else(|| std::env::var(n).ok());
+            let verdict = match arct_core::PlaygroundGuard::check_catastrophic(&command_str) {
+                refused @ arct_core::GuardVerdict::Refuse { .. } => refused,
+                arct_core::GuardVerdict::Allow => {
+                    match crate::sandbox::expand_real_line(&command_str, home.cwd(), home.root(), &vars) {
+                        Ok(Some(line)) => {
+                            let verdict = guard.check_expanded(&line, home.cwd());
+                            to_run = Some(line);
+                            verdict
+                        }
+                        // $(...) or backticks: refused, with the reason
+                        Ok(None) => guard.check(&command_str, home.cwd()),
+                        Err(reason) => arct_core::GuardVerdict::Refuse { reason },
+                    }
+                }
+            };
+            (verdict, Some(home.cwd().to_path_buf()))
         } else {
             (arct_core::PlaygroundGuard::check_catastrophic(&command_str), None)
         };
@@ -2073,7 +2090,7 @@ impl App {
         let env_vars = self.environment_vars.clone();
         let output_result = self
             .shell_executor
-            .execute(command_str.clone(), env_vars, timeout_duration, run_cwd)
+            .execute(to_run.unwrap_or_else(|| command_str.clone()), env_vars, timeout_duration, run_cwd)
             .await;
 
         let output = match output_result {
@@ -2894,7 +2911,7 @@ impl App {
     /// Execute a lesson command against the real playground (practice_mode =
     /// "real"): guard-check it, handle the cd builtin with persistent cwd,
     /// and run everything else through the real shell executor.
-    async fn execute_playground_command(
+    pub(crate) async fn execute_playground_command(
         &mut self,
         cmd: &arct_core::Command,
         command_str: &str,
@@ -2907,14 +2924,46 @@ impl App {
             );
         }
 
+        let cwd = self.playground.as_ref().expect("ensured above").cwd().to_path_buf();
+        let pwd = cwd.display().to_string();
+        let is_simple = !command_str.contains(['|', ';', '&', '<', '>']);
+
+        // Each command runs in a fresh shell, so variables set in a lesson
+        // (NAME=value, export, unset) are kept here and handed to every
+        // later command, for this lesson only. Setting one runs nothing;
+        // its value is checked where it's used.
+        if is_simple {
+            if let Some(out) = self.sandbox.real_assignments(command_str, &pwd) {
+                return out;
+            }
+        }
+
+        // The typed line gets the catastrophic-pattern lessons first, so
+        // `rm -rf /` explains itself even if the line can't be parsed
+        if let arct_core::GuardVerdict::Refuse { reason } =
+            arct_core::PlaygroundGuard::check_catastrophic(command_str)
+        {
+            return format!("{}{}\n", icons::warning().content, reason);
+        }
+
+        // Every line is expanded here (variables, ~, globs against the real
+        // playground) and quoted back, so the guard checks exactly what
+        // will run, and that is what runs
+        let root = self.playground.as_ref().expect("ensured above").root().to_path_buf();
+        let expanded = match self.sandbox.expand_for_real(command_str, &cwd, &root) {
+            Ok(expanded) => expanded,
+            Err(reason) => return format!("{}{}\n", icons::warning().content, reason),
+        };
+        let to_run = expanded.as_deref().unwrap_or(command_str);
+
         // Safety guard: playground containment + catastrophic-pattern denylist
-        let (verdict, cwd) = {
-            let playground = self.playground.as_ref().expect("ensured above");
-            let guard = arct_core::PlaygroundGuard::new(playground.root());
-            (
-                guard.check(command_str, playground.cwd()),
-                playground.cwd().to_path_buf(),
-            )
+        let verdict = {
+            let guard = arct_core::PlaygroundGuard::new(&root);
+            match expanded {
+                Some(_) => guard.check_expanded(to_run, &cwd),
+                // $(...) or backticks: refused, with the reason
+                None => guard.check(command_str, &cwd),
+            }
         };
         if let arct_core::GuardVerdict::Refuse { reason } = verdict {
             return format!("{}{}\n", icons::warning().content, reason);
@@ -2922,9 +2971,9 @@ impl App {
 
         // cd builtin with per-session cwd persistence (simple `cd` only;
         // compound commands run in the shell where cd affects a subshell)
-        let is_simple = !command_str.contains(['|', ';', '&', '<', '>']);
         if cmd.program == "cd" && is_simple {
-            let target = cmd.args.first().map(String::as_str).unwrap_or("");
+            let words = shellwords::split(to_run).unwrap_or_default();
+            let target = words.get(1).map(String::as_str).unwrap_or("");
             let playground = self.playground.as_mut().expect("ensured above");
             return match playground.change_directory(target) {
                 Ok(new_path) => format!(
@@ -2936,15 +2985,6 @@ impl App {
             };
         }
 
-        // Each command runs in a fresh shell, so variables set in a lesson
-        // (NAME=value, export, unset) are kept here and handed to every
-        // later command, for this lesson only
-        if is_simple {
-            if let Some(out) = self.sandbox.real_assignments(command_str) {
-                return out;
-            }
-        }
-
         // Real execution, pinned to the tracked playground cwd, with the
         // same timeout-kill behavior as the normal shell
         let timeout = std::time::Duration::from_secs(self.config.general.command_timeout);
@@ -2952,7 +2992,7 @@ impl App {
         env_vars.extend(self.sandbox.real_env());
         match self
             .shell_executor
-            .execute(command_str.to_string(), env_vars, timeout, Some(cwd))
+            .execute(to_run.to_string(), env_vars, timeout, Some(cwd))
             .await
         {
             Ok(output) => output,

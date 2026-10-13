@@ -239,6 +239,81 @@ pub fn parse(
     Ok(list)
 }
 
+/// Stands for `$?` in text expanded for a real shell: [`render`] turns it
+/// back into `"$?"`, which the shell fills in with a number as it runs.
+/// Private-use characters, so ordinary typing never produces it (and if it
+/// did, the worst it can become is that number).
+pub const STATUS_MARK: &str = "\u{E000}?\u{E001}";
+
+/// Write an expanded command list back as one line for a real `sh -c`,
+/// quoted so the shell takes every word, value and file name literally and
+/// expands nothing a second time: no variables, no `~`, no globs (expand
+/// those before rendering). What a guard checks in this line is what runs.
+/// The one thing left for the shell is [`STATUS_MARK`], written as `"$?"`.
+pub fn render(list: &[(Joiner, Pipeline)]) -> String {
+    let mut line = String::new();
+    for (i, (joiner, pipeline)) in list.iter().enumerate() {
+        if i > 0 {
+            line.push_str(match joiner {
+                Joiner::Always => "; ",
+                Joiner::IfOk => " && ",
+                Joiner::IfFailed => " || ",
+            });
+        }
+        let stages: Vec<String> = pipeline.stages.iter().map(render_stage).collect();
+        line.push_str(&stages.join(" | "));
+    }
+    line
+}
+
+fn render_stage(stage: &Stage) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for (name, value) in &stage.assignments {
+        parts.push(format!("{name}={}", render_text(value)));
+    }
+    for word in &stage.words {
+        parts.push(render_text(&word.text));
+    }
+    for redirect in &stage.redirects {
+        parts.push(match redirect {
+            Redirect::Out { target, append } => {
+                format!("{} {}", if *append { ">>" } else { ">" }, render_text(target))
+            }
+            Redirect::Err { target, append } => {
+                format!("{} {}", if *append { "2>>" } else { "2>" }, render_text(target))
+            }
+            Redirect::ErrToOut => "2>&1".to_string(),
+            Redirect::In(file) => format!("< {}", render_text(file)),
+        });
+    }
+    parts.join(" ")
+}
+
+/// One word for the shell: as it is when every character is plain (none
+/// of them means anything to sh), otherwise in single quotes
+fn render_text(text: &str) -> String {
+    let plain = |c: char| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/' | ',' | ':' | '+' | '@' | '%');
+    let mut out = String::new();
+    for (i, piece) in text.split(STATUS_MARK).enumerate() {
+        if i > 0 {
+            out.push_str("\"$?\"");
+        }
+        if piece.chars().all(plain) {
+            out.push_str(piece);
+        } else {
+            out.push_str(&single_quote(piece));
+        }
+    }
+    if out.is_empty() {
+        out.push_str("''");
+    }
+    out
+}
+
+fn single_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', r"'\''"))
+}
+
 // end_word! resets its state even after the last word
 #[allow(unused_assignments)]
 fn tokenize(line: &str, lookup: &dyn Fn(&str) -> Option<String>) -> Result<Vec<Token>, String> {
@@ -665,5 +740,71 @@ mod tests {
         assert!(glob_match(".*", ".hidden"));
         assert!(glob_match("*", ""));
         assert!(fnmatch("*.txt", ".hidden.txt"));
+    }
+
+    fn rendered(line: &str) -> String {
+        let lookup = |name: &str| match name {
+            "?" => Some(STATUS_MARK.to_string()),
+            "TRICK" => Some("$(touch pwned) `x` $HOME".to_string()),
+            "Q" => Some("it's".to_string()),
+            n => vars(n),
+        };
+        render(&parse(line, &lookup).unwrap())
+    }
+
+    #[test]
+    fn render_quotes_everything_the_shell_would_expand() {
+        assert_eq!(rendered("echo $NAME"), "echo Ada");
+        assert_eq!(rendered("echo \"Hi, $NAME!\""), "echo 'Hi, Ada!'");
+        assert_eq!(rendered("echo $SPACED"), "echo a b");
+        assert_eq!(rendered("echo \"$SPACED\""), "echo 'a b'");
+        assert_eq!(rendered("echo \"[$EMPTY]\""), "echo '[]'");
+        assert_eq!(rendered("echo \"$EMPTY\""), "echo ''");
+        assert_eq!(rendered("echo \"$Q\""), r"echo 'it'\''s'");
+        // a value is never run: substitutions inside it stay text
+        assert_eq!(rendered("echo \"$TRICK\""), "echo '$(touch pwned) `x` $HOME'");
+        // single-quoted $ is written as typed, for scripts to use later
+        assert_eq!(rendered("echo 'echo $1' > greet.sh"), "echo 'echo $1' > greet.sh");
+        assert_eq!(rendered("cd ~"), "cd /lesson-home");
+        assert_eq!(rendered("X=$NAME env"), "X=Ada env");
+        // assignments can't hide in words
+        assert_eq!(rendered("echo X=1"), "echo 'X=1'");
+    }
+
+    #[test]
+    fn render_keeps_globs_lists_and_redirects() {
+        // globs are the caller's to expand: render keeps them as text
+        assert_eq!(rendered("ls *.txt [!a]? .*"), "ls '*.txt' '[!a]?' '.*'");
+        assert_eq!(rendered("ls '*.txt'"), "ls '*.txt'");
+        assert_eq!(
+            rendered("grep x a 2>/dev/null | sort >> out && echo ok || echo no; cat < in 2>&1"),
+            "grep x a 2> /dev/null | sort >> out && echo ok || echo no; cat < in 2>&1"
+        );
+        assert_eq!(rendered("false; echo $?"), "false; echo \"$?\"");
+        assert_eq!(rendered("echo \"status $?\""), "echo 'status '\"$?\"");
+    }
+
+    #[test]
+    fn rendered_lines_mean_the_same_to_sh() {
+        // The real shell must print exactly the expanded words, expanding
+        // nothing again
+        let line = "echo \"$TRICK\" $SPACED \"$Q\" x=1 '$NAME'";
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(rendered(line))
+            .env_clear()
+            .current_dir(std::env::temp_dir())
+            .output()
+            .expect("sh runs");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            "$(touch pwned) `x` $HOME a b it's x=1 $NAME\n"
+        );
+        let status = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(rendered("false; echo $?"))
+            .output()
+            .expect("sh runs");
+        assert_eq!(String::from_utf8_lossy(&status.stdout), "1\n");
     }
 }
