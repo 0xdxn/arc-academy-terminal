@@ -4,13 +4,185 @@ description = "Send output and errors into files, or throw them away."
 difficulty = "Intermediate"
 estimated_minutes = 15
 prerequisites = ["file-viewing"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "redirection", "stdout", "stderr", "dev-null"]
+
+[[setup]]
+path = "garden/plots.txt"
+contents = """Plot 1: Ada
+Plot 2: Omar
+Plot 3: Grace
+Plot 4: Sam
+Plot 5: Mei
+Plot 6: (free)
+"""
+
+[[setup]]
+path = "garden/harvest.txt"
+contents = """tomatoes
+beans
+courgettes
+potatoes
+"""
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "Two kinds of output"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+A command can write to two places, and both show up on
+your screen:
+  standard output   the results
+  standard error    messages about problems
+
+Redirection sends them somewhere else:
+
+  cmd > file        output into file (replaces the file)
+  cmd >> file       output onto the end of file
+  cmd 2> file       errors into file
+  cmd > f 2>&1      output and errors both into f
+  cmd 2> /dev/null  throw the errors away
+  cmd < file        feed file in as the command's input
+
+After a redirect this practice shell prints a short note,
+like "Wrote files.txt". A real shell prints nothing."""
+
+[[steps]]
+step_number = 2
+title = "Save a listing"
+instruction = "Go into garden and save the output of ls into a file called files.txt."
+hints = ["cd garden, then ls with > and the file's name.", "Type: cd garden   then: ls > files.txt"]
+solution = ["cd garden", "ls > files.txt"]
+
+[steps.step_type.Task]
+goal = "Save ls output in garden/files.txt"
+success_message = "No listing on screen this time: it went into files.txt instead."
+checks = [{ FileContains = { path = "garden/files.txt", text = "plots.txt" } }]
+
+[[steps]]
+step_number = 3
+title = "Add to the end"
+instruction = "A new gardener, Leo, takes plot 7. Add the line Plot 7: Leo to the end of plots.txt, keeping every line already there."
+hints = ["Two arrows add to the end. One arrow would wipe the list.", "Type: echo 'Plot 7: Leo' >> plots.txt"]
+solution = ["echo 'Plot 7: Leo' >> plots.txt"]
+
+[steps.step_type.Task]
+goal = "Append Plot 7: Leo to plots.txt"
+success_message = "Added. The six plots above it are untouched."
+checks = [{ FileContains = { path = "garden/plots.txt", text = "Plot 7: Leo" } }, { FileContains = { path = "garden/plots.txt", text = "Plot 1: Ada" } }]
+
+[[steps]]
+step_number = 4
+title = "One arrow too few"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "You meant to add a line but typed: echo 'Plot 8: Ines' > plots.txt. What is in plots.txt now?"
+options = [
+  "All the plots, with Plot 8: Ines at the end",
+  "Only the line Plot 8: Ines. Everything else is gone",
+  "Nothing changes, because the file already exists",
+]
+correct_index = 1
+explanation = "One > empties the file first, then writes. There's no undo and no trash. On a real system, set -o noclobber makes > refuse to overwrite a file that exists."
+
+[[steps]]
+step_number = 5
+title = "Errors stay on screen"
+instruction = "Run cat plots.txt seeds.txt > all.txt. There is no seeds.txt. Watch where the error goes."
+hints = ["Type it as shown.", "Type: cat plots.txt seeds.txt > all.txt"]
+solution = ["cat plots.txt seeds.txt > all.txt"]
+
+[steps.step_type.Task]
+goal = "Redirect output while a command fails"
+success_message = "The plots went into all.txt, but the complaint about seeds.txt still came to your screen. > only moves standard output."
+checks = [{ FileContains = { path = "garden/all.txt", text = "Plot 1: Ada" } }, { OutputContains = "seeds.txt" }]
+
+[[steps]]
+step_number = 6
+title = "Catch the errors"
+instruction = "Now do the opposite: let the plots print on screen, and send the error into errors.txt."
+hints = ["2> is the arrow for errors. 2 is standard error's number.", "Type: cat plots.txt seeds.txt 2> errors.txt"]
+solution = ["cat plots.txt seeds.txt 2> errors.txt"]
+
+[steps.step_type.Task]
+goal = "Send the error into errors.txt"
+success_message = "Output on screen, error in a file. Handy for a long job: read the problems afterwards."
+checks = [{ FileContains = { path = "garden/errors.txt", text = "seeds.txt" } }, { OutputContains = "Plot 1: Ada" }]
+
+[[steps]]
+step_number = 7
+title = "Both in one file"
+instruction = "Put the output and the error together in one file called everything.txt."
+hints = ["Send output to the file, then 2>&1 sends errors to the same place.", "Order matters: > everything.txt first, then 2>&1.", "Type: cat plots.txt seeds.txt > everything.txt 2>&1"]
+solution = ["cat plots.txt seeds.txt > everything.txt 2>&1"]
+
+[steps.step_type.Task]
+goal = "Save output and errors in everything.txt"
+success_message = "2>&1 means: errors go wherever output goes right now. Written the other way round (2>&1 > file), errors would still go to the screen."
+checks = [{ FileContains = { path = "garden/everything.txt", text = "Plot 1: Ada" } }, { FileContains = { path = "garden/everything.txt", text = "seeds.txt" } }]
+
+[[steps]]
+step_number = 8
+title = "Throw it away"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "/dev/null is a bin: whatever you send there disappears. Which line shows the plots but hides the complaint about seeds.txt?"
+options = [
+  "cat plots.txt seeds.txt > /dev/null",
+  "cat plots.txt seeds.txt 2> /dev/null",
+  "cat plots.txt seeds.txt 2>&1",
+]
+correct_index = 1
+explanation = "2> picks the error stream, and /dev/null swallows it. The first line would do the reverse: bin the plots, keep the error. Only hide errors you've already read. (The safety guard here refuses every redirect into /dev, even this harmless one, so try /dev/null in a real terminal.)"
+
+[[steps]]
+step_number = 9
+title = "Feed a file in"
+instruction = "< works the other way: it feeds a file in as a command's input. tr swaps characters, and it only reads input, never a file name. Print harvest.txt in capitals with tr a-z A-Z and <."
+hints = ["tr a-z A-Z turns small letters into capitals. Add < and the file.", "Type: tr a-z A-Z < harvest.txt"]
+solution = ["tr a-z A-Z < harvest.txt"]
+
+[steps.step_type.Task]
+goal = "Feed harvest.txt into tr"
+success_message = "tr read the file through <, because it doesn't take file names itself. Other commands accept both: wc -l < harvest.txt prints the count without the file's name."
+checks = [{ Used = "tr" }, { OutputContains = "TOMATOES" }]
+
+[[steps]]
+step_number = 10
+title = "On your own"
+instruction = "No hints. Run ls seeds.txt so that its error goes into problems.txt and not to the screen. Then add the line Ordered more seeds to the end of problems.txt, keeping the error in it."
+challenge = true
+solution = ["ls seeds.txt 2> problems.txt", "echo 'Ordered more seeds' >> problems.txt"]
+
+[steps.step_type.Task]
+goal = "Build problems.txt from an error and a note"
+success_message = "An error caught in a file and a note added after it: that's a small log, built with two arrows."
+checks = [{ FileContains = { path = "garden/problems.txt", text = "seeds.txt" } }, { FileContains = { path = "garden/problems.txt", text = "Ordered more seeds" } }]
+
+[[steps]]
+step_number = 11
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  > file        output into file, replacing it
+  >> file       output onto the end
+  2> file       errors into file
+  > f 2>&1      both into f (this order)
+  2> /dev/null  errors thrown away
+  < file        file fed in as input
+
+Output and errors are separate streams, and you can
+send each one somewhere different.
+
+Never redirect into the file you're reading: on a real
+system, sort plots.txt > plots.txt empties plots.txt
+before sort reads it. (The practice shell doesn't copy
+this trap. Real shells do.)
+
+Next: pipes. Instead of saving output to a file and
+reading it back, | hands it straight to the next command."""

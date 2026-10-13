@@ -4,13 +4,191 @@ description = "Handle file names with spaces, and know what quotes do."
 difficulty = "Beginner"
 estimated_minutes = 12
 prerequisites = ["wildcards"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "quoting", "spaces", "escapes", "echo"]
+
+[[setup]]
+path = "band/tour dates.txt"
+contents = """Fri 3 Apr   Northfield, Corn Hall
+Sat 4 Apr   Easton, The Mill
+Sun 5 Apr   Westbay, Dock Rooms
+"""
+
+[[setup]]
+path = "band/set list.txt"
+contents = """1. Lantern Road
+2. Salt and Iron
+3. Slow Comet
+4. Last Bus Home
+"""
+
+[[setup]]
+path = "band/poster.txt"
+contents = "Moth Parade, live this spring. Doors at 7.\n"
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "Spaces split words"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+The shell splits every line into words at the spaces.
+The first word is the command, the rest are its arguments.
+
+So cat tour dates.txt asks cat for two files:
+"tour" and "dates.txt". Neither exists.
+
+Three ways to keep a name with spaces together:
+
+  cat "tour dates.txt"     double quotes
+  cat 'tour dates.txt'     single quotes
+  cat tour\\ dates.txt      a backslash before each space
+
+The quotes and the backslash are instructions to the shell.
+They are not part of the name."""
+
+[[steps]]
+step_number = 2
+title = "See it break"
+instruction = "Go into band and type the name without any quotes: cat tour dates.txt. Read the errors."
+hints = ["cd band first, then the cat line exactly as shown.", "Type: cd band   then: cat tour dates.txt"]
+solution = ["cd band", "cat tour dates.txt"]
+
+[steps.step_type.Task]
+goal = "Watch cat look for two files"
+success_message = "Two errors: one for tour, one for dates.txt. cat never saw the name you meant."
+checks = [{ CwdIs = "band" }, { Used = "cat" }, { OutputContains = "dates.txt" }]
+
+[[steps]]
+step_number = 3
+title = "Fix it with quotes"
+instruction = "Now read the file properly, with the whole name in double quotes."
+hints = ["Put a double quote before tour and after .txt.", "Type: cat \"tour dates.txt\""]
+solution = ["cat \"tour dates.txt\""]
+
+[steps.step_type.Task]
+goal = "Read tour dates.txt"
+success_message = "One quoted word, one file. The quotes themselves never reach cat."
+checks = [{ Used = "cat" }, { OutputContains = "Corn Hall" }]
+
+[[steps]]
+step_number = 4
+title = "The backslash way"
+instruction = "Read set list.txt, this time with a backslash instead of quotes."
+hints = ["A backslash makes the next character ordinary, even a space.", "Type: cat set\\ list.txt"]
+solution = ["cat set\\ list.txt"]
+
+[steps.step_type.Task]
+goal = "Read set list.txt"
+success_message = "On a real system, Tab completion types these backslashes for you: type cat set and press Tab."
+checks = [{ Used = "cat" }, { OutputContains = "Slow Comet" }]
+
+[[steps]]
+step_number = 5
+title = "Why it matters"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "You want to delete a file called old notes.txt, and type: rm old notes.txt. What does rm do?"
+options = [
+  "Deletes old notes.txt",
+  "Tries to delete a file called old and a file called notes.txt, which may be a different file you wanted to keep",
+  "Asks which file you meant",
+]
+correct_index = 1
+explanation = "rm gets two names and deletes whatever matches them. An unquoted space can delete the wrong file without a word. Quote names with spaces, every time."
+
+[[steps]]
+step_number = 6
+title = "A folder with a space"
+instruction = "Make a folder called old posters, then move poster.txt into it."
+hints = ["Quote the folder's name both times you type it.", "Without quotes, mkdir makes two folders: old and posters.", "Type: mkdir \"old posters\"   then: mv poster.txt \"old posters/\""]
+solution = ["mkdir \"old posters\"", "mv poster.txt \"old posters/\""]
+
+[steps.step_type.Task]
+goal = "Move poster.txt into a folder called old posters"
+success_message = "Some systems show names like this in quotes when you ls. Those quotes are only for display; the name is still old posters."
+checks = [{ DirExists = "band/old posters" }, { FileExists = "band/old posters/poster.txt" }]
+
+[[steps]]
+step_number = 7
+title = "Single or double"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Both kinds of quotes keep spaces inside one word.
+They differ in what else they protect.
+
+  'single'   everything stays exactly as typed: $, *, all of it
+  "double"   * stays as typed, but $NAME is replaced by
+             the variable's value
+
+  echo 'Home: $HOME'    prints  Home: $HOME
+  echo "Home: $HOME"    prints  Home: and your home folder
+
+A single quote can't go inside single quotes.
+For a name like Mei's, use double quotes: "Mei's notes.txt"."""
+
+[[steps]]
+step_number = 8
+title = "A price with a dollar sign"
+instruction = "The merch table sign should read: T-shirts $20. Print exactly that with echo. Look closely at what you get."
+hints = ["Try double quotes first and look at the number.", "In double quotes, $2 counts as a variable (an empty one). Single quotes keep $ as a plain dollar sign.", "Type: echo 'T-shirts $20'"]
+solution = ["echo 'T-shirts $20'"]
+
+[steps.step_type.Task]
+goal = "Print T-shirts $20"
+success_message = "Without single quotes the shell reads $2 as a variable, finds nothing, and prints T-shirts 0. Single quotes leave $ alone."
+checks = [{ Used = "echo" }, { OutputContains = "T-shirts $20" }]
+
+[[steps]]
+step_number = 9
+title = "When you want the variable"
+instruction = "Double quotes are for when you do want a variable's value. In one line, store a venue and print it: VENUE=\"Corn Hall\"; echo \"Tonight: $VENUE\""
+hints = ["The quotes around Corn Hall keep the space inside the value.", "Type: VENUE=\"Corn Hall\"; echo \"Tonight: $VENUE\""]
+solution = ["VENUE=\"Corn Hall\"; echo \"Tonight: $VENUE\""]
+
+[steps.step_type.Task]
+goal = "Print Tonight: Corn Hall"
+success_message = "Double quotes kept the space and filled in $VENUE. With single quotes you'd have got Tonight: $VENUE, word for word."
+checks = [{ OutputContains = "Tonight: Corn Hall" }]
+
+[[steps]]
+step_number = 10
+title = "Quotes stop patterns too"
+instruction = "Here, echo *.txt becomes set list.txt tour dates.txt: the shell expands the pattern first. Print the pattern *.txt itself instead."
+hints = ["Quote the pattern. Either kind of quotes will do.", "Type: echo '*.txt'"]
+solution = ["echo '*.txt'"]
+
+[steps.step_type.Task]
+goal = "Print the pattern *.txt itself"
+success_message = "Quoted, the pattern reaches the command untouched. That's why you write find . -name '*.txt': find wants the pattern, so it can match inside every folder."
+checks = [{ Used = "echo" }, { OutputContains = "*.txt" }]
+
+[[steps]]
+step_number = 11
+title = "On your own"
+instruction = "No hints. Mei wants her own copy of tour dates.txt, named Mei's tour dates.txt. Make it, in the band folder."
+challenge = true
+solution = ["cp \"tour dates.txt\" \"Mei's tour dates.txt\""]
+
+[steps.step_type.Task]
+goal = "Copy tour dates.txt to Mei's tour dates.txt"
+success_message = "Spaces and an apostrophe in one name. Double quotes handled both."
+checks = [{ FileContains = { path = "band/Mei's tour dates.txt", text = "Corn Hall" } }]
+
+[[steps]]
+step_number = 12
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  "tour dates.txt"   double quotes: spaces kept, $VAR filled in
+  'T-shirts $20'     single quotes: everything kept as typed
+  set\\ list.txt      backslash: the next character is ordinary
+  '*.txt'            a quoted pattern isn't expanded
+
+When in doubt, quote a name. It never hurts,
+and a missing quote can hand rm the wrong file."""

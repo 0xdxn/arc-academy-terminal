@@ -4,13 +4,169 @@ description = "Run commands one after another, and only when the last one worked
 difficulty = "Beginner"
 estimated_minutes = 10
 prerequisites = ["file-mgmt"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "command-lists", "exit-status", "and", "or"]
+
+[[setup]]
+path = "weather/today.txt"
+contents = "Sunny, 18C, light wind from the west\n"
+
+[[setup]]
+path = "weather/yesterday.txt"
+contents = "Showers, 14C, wind from the north\n"
+
+[[setup]]
+path = "weather/draft.txt"
+contents = "Draft forecast for tomorrow: cloud clearing by noon. Keep this one.\n"
+
+[[setup]]
+path = "weather/archive/draft.txt"
+contents = "Old draft from last week. Safe to delete.\n"
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "More than one command per line"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+You can put several commands on one line. What joins
+them decides whether the next one runs.
+
+  a ; b      run a, then b, no matter what
+  a && b     run b only if a worked
+  a || b     run b only if a failed
+
+Every command ends with an exit status, a number:
+0 means it worked, anything else means it failed.
+
+  echo $?    print the last command's exit status"""
+
+[[steps]]
+step_number = 2
+title = "One after the other"
+instruction = "In one line, go into weather and list it: cd weather; ls"
+hints = ["A semicolon between two commands runs them in turn.", "Type: cd weather; ls"]
+solution = ["cd weather; ls"]
+
+[steps.step_type.Task]
+goal = "Go into weather and list it"
+success_message = "Two commands, one line. The ; doesn't care whether cd worked. Keep that in mind."
+checks = [{ CwdIs = "weather" }, { OutputContains = "today.txt" }]
+
+[[steps]]
+step_number = 3
+title = "Did it work?"
+instruction = "There's no rain.txt here. Try to read it, and print the exit status right after, in one line: cat rain.txt; echo $?"
+hints = ["$? holds the status of the command just before it.", "Type: cat rain.txt; echo $?"]
+solution = ["cat rain.txt; echo $?"]
+
+[steps.step_type.Task]
+goal = "See a failed command's exit status"
+success_message = "cat failed, so the status was 1. A command that works leaves 0. && and || decide by this number."
+checks = [{ Used = "echo" }, { OutputContains = "rain.txt" }]
+
+[[steps]]
+step_number = 4
+title = "Make it, then go in"
+instruction = "A common pair: make a folder and step into it, but only if making it worked. Make a folder called notes and go into it with &&."
+hints = ["mkdir first, then && and cd.", "Type: mkdir notes && cd notes"]
+solution = ["mkdir notes && cd notes"]
+
+[steps.step_type.Task]
+goal = "Make notes and go into it"
+success_message = "mkdir worked (status 0), so cd ran."
+checks = [{ DirExists = "weather/notes" }, { CwdIs = "weather/notes" }]
+
+[[steps]]
+step_number = 5
+title = "When the first part fails"
+instruction = "Go back up to weather with cd .. and run the same line again: mkdir notes && cd notes. notes already exists. Where do you end up?"
+hints = ["First cd .. on its own. Then the same mkdir && cd line.", "Type: cd ..   then: mkdir notes && cd notes"]
+solution = ["cd ..", "mkdir notes && cd notes"]
+
+[steps.step_type.Task]
+goal = "Watch && stop after a failure"
+success_message = "mkdir failed because notes was already there, so && skipped the cd and you stayed in weather. (mkdir -p notes && cd notes would work either way: -p doesn't mind a folder that exists.)"
+checks = [{ Used = "mkdir" }, { CwdIs = "weather" }]
+
+[[steps]]
+step_number = 6
+title = "A fallback"
+instruction = "|| runs the second command only if the first failed. Try to read rain.txt, and if that fails, print No rain recorded."
+hints = ["cat the file, then || and an echo.", "Type: cat rain.txt || echo No rain recorded"]
+solution = ["cat rain.txt || echo No rain recorded"]
+
+[steps.step_type.Task]
+goal = "Print a fallback message when cat fails"
+success_message = "cat failed, so the echo ran. With a file that exists, cat would work and the fallback would stay quiet."
+checks = [{ OutputContains = "No rain recorded" }]
+
+[[steps]]
+step_number = 7
+title = "A typo, on purpose"
+instruction = "Old drafts go in archive. Make a deliberate typo to see && protect you: cd archiv && rm draft.txt (archiv, no e). Stay in weather to do it."
+hints = ["Check you're in weather with pwd. Then type the line with the typo.", "Type: cd archiv && rm draft.txt"]
+solution = ["cd archiv && rm draft.txt"]
+
+[steps.step_type.Task]
+goal = "Run the line with the typo"
+success_message = "cd failed, so && never ran rm. Your draft.txt in weather is safe."
+checks = [{ Used = "rm" }, { CwdIs = "weather" }, { FileExists = "weather/draft.txt" }]
+
+[[steps]]
+step_number = 8
+title = "And with a semicolon?"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "What would cd archiv; rm draft.txt have done instead?"
+options = [
+  "Nothing. The shell stops at the first error",
+  "cd fails, you stay in weather, and rm deletes weather/draft.txt: the draft you meant to keep",
+  "It deletes the old draft in archive",
+]
+correct_index = 1
+explanation = "; runs the next command whatever happened. rm then works in the folder you're still in. Use && whenever the second command depends on the first."
+
+[[steps]]
+step_number = 9
+title = "Now the real thing"
+instruction = "Same line, spelled right: go into archive and delete the old draft there, only if the cd worked."
+hints = ["archive, with the e this time.", "Type: cd archive && rm draft.txt"]
+solution = ["cd archive && rm draft.txt"]
+
+[steps.step_type.Task]
+goal = "Delete archive/draft.txt safely"
+success_message = "The old draft is gone, the new one in weather is untouched."
+checks = [{ Missing = "weather/archive/draft.txt" }, { FileExists = "weather/draft.txt" }]
+
+[[steps]]
+step_number = 10
+title = "On your own"
+instruction = "No hints. Go back to weather. Then, in one line, copy yesterday.txt into archive and remove the original only if the copy worked."
+challenge = true
+solution = ["cd ..", "cp yesterday.txt archive/ && rm yesterday.txt"]
+
+[steps.step_type.Task]
+goal = "Archive yesterday.txt safely"
+success_message = "Copy, check, then delete. If the copy had failed, the original would still be there."
+checks = [{ FileContains = { path = "weather/archive/yesterday.txt", text = "Showers" } }, { Missing = "weather/yesterday.txt" }, { FileExists = "weather/today.txt" }]
+
+[[steps]]
+step_number = 11
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  a ; b      b runs whatever happened
+  a && b     b runs only if a worked
+  a || b     b runs only if a failed
+  echo $?    the last exit status: 0 worked, other failed
+
+  mkdir notes && cd notes
+  cd archive && rm draft.txt       safe
+  cd archive ; rm draft.txt        not safe if cd fails
+  cp file dest/ && rm file         delete only after a good copy
+
+When a command depends on the one before it, join them with &&."""

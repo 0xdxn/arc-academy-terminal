@@ -4,13 +4,239 @@ description = "Use * ? and [ ] to work on many files with one command."
 difficulty = "Beginner"
 estimated_minutes = 12
 prerequisites = ["file-mgmt"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "wildcards", "globs", "rm", "echo"]
+
+[[setup]]
+path = "bakery/orders-mon.csv"
+contents = """customer,item,qty
+Grace,sourdough,2
+Omar,scones,6
+"""
+
+[[setup]]
+path = "bakery/orders-tue.csv"
+contents = """customer,item,qty
+Mei,rye,1
+Sam,croissants,4
+"""
+
+[[setup]]
+path = "bakery/orders-wed.csv"
+contents = """customer,item,qty
+Ada,sourdough,1
+Grace,muffins,3
+"""
+
+[[setup]]
+path = "bakery/cake-1.jpg"
+contents = "[photo: lemon drizzle]\n"
+
+[[setup]]
+path = "bakery/cake-2.jpg"
+contents = "[photo: carrot cake]\n"
+
+[[setup]]
+path = "bakery/cake-3.jpg"
+contents = "[photo: chocolate layer cake]\n"
+
+[[setup]]
+path = "bakery/cake-4.jpg"
+contents = "[photo: blurry]\n"
+
+[[setup]]
+path = "bakery/cake-5.jpg"
+contents = "[photo: blurry]\n"
+
+[[setup]]
+path = "bakery/cake-6.jpg"
+contents = "[photo: blurry, with thumb]\n"
+
+[[setup]]
+path = "bakery/cake-7.jpg"
+contents = "[photo: plum tart]\n"
+
+[[setup]]
+path = "bakery/cake-10.jpg"
+contents = "[photo: wedding cake, three tiers]\n"
+
+[[setup]]
+path = "bakery/oven-1.log"
+contents = "05:40 Oven on, 220C\n06:10 First loaves in\n"
+
+[[setup]]
+path = "bakery/oven-2.log"
+contents = "05:45 Oven on, 220C\n06:15 First loaves in\n"
+
+[[setup]]
+path = "bakery/oven-3.log"
+contents = "05:40 Oven on, 210C\n06:20 First loaves in\n"
+
+[[setup]]
+path = "bakery/oven-12.log"
+contents = "05:30 Oven on, 220C\n05:55 Extra batch for the market\n"
+
+[[setup]]
+path = "bakery/price-list.txt"
+contents = """Sourdough 4.50
+Rye 4.00
+Scone 2.20
+"""
+
+[[setup]]
+path = "bakery/.till-notes"
+contents = "Count the coins in the till before opening.\n"
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "Patterns instead of names"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+A wildcard is a pattern that stands for many names.
+The shell swaps the pattern for the matching names
+before the command starts. The pattern is called a glob.
+
+  *        any run of characters, even none
+  ?        exactly one character
+  [abc]    one character: a, b or c
+  [0-9]    one digit
+
+  ls *.csv        every name that ends in .csv
+  cat oven-?.log  oven-1.log to oven-9.log, not oven-12.log
+
+The command never sees the *. It only gets the list.
+echo shows you that list, which makes it a safe preview."""
+
+[[steps]]
+step_number = 2
+title = "See what * becomes"
+instruction = "Go into bakery and run echo *.jpg. echo just prints what it's given, so you'll see the list the shell made."
+hints = ["cd bakery, then echo with the pattern.", "Type: cd bakery   then: echo *.jpg"]
+solution = ["cd bakery", "echo *.jpg"]
+
+[steps.step_type.Task]
+goal = "Preview *.jpg with echo"
+success_message = "One pattern, eight names. Whatever command you put in front of *.jpg gets this same list."
+checks = [{ CwdIs = "bakery" }, { Used = "echo" }, { OutputContains = "cake-1.jpg" }, { OutputContains = "cake-6.jpg" }]
+
+[[steps]]
+step_number = 3
+title = "Every order at once"
+instruction = "There are three order files, one per day. Read all three with a single cat and a pattern."
+hints = ["They all start with orders- and end with .csv. Put * where the day goes.", "Type: cat orders-*.csv"]
+solution = ["cat orders-*.csv"]
+
+[steps.step_type.Task]
+goal = "Read all the order files with one pattern"
+success_message = "cat got three names and printed them in order. Ten files or a hundred, it's the same pattern."
+checks = [{ Used = "cat" }, { OutputContains = "Omar,scones" }, { OutputContains = "Sam,croissants" }, { OutputContains = "Ada,sourdough" }]
+
+[[steps]]
+step_number = 4
+title = "Exactly one character"
+instruction = "The oven logs are oven-1, oven-2, oven-3 and oven-12. Preview only the ones with a one-digit number, using ? in the pattern."
+hints = ["? matches exactly one character, so it can't match 12.", "Type: echo oven-?.log"]
+solution = ["echo oven-?.log"]
+
+[steps.step_type.Task]
+goal = "Preview the one-digit oven logs"
+success_message = "oven-12.log stayed out: ? matches one character, never two."
+checks = [{ Used = "echo" }, { OutputContains = "oven-1.log oven-2.log oven-3.log" }]
+
+[[steps]]
+step_number = 5
+title = "Mind the space"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "You mean to type rm *.txt but slip and type rm * .txt (with a space). What happens?"
+options = [
+  "Only the .txt files are removed",
+  "rm gets every name in the folder from *, removes those files, then complains that .txt doesn't exist",
+  "Nothing. The shell spots the typo and asks",
+]
+correct_index = 1
+explanation = "The space made two words: * (every name) and .txt. The shell doesn't guess what you meant. That's why you preview a pattern with echo or ls before you give it to rm."
+
+[[steps]]
+step_number = 6
+title = "Preview first"
+instruction = "Photos 4, 5 and 6 are blurry. Before deleting anything, preview a pattern with echo that matches exactly those three. Use [ ]."
+hints = ["[4-6] matches one character from 4 to 6.", "Type: echo cake-[4-6].jpg"]
+solution = ["echo cake-[4-6].jpg"]
+
+[steps.step_type.Task]
+goal = "Preview exactly cake-4, cake-5 and cake-6"
+success_message = "Three names, the right three. Now you know what rm would get."
+checks = [{ Used = "echo" }, { OutputContains = "cake-4.jpg cake-5.jpg cake-6.jpg\n" }]
+
+[[steps]]
+step_number = 7
+title = "Then delete"
+instruction = "The preview showed the right three. Run rm with the same pattern."
+hints = ["Same pattern, rm instead of echo. The up arrow brings back your last line.", "Type: rm cake-[4-6].jpg"]
+solution = ["rm cake-[4-6].jpg"]
+
+[steps.step_type.Task]
+goal = "Delete cake-4, cake-5 and cake-6, and nothing else"
+success_message = "Three blurry photos gone, the good ones kept. Preview first, then the same pattern with rm: that's the habit."
+checks = [{ Missing = "bakery/cake-4.jpg" }, { Missing = "bakery/cake-5.jpg" }, { Missing = "bakery/cake-6.jpg" }, { FileExists = "bakery/cake-1.jpg" }, { FileExists = "bakery/cake-2.jpg" }, { FileExists = "bakery/cake-3.jpg" }, { FileExists = "bakery/cake-7.jpg" }, { FileExists = "bakery/cake-10.jpg" }]
+
+[[steps]]
+step_number = 8
+title = "When nothing matches"
+instruction = "There are no PDF files here. Run echo *.pdf and see what the shell passes along."
+hints = ["Same as before, with .pdf.", "Type: echo *.pdf"]
+solution = ["echo *.pdf"]
+
+[steps.step_type.Task]
+goal = "See what an unmatched pattern becomes"
+success_message = "No match, so the pattern stayed exactly as typed. rm *.pdf would look for a file literally called *.pdf and say it doesn't exist. (zsh, the usual shell on a Mac, stops instead with 'no matches found'.)"
+checks = [{ Used = "echo" }, { OutputContains = "*.pdf" }]
+
+[[steps]]
+step_number = 9
+title = "What * skips"
+instruction = "echo * shows every name here, except hidden ones: there's a .till-notes file that * leaves out. Show it with a pattern that starts with a dot."
+hints = ["A pattern only matches a leading dot if you type the dot.", "Type: echo .*"]
+solution = ["echo .*"]
+
+[steps.step_type.Task]
+goal = "Match the hidden file with a pattern"
+success_message = "* never matches a name that starts with a dot, so rm * leaves hidden files alone. To match them you have to say so."
+checks = [{ Used = "echo" }, { OutputContains = ".till-notes" }]
+
+[[steps]]
+step_number = 10
+title = "On your own"
+instruction = "No hints. Monday's and Wednesday's orders are delivered. Delete orders-mon.csv and orders-wed.csv with one rm and one pattern. Tuesday's order must stay."
+challenge = true
+solution = ["echo orders-[mw]*.csv", "rm orders-[mw]*.csv"]
+
+[steps.step_type.Task]
+goal = "Delete Monday's and Wednesday's orders, keep Tuesday's"
+success_message = "[mw] matched the m in mon and the w in wed, and nothing in tue. One pattern, exactly the right files."
+checks = [{ Missing = "bakery/orders-mon.csv" }, { Missing = "bakery/orders-wed.csv" }, { FileExists = "bakery/orders-tue.csv" }, { FileExists = "bakery/price-list.txt" }]
+
+[[steps]]
+step_number = 11
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  *        any characters      cat orders-*.csv
+  ?        exactly one         echo oven-?.log
+  [4-6]    one from a set      rm cake-[4-6].jpg
+  .*       hidden names        echo .*
+
+  Preview with echo or ls, then run the real command.
+  No match: the pattern stays as typed (zsh says so).
+  * skips hidden names.
+
+On a real system, cp and mv take a whole pattern too,
+as long as the last name is a folder:
+  cp *.csv backup/       mv cake-*.jpg photos/
+This practice shell's cp and mv still take one file at a
+time, so save those two for a real terminal."""
