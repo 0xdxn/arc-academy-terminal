@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.4] (2026-10-13)
+
+### Safety
+- Commands in the sandbox see only basic session variables (`PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TERM`, `LANG`, `TZ`, `LC_*`), and `$NAME` in real-files lessons and the safe free shell falls back to the same list. Variables you set yourself work as before.
+- The sandbox also keeps out `.pypirc`, `.git-credentials`, Cargo credentials, `~/.local/share/keyrings`, `~/.password-store`, `~/.azure`, `~/.terraform.d` and `~/.mozilla`.
+
 ## [1.1.3] (2026-10-13)
 
 - The test suite runs on machines without an OS sandbox; tests that need one say they were skipped. Nothing else changes from 1.1.2.
