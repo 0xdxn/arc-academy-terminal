@@ -247,9 +247,9 @@ pub const STATUS_MARK: &str = "\u{E000}?\u{E001}";
 
 /// Write an expanded command list back as one line for a real `sh -c`,
 /// quoted so the shell takes every word, value and file name literally and
-/// expands nothing a second time. What a guard checks in this line is what
-/// runs. Only two things stay live: glob characters in a word flagged
-/// `glob` (so `*.txt` still matches files) and [`STATUS_MARK`].
+/// expands nothing a second time: no variables, no `~`, no globs (expand
+/// those before rendering). What a guard checks in this line is what runs.
+/// The one thing left for the shell is [`STATUS_MARK`], written as `"$?"`.
 pub fn render(list: &[(Joiner, Pipeline)]) -> String {
     let mut line = String::new();
     for (i, (joiner, pipeline)) in list.iter().enumerate() {
@@ -269,54 +269,39 @@ pub fn render(list: &[(Joiner, Pipeline)]) -> String {
 fn render_stage(stage: &Stage) -> String {
     let mut parts: Vec<String> = Vec::new();
     for (name, value) in &stage.assignments {
-        parts.push(format!("{name}={}", render_text(value, false)));
+        parts.push(format!("{name}={}", render_text(value)));
     }
     for word in &stage.words {
-        parts.push(render_text(&word.text, word.glob));
+        parts.push(render_text(&word.text));
     }
     for redirect in &stage.redirects {
         parts.push(match redirect {
             Redirect::Out { target, append } => {
-                format!("{} {}", if *append { ">>" } else { ">" }, render_text(target, false))
+                format!("{} {}", if *append { ">>" } else { ">" }, render_text(target))
             }
             Redirect::Err { target, append } => {
-                format!("{} {}", if *append { "2>>" } else { "2>" }, render_text(target, false))
+                format!("{} {}", if *append { "2>>" } else { "2>" }, render_text(target))
             }
             Redirect::ErrToOut => "2>&1".to_string(),
-            Redirect::In(file) => format!("< {}", render_text(file, false)),
+            Redirect::In(file) => format!("< {}", render_text(file)),
         });
     }
     parts.join(" ")
 }
 
-/// One word for the shell: as it is when every character is plain,
-/// otherwise in single quotes, with glob characters left outside the
-/// quotes (live) when `glob` is set
-fn render_text(text: &str, glob: bool) -> String {
+/// One word for the shell: as it is when every character is plain (none
+/// of them means anything to sh), otherwise in single quotes
+fn render_text(text: &str) -> String {
     let plain = |c: char| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/' | ',' | ':' | '+' | '@' | '%');
-    let live = |c: char| glob && matches!(c, '*' | '?' | '[' | ']' | '!' | '^');
     let mut out = String::new();
     for (i, piece) in text.split(STATUS_MARK).enumerate() {
         if i > 0 {
             out.push_str("\"$?\"");
         }
-        if piece.chars().all(|c| plain(c) || live(c)) {
+        if piece.chars().all(plain) {
             out.push_str(piece);
-            continue;
-        }
-        let mut quoted = String::new();
-        for c in piece.chars() {
-            if live(c) {
-                if !quoted.is_empty() {
-                    out.push_str(&single_quote(&std::mem::take(&mut quoted)));
-                }
-                out.push(c);
-            } else {
-                quoted.push(c);
-            }
-        }
-        if !quoted.is_empty() {
-            out.push_str(&single_quote(&quoted));
+        } else {
+            out.push_str(&single_quote(piece));
         }
     }
     if out.is_empty() {
@@ -788,7 +773,8 @@ mod tests {
 
     #[test]
     fn render_keeps_globs_lists_and_redirects() {
-        assert_eq!(rendered("ls *.txt [!a]?"), "ls *.txt [!a]?");
+        // globs are the caller's to expand: render keeps them as text
+        assert_eq!(rendered("ls *.txt [!a]? .*"), "ls '*.txt' '[!a]?' '.*'");
         assert_eq!(rendered("ls '*.txt'"), "ls '*.txt'");
         assert_eq!(
             rendered("grep x a 2>/dev/null | sort >> out && echo ok || echo no; cat < in 2>&1"),

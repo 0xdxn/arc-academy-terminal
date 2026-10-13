@@ -93,7 +93,42 @@ impl PlaygroundGuard {
     /// shows exactly what will run, so `$` is no reason to refuse it.
     /// Command substitution is still refused.
     pub fn check_expanded(&self, command: &str, cwd: &Path) -> GuardVerdict {
+        // Trust the contract only after checking it
+        if !Self::dollars_are_rendered(command) {
+            return GuardVerdict::refuse(
+                "That command still has a '$' the shell would fill in, so it can't be \
+                 checked safely.",
+            );
+        }
         self.check_line(command, cwd, true)
+    }
+
+    /// Every `$` sits inside single quotes, or is exactly `"$?"`, and the
+    /// only backslash is the `\'` that writes a quote inside a quoted word
+    fn dollars_are_rendered(command: &str) -> bool {
+        let mut rest = command;
+        let mut quoted = false;
+        while let Some(c) = rest.chars().next() {
+            if quoted {
+                quoted = c != '\'';
+            } else if c == '\'' {
+                quoted = true;
+            } else if rest.starts_with("\\'") {
+                // the quote inside a quoted word, as in 'it'\''s'
+                rest = &rest[2..];
+                continue;
+            } else if c == '\\' {
+                // nothing else in a rendered line is escaped
+                return false;
+            } else if rest.starts_with("\"$?\"") {
+                rest = &rest[4..];
+                continue;
+            } else if c == '$' {
+                return false;
+            }
+            rest = &rest[c.len_utf8()..];
+        }
+        true
     }
 
     fn check_line(&self, command: &str, cwd: &Path, expanded: bool) -> GuardVerdict {
@@ -781,5 +816,26 @@ mod tests {
         assert!(!guard().check_expanded("cat '/etc/hosts'", &cwd).is_allowed());
         assert!(!guard().check_expanded("echo '$(date)'", &cwd).is_allowed());
         assert!(!guard().check_expanded("rm -rf '/'", &cwd).is_allowed());
+    }
+
+    #[test]
+    fn test_expanded_lines_must_keep_the_contract() {
+        let cwd = lesson_cwd();
+        // hand-made lines a render bug could produce: a $ the shell would fill in
+        for line in [
+            "echo $HOME",
+            "echo \"$HOME\"",
+            "echo 'a'$X'b'",
+            "echo \\$HOME",
+            "echo \"$?x\"",
+            "echo \"$? \"",
+            "cat ${F}",
+            "echo 'ok' $",
+        ] {
+            assert!(!guard().check_expanded(line, &cwd).is_allowed(), "{line} should be refused");
+        }
+        for line in ["echo '$HOME'", "echo 'it'\\''s $5'", "false; echo \"$?\"", "echo 'a'\"$?\"'b'"] {
+            assert!(guard().check_expanded(line, &cwd).is_allowed(), "{line} should be allowed");
+        }
     }
 }

@@ -2921,9 +2921,19 @@ impl App {
             }
         }
 
-        // A line with $ is expanded here and quoted back, so the guard
-        // checks the values it will really use, and that is what runs
-        let expanded = match self.sandbox.expand_for_real(command_str, &pwd) {
+        // The typed line gets the catastrophic-pattern lessons first, so
+        // `rm -rf /` explains itself even if the line can't be parsed
+        if let arct_core::GuardVerdict::Refuse { reason } =
+            arct_core::PlaygroundGuard::check_catastrophic(command_str)
+        {
+            return format!("{}{}\n", icons::warning().content, reason);
+        }
+
+        // Every line is expanded here (variables, ~, globs against the real
+        // playground) and quoted back, so the guard checks exactly what
+        // will run, and that is what runs
+        let root = self.playground.as_ref().expect("ensured above").root().to_path_buf();
+        let expanded = match self.sandbox.expand_for_real(command_str, &cwd, &root) {
             Ok(expanded) => expanded,
             Err(reason) => return format!("{}{}\n", icons::warning().content, reason),
         };
@@ -2931,10 +2941,10 @@ impl App {
 
         // Safety guard: playground containment + catastrophic-pattern denylist
         let verdict = {
-            let playground = self.playground.as_ref().expect("ensured above");
-            let guard = arct_core::PlaygroundGuard::new(playground.root());
+            let guard = arct_core::PlaygroundGuard::new(&root);
             match expanded {
                 Some(_) => guard.check_expanded(to_run, &cwd),
+                // $(...) or backticks: refused, with the reason
                 None => guard.check(command_str, &cwd),
             }
         };

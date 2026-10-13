@@ -10,6 +10,7 @@ use crate::icons;
 use arct_core::shell_syntax::{self, Joiner, Pipeline, Redirect, Word};
 use arct_core::text_filter;
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 /// The sandbox shell's state: variables, script arguments, last status
 #[derive(Debug, Clone)]
@@ -98,24 +99,25 @@ impl SandboxShell {
         }
     }
 
-    /// Real-files mode: a line that uses `$`, expanded here and written
-    /// back fully quoted (`shell_syntax::render`), so the guard checks the
-    /// command as it will really run and the shell expands nothing again.
-    /// `Ok(None)` for a line without `$`, or with `$(...)` or backticks,
-    /// which the guard refuses as it always has. Each part of a list is
-    /// expanded after the ones before it, as sh does: in `X=5; echo $X`
-    /// the echo sees 5.
-    pub(crate) fn expand_for_real(&self, line: &str, pwd: &str) -> Result<Option<String>, String> {
-        if !line.contains('$') || line.contains("$(") || line.contains('`') {
+    /// Real-files mode: every line is expanded here (variables, `~`, globs
+    /// against the real playground) and written back fully quoted
+    /// (`shell_syntax::render`), so the guard checks the command as it
+    /// will really run and the shell expands nothing again. `Ok(None)` for
+    /// a line with `$(...)` or backticks, which the guard refuses as it
+    /// always has. Each part of a list is expanded after the ones before
+    /// it, as sh does: in `X=5; echo $X` the echo sees 5.
+    pub(crate) fn expand_for_real(&self, line: &str, cwd: &Path, root: &Path) -> Result<Option<String>, String> {
+        if line.contains("$(") || line.contains('`') {
             return Ok(None);
         }
+        let pwd = cwd.display().to_string();
         // Variables set earlier in this line (None: unset)
         let mut local: BTreeMap<String, Option<String>> = BTreeMap::new();
         let mut list = Vec::new();
         for (joiner, part) in shell_syntax::split_list(line) {
             let lookup = |name: &str| match local.get(name) {
                 Some(value) => value.clone(),
-                None => self.real_lookup(name, pwd),
+                None => self.real_lookup(name, &pwd),
             };
             let mut parsed = shell_syntax::parse(&part, &lookup)?;
             if parsed.is_empty() {
@@ -124,7 +126,7 @@ impl SandboxShell {
                 }
                 continue;
             }
-            let pipeline = parsed.remove(0).1;
+            let mut pipeline = parsed.remove(0).1;
             // Inside a loop or an if, the shell fills in $ as it goes, so
             // there is no value to check before it runs
             let opens_block = pipeline.stages.iter().any(|stage| {
@@ -133,7 +135,7 @@ impl SandboxShell {
                     .first()
                     .is_some_and(|w| KEYWORDS.contains(&w.text.as_str()) || matches!(w.text.as_str(), "{" | "}" | "!"))
             });
-            if opens_block {
+            if opens_block && line.contains('$') {
                 return Err(
                     "In real-files mode, arct fills in each $ before anything runs, so the safety \
                      guard can check the real values. Inside for, while and if, the shell fills \
@@ -141,6 +143,20 @@ impl SandboxShell {
                      practise this in the simulated sandbox."
                         .to_string(),
                 );
+            }
+            for stage in &mut pipeline.stages {
+                stage.words = stage
+                    .words
+                    .drain(..)
+                    .flat_map(|word| {
+                        let matches = if word.glob { real_glob(&word.text, cwd, root) } else { Vec::new() };
+                        if matches.is_empty() {
+                            vec![Word { glob: false, ..word }]
+                        } else {
+                            matches.into_iter().map(|text| Word { text, glob: false }).collect()
+                        }
+                    })
+                    .collect();
             }
             if let [stage] = pipeline.stages.as_slice() {
                 let words: Vec<&str> = stage.words.iter().map(|w| w.text.as_str()).collect();
@@ -226,6 +242,73 @@ impl SandboxShell {
     pub(crate) fn real_env(&self) -> impl Iterator<Item = (String, String)> + '_ {
         self.real.iter().map(|(k, v)| (k.clone(), v.clone()))
     }
+}
+
+/// Expand a glob against the real files, as sh does, except that it never
+/// matches `.` or `..` (read_dir doesn't list them) and a leading dot only
+/// matches when typed (`glob_match`). Relative patterns are relative to
+/// `cwd`. A pattern whose fixed start already lies outside `root` isn't
+/// expanded at all (the guard refuses it as typed), so this never lists a
+/// folder outside the playground. No match: empty, and the word stays as
+/// typed, as in sh.
+fn real_glob(pattern: &str, cwd: &Path, root: &Path) -> Vec<String> {
+    let is_glob = |part: &str| part.contains(['*', '?', '[']);
+    let absolute = pattern.starts_with('/');
+    let parts: Vec<&str> = pattern.split('/').filter(|p| !p.is_empty()).collect();
+    let fixed: Vec<&str> = parts.iter().copied().take_while(|p| !is_glob(p)).collect();
+    let base = if absolute { PathBuf::from("/") } else { cwd.to_path_buf() };
+    if !lexically_inside(&base.join(fixed.join("/")), root) {
+        return Vec::new();
+    }
+    let join = |prefix: &str, part: &str| match prefix {
+        "" => part.to_string(),
+        "/" => format!("/{part}"),
+        _ => format!("{prefix}/{part}"),
+    };
+    let on_disk = |text: &str| if absolute { PathBuf::from(text) } else { cwd.join(text) };
+    let mut found: Vec<String> = vec![if absolute { "/".to_string() } else { String::new() }];
+    for part in &parts {
+        let mut next = Vec::new();
+        for prefix in &found {
+            if !is_glob(part) {
+                next.push(join(prefix, part));
+                continue;
+            }
+            let dir = if prefix.is_empty() { cwd.to_path_buf() } else { on_disk(prefix) };
+            let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+            let mut names: Vec<String> = entries
+                .filter_map(|e| e.ok()?.file_name().into_string().ok())
+                .filter(|name| shell_syntax::glob_match(part, name))
+                .collect();
+            names.sort();
+            next.extend(names.iter().map(|name| join(prefix, name)));
+        }
+        found = next;
+    }
+    let dirs_only = pattern.ends_with('/');
+    found
+        .into_iter()
+        .filter(|text| std::fs::symlink_metadata(on_disk(text)).is_ok())
+        .filter(|text| !dirs_only || on_disk(text).is_dir())
+        .map(|text| if dirs_only { format!("{text}/") } else { text })
+        .collect()
+}
+
+/// Is `path`, with `.` and `..` resolved by name only, inside `root`?
+fn lexically_inside(path: &Path, root: &Path) -> bool {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                if !out.pop() {
+                    return false;
+                }
+            }
+            std::path::Component::CurDir => {}
+            other => out.push(other),
+        }
+    }
+    out.starts_with(root)
 }
 
 /// Commands the sandbox runs, for `which` and `type`
@@ -1198,9 +1281,11 @@ mod tests {
     fn real_mode_expands_dollar_before_the_guard() {
         let mut shell = SandboxShell::new();
         let pwd = "/home/u/ArcAcademy/playground/variables/tour";
-        let expand = |shell: &SandboxShell, line: &str| shell.expand_for_real(line, pwd);
-        // Lines without $ (and with substitution) are left to the guard
-        assert_eq!(expand(&shell, "ls -l"), Ok(None));
+        let root = Path::new("/home/u/ArcAcademy/playground");
+        let expand = |shell: &SandboxShell, line: &str| shell.expand_for_real(line, Path::new(pwd), root);
+        // Every line is rendered; substitution is left to the guard to refuse
+        assert_eq!(expand(&shell, "ls -l").unwrap().as_deref(), Some("ls -l"));
+        assert_eq!(expand(&shell, "for f in a b; do echo hi; done").unwrap().as_deref(), Some("for f in a b; do echo hi; done"));
         assert_eq!(expand(&shell, "echo $(date)"), Ok(None));
         assert_eq!(expand(&shell, "echo `date`"), Ok(None));
 
@@ -1234,7 +1319,7 @@ mod tests {
         let guard = arct_core::PlaygroundGuard::new(root);
         let mut shell = SandboxShell::new();
         let checked = |shell: &SandboxShell, line: &str| {
-            let line = shell.expand_for_real(line, &cwd.display().to_string()).unwrap().unwrap();
+            let line = shell.expand_for_real(line, &cwd, root).unwrap().unwrap();
             guard.check_expanded(&line, &cwd).is_allowed()
         };
         shell.real.insert("X".into(), "/".into());
@@ -1262,7 +1347,7 @@ mod tests {
         let lesson = playground.enter_lesson("variables", &[]).unwrap();
         std::fs::create_dir_all(lesson.join("tour")).unwrap();
         app.playground = Some(playground);
-        let mut real = async |app: &mut App, line: &str| {
+        let real = async |app: &mut App, line: &str| {
             let cmd = app.analyzer.parse(line).unwrap();
             app.execute_playground_command(&cmd, line).await
         };
@@ -1289,6 +1374,47 @@ mod tests {
         assert!(out.contains("points outside"), "{out}");
         let out = real(&mut app, "for f in *; do echo $f; done").await;
         assert!(out.contains("can't be checked"), "{out}");
+        // globs come from the app, never from sh: no route to .. (read-only probes)
+        real(&mut app, "cd ..").await;
+        std::fs::write(lesson.join(".hidden"), "x").unwrap();
+        let out = real(&mut app, "ls -d .* .?").await;
+        assert!(out.contains(".hidden") && !out.contains("..\n") && !out.contains(".. "), "{out}");
+        let out = real(&mut app, "ls .[.]/.[.]").await;
+        assert!(out.contains("No such file"), "{out}");
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn real_mode_globs_never_reach_dot_or_dotdot() {
+        let root = std::env::temp_dir().join(format!("arct-globs-{}", std::process::id()));
+        let lesson = root.join("lesson");
+        std::fs::create_dir_all(lesson.join("sub")).unwrap();
+        for f in ["a.txt", "b.txt", ".hidden"] {
+            std::fs::write(lesson.join(f), "x").unwrap();
+        }
+        let shell = SandboxShell::new();
+        let guard = arct_core::PlaygroundGuard::new(&root);
+        let at = |cwd: &Path, line: &str| shell.expand_for_real(line, cwd, &root).unwrap().unwrap();
+        let allowed = |cwd: &Path, line: &str| guard.check_expanded(&at(cwd, line), cwd).is_allowed();
+
+        // bash 3.2 would turn these into .. and ../..; here they match
+        // nothing (stay as typed, quoted) or only real hidden files
+        assert_eq!(at(&lesson, "ls .[.]/.[.]"), "ls '.[.]/.[.]'");
+        assert_eq!(at(&lesson, "ls -d .?"), "ls -d '.?'");
+        assert_eq!(at(&lesson, "ls -d .*"), "ls -d .hidden");
+        assert_eq!(at(&root, "chmod -R 000 .*"), "chmod -R 000 '.*'");
+        assert_eq!(at(&lesson, "ls *.txt s*/"), "ls a.txt b.txt sub/");
+        assert_eq!(at(&lesson, "cat 'a*'.txt"), "cat 'a*.txt'");
+        // a .. typed out is still visible to the guard
+        assert_eq!(at(&lesson.join("sub"), "ls ../*.txt"), "ls ../a.txt ../b.txt");
+        assert!(allowed(&lesson.join("sub"), "ls ../*.txt"));
+        // nothing outside the playground is listed, and the guard refuses it as typed
+        assert_eq!(at(&root, "ls ../*"), "ls '../*'");
+        assert!(!allowed(&root, "ls ../*"));
+        assert_eq!(at(&lesson, "ls /etc/*"), "ls '/etc/*'");
+        assert!(!allowed(&lesson, "ls /etc/*"));
+        assert!(!allowed(&lesson, "ls ~/*"));
 
         std::fs::remove_dir_all(&root).unwrap();
     }
@@ -1301,7 +1427,7 @@ mod tests {
         shell.real.insert("LIST".into(), "encore songs.txt".into());
         shell.real.insert("TRICK".into(), "$(touch pwned)".into());
         let line = shell
-            .expand_for_real("echo \"Starlight Road\" > \"$LIST\"; echo $TRICK; X=5; echo \"$X\"", "/p")
+            .expand_for_real("echo \"Starlight Road\" > \"$LIST\"; echo $TRICK; X=5; echo \"$X\"", &dir, &dir)
             .unwrap()
             .unwrap();
         let out = std::process::Command::new("sh")
