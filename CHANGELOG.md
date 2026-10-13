@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.1.0] (unreleased)
+## [1.1.0] (2026-10-13)
 
 ### Safety
 - Safe mode, on by default: the free shell runs inside `~/ArcAcademy/home` (created with starter files) behind the safety guard. Turn it off in settings; catastrophic commands are still refused everywhere.
