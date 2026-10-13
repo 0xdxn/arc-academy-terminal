@@ -505,14 +505,40 @@ mod tests {
         assert_eq!(config.theme.default_theme, "Arc Dark");
     }
 
-    fn temp_config_path(name: &str) -> PathBuf {
+    /// A config path in a fresh temp directory, removed when the test ends
+    struct TempConfig {
+        dir: PathBuf,
+        path: PathBuf,
+    }
+
+    impl std::ops::Deref for TempConfig {
+        type Target = PathBuf;
+        fn deref(&self) -> &PathBuf {
+            &self.path
+        }
+    }
+
+    impl AsRef<std::path::Path> for TempConfig {
+        fn as_ref(&self) -> &std::path::Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempConfig {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    fn temp_config_path(name: &str) -> TempConfig {
         let dir = std::env::temp_dir().join(format!(
             "arct-config-test-{}-{}",
             name,
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&dir);
-        dir.join("config.toml")
+        let path = dir.join("config.toml");
+        TempConfig { dir, path }
     }
 
     #[test]
