@@ -1,12 +1,12 @@
 //! Progress dashboard panel for displaying user statistics
 //!
 //! Visual-first: gauges for per-difficulty completion and XP-to-next-level,
-//! plus a 14-day streak calendar strip.
+//! a 14-day activity strip, and where each track stands.
 
 use crate::icons;
 use crate::level;
 use crate::theme::Theme;
-use arct_core::{Difficulty, LessonLibrary, UserStats};
+use arct_core::{Difficulty, LessonLibrary, Track, UserStats};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -57,7 +57,8 @@ impl ProgressPanel {
                 Constraint::Length(5), // Overview stats
                 Constraint::Length(3), // XP / level gauge
                 Constraint::Length(8), // Per-difficulty gauges
-                Constraint::Length(4), // Streak calendar strip
+                Constraint::Length(4), // Activity strip
+                Constraint::Length(4), // Tracks
                 Constraint::Min(1),    // Spacer
                 Constraint::Length(1), // Controls help
             ])
@@ -67,6 +68,7 @@ impl ProgressPanel {
         self.render_level_gauge(frame, chunks[1], theme, stats);
         self.render_difficulty_gauges(frame, chunks[2], theme, stats, library);
         self.render_streak_strip(frame, chunks[3], theme, stats, activity);
+        self.render_tracks(frame, chunks[4], theme, stats, library);
 
         // Controls help
         let controls = Paragraph::new(vec![Line::from(vec![
@@ -76,7 +78,7 @@ impl ProgressPanel {
             Span::raw(" to close"),
         ])])
         .alignment(Alignment::Center);
-        frame.render_widget(controls, chunks[5]);
+        frame.render_widget(controls, chunks[6]);
     }
 
     /// Headline numbers: streak, lessons, commands, achievements, time
@@ -85,13 +87,12 @@ impl ProgressPanel {
             Line::from(""),
             Line::from(vec![
                 Span::raw("  "),
-                Span::styled("streak ", theme.style_warning()),
                 Span::styled(
-                    format!("{} day streak", stats.current_streak),
+                    crate::streak::short(stats.streak_status(arct_core::local_today())),
                     theme.style_accent().add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!("  (best: {} days)", stats.longest_streak),
+                    format!("  (best run: {})", stats.longest_streak),
                     theme.style_dim(),
                 ),
                 Span::raw("    "),
@@ -263,14 +264,42 @@ impl ProgressPanel {
             _ => {
                 lines.push(Line::from(vec![Span::styled(
                     format!(
-                        "  No activity data yet — current streak: {} days",
-                        stats.current_streak
+                        "  No activity data yet. {}",
+                        crate::streak::describe(stats.streak_status(arct_core::local_today()))
                     ),
                     theme.style_dim(),
                 )]));
             }
         }
 
+        frame.render_widget(Paragraph::new(lines), area);
+    }
+
+    /// One line per track: lessons done, mastery, certificate when earned
+    fn render_tracks(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        theme: &Theme,
+        stats: &UserStats,
+        library: &LessonLibrary,
+    ) {
+        let mut lines = vec![Line::from(vec![Span::styled("  Tracks", theme.style_header())])];
+        for track in [Track::Explorer, Track::Operator] {
+            let progress = stats.track_progress(library, track);
+            if progress.total == 0 {
+                continue;
+            }
+            let style = if progress.is_complete() {
+                theme.style_success()
+            } else {
+                theme.style_normal()
+            };
+            lines.push(Line::from(vec![Span::styled(
+                format!("  {}", crate::streak::track_line(&progress)),
+                style,
+            )]));
+        }
         frame.render_widget(Paragraph::new(lines), area);
     }
 

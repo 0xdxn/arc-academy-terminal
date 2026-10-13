@@ -255,12 +255,13 @@ impl ContextPanel {
         ])));
         items.push(ListItem::new(Line::from("")));
 
-        // Current streak with fire emoji
+        // Learning days (rest days allowed; see streak.rs)
         items.push(ListItem::new(Line::from(vec![
             Span::raw("  "),
-            Span::styled("", theme.style_accent()),
-            Span::raw(" Streak: "),
-            Span::styled(format!("{} days", user_stats.current_streak), theme.style_accent()),
+            Span::styled(
+                crate::streak::short(user_stats.streak_status(arct_core::local_today())),
+                theme.style_accent(),
+            ),
         ])));
 
         // Lessons completed
@@ -344,14 +345,6 @@ impl ContextPanel {
                 Span::styled("  Learned: ", theme.style_normal()),
                 Span::styled(format!("{} unique", summary.unique_commands), theme.style_success()),
             ])));
-
-            // Streak
-            if summary.streak > 0 {
-                items.push(ListItem::new(Line::from(vec![
-                    Span::styled("  Streak: ", theme.style_normal()),
-                    Span::styled(format!("{} day streak", summary.streak), theme.style_warning()),
-                ])));
-            }
 
             // Top commands (if any)
             if !summary.top_commands.is_empty() {

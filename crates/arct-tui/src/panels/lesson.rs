@@ -25,6 +25,10 @@ pub struct LessonPanel {
     wrong_answers: usize,
     /// Misses on the current step: each one reveals the next hint rung
     step_misses: usize,
+    /// The answer was shown at some point in this run
+    answer_revealed: bool,
+    /// This run was resumed from a save, so its earlier steps are unknown
+    resumed: bool,
 }
 
 impl LessonPanel {
@@ -39,6 +43,8 @@ impl LessonPanel {
             started_at: None,
             wrong_answers: 0,
             step_misses: 0,
+            answer_revealed: false,
+            resumed: false,
         }
     }
 
@@ -52,6 +58,8 @@ impl LessonPanel {
         self.started_at = Some(std::time::Instant::now());
         self.wrong_answers = 0;
         self.step_misses = 0;
+        self.answer_revealed = false;
+        self.resumed = false;
     }
 
     /// Resume a previously started lesson at a saved step.
@@ -63,6 +71,7 @@ impl LessonPanel {
             let max = lesson.steps.len().saturating_sub(1);
             self.current_step_index = step_index.min(max);
             self.step_misses = 0;
+            self.resumed = true;
             self.completed_steps = completed_steps
                 .into_iter()
                 .filter(|&s| s < lesson.steps.len())
@@ -80,6 +89,8 @@ impl LessonPanel {
         self.started_at = Some(std::time::Instant::now());
         self.wrong_answers = 0;
         self.step_misses = 0;
+        self.answer_revealed = false;
+        self.resumed = false;
     }
 
     /// Current (0-based) step index
@@ -102,6 +113,12 @@ impl LessonPanel {
     /// Wrong answers recorded during this lesson run
     pub fn wrong_answers(&self) -> usize {
         self.wrong_answers
+    }
+
+    /// This run counts toward mastery: it was played from the start and
+    /// the answer was never revealed (hints are fine)
+    pub fn mastered_run(&self) -> bool {
+        !self.answer_revealed && !self.resumed
     }
 
     /// Get current step
@@ -141,6 +158,9 @@ impl LessonPanel {
         if !result.is_success() {
             self.wrong_answers += 1;
             self.step_misses += 1;
+            if !step.challenge && self.step_misses > step.hint_ladder().len() {
+                self.answer_revealed = true;
+            }
             result = Self::coach(&step, result, self.step_misses);
         }
 
@@ -602,6 +622,34 @@ mod ladder_tests {
         assert!(msg.contains("pwd"), "third miss shows the answer: {msg}");
 
         assert!(panel.validate_current_step("pwd").is_success());
+    }
+
+    #[test]
+    fn hints_keep_mastery_the_answer_does_not() {
+        let mut panel = LessonPanel::new();
+        panel.load_lesson(lesson(false));
+        panel.validate_current_step("ls");
+        panel.validate_current_step("ls");
+        assert!(panel.mastered_run(), "two hint rungs still count");
+        panel.validate_current_step("ls");
+        assert!(!panel.mastered_run(), "seeing the answer doesn't");
+
+        panel.restart();
+        assert!(panel.mastered_run(), "a fresh run can earn it again");
+    }
+
+    #[test]
+    fn challenge_misses_keep_mastery_and_resumed_runs_dont_count() {
+        let mut panel = LessonPanel::new();
+        panel.load_lesson(lesson(true));
+        for _ in 0..5 {
+            panel.validate_current_step("ls");
+        }
+        assert!(panel.mastered_run(), "a challenge never shows the answer");
+
+        panel.load_lesson(lesson(false));
+        panel.resume_at(0, vec![]);
+        assert!(!panel.mastered_run());
     }
 
     #[test]

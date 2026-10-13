@@ -27,7 +27,7 @@ const WORDMARK: [&str; 4] = [
 /// module stays a pure view)
 pub struct DashboardData {
     pub user_name: Option<String>,
-    pub streak_days: usize,
+    pub streak: arct_core::StreakStatus,
     pub level: level::LevelInfo,
     pub lessons_completed: usize,
     pub lessons_total: usize,
@@ -69,21 +69,15 @@ pub fn render(frame: &mut Frame, area: Rect, theme: &Theme, data: &DashboardData
         lines.push(Line::from(""));
     }
 
-    // Greeting + streak — the hook for returning users
+    // Greeting + learning days
     let greeting = match &data.user_name {
         Some(name) => format!("  Welcome back, {}!", name),
         None => "  Welcome back!".to_string(),
     };
-    let streak_text = match data.streak_days {
-        0 => " Start your streak today!".to_string(),
-        1 => "  1 day streak — keep it going!".to_string(),
-        n => format!("  {} day streak — on fire!", n),
-    };
     lines.push(Line::from(vec![
         Span::styled(greeting, theme.style_normal().add_modifier(Modifier::BOLD)),
         Span::raw("   "),
-        Span::styled("streak", theme.style_warning()),
-        Span::styled(streak_text, theme.style_warning()),
+        Span::styled(crate::streak::describe(data.streak), theme.style_warning()),
     ]));
     lines.push(Line::from(""));
 

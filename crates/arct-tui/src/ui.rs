@@ -404,7 +404,7 @@ fn draw_content(frame: &mut Frame, area: Rect, app: &mut App) {
     if app.show_dashboard {
         let data = dashboard::DashboardData {
             user_name: app.config.general.user_name.clone(),
-            streak_days: app.user_stats.current_streak,
+            streak: app.user_stats.streak_status(arct_core::local_today()),
             level: crate::level::level_info(&app.user_stats),
             lessons_completed: app.completed_lessons.len(),
             lessons_total: app.lesson_library.all().len(),

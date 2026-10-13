@@ -115,7 +115,7 @@ impl Default for UserAchievements {
 /// Get all available achievements in the system
 pub fn all_achievements() -> Vec<Achievement> {
     vec![
-        // ===== LESSON-BASED ACHIEVEMENTS (10) =====
+        // ===== LESSON-BASED ACHIEVEMENTS (14) =====
         Achievement {
             id: "first_steps".to_string(),
             title: "First Steps".to_string(),
@@ -171,6 +171,33 @@ pub fn all_achievements() -> Vec<Achievement> {
             points: 150,
         },
         Achievement {
+            id: "station_ace".to_string(),
+            title: "Station Ace".to_string(),
+            description: "Finish every Explorer lesson without needing the answer.".to_string(),
+            icon: "\u{f005}", // Star
+            category: AchievementCategory::Lessons,
+            condition: UnlockCondition::CompleteChallenge("explorer_mastered".to_string()),
+            points: 200,
+        },
+        Achievement {
+            id: "operator".to_string(),
+            title: "Operator".to_string(),
+            description: "Finish every Operator lesson.".to_string(),
+            icon: "\u{f120}", // Terminal
+            category: AchievementCategory::Lessons,
+            condition: UnlockCondition::CompleteChallenge("operator_complete".to_string()),
+            points: 300,
+        },
+        Achievement {
+            id: "senior_operator".to_string(),
+            title: "Senior Operator".to_string(),
+            description: "Finish every Operator lesson without needing the answer.".to_string(),
+            icon: "\u{f091}", // Trophy
+            category: AchievementCategory::Lessons,
+            condition: UnlockCondition::CompleteChallenge("operator_mastered".to_string()),
+            points: 400,
+        },
+        Achievement {
             id: "beginner_complete".to_string(),
             title: "Beginner Graduate".to_string(),
             description: "Complete all beginner lessons. You've mastered the fundamentals!".to_string(),
@@ -216,11 +243,11 @@ pub fn all_achievements() -> Vec<Achievement> {
             points: 20,
         },
 
-        // ===== STREAK-BASED ACHIEVEMENTS (8) =====
+        // ===== STREAK-BASED ACHIEVEMENTS (7) =====
         Achievement {
             id: "three_day_streak".to_string(),
             title: "Three Day Streak".to_string(),
-            description: "Use Arc Academy for 3 days in a row. Consistency is key!".to_string(),
+            description: "Learn on 3 days without a long break.".to_string(),
             icon: "\u{f06d}", // Fire
             category: AchievementCategory::Streaks,
             condition: UnlockCondition::MaintainStreak(3),
@@ -228,8 +255,8 @@ pub fn all_achievements() -> Vec<Achievement> {
         },
         Achievement {
             id: "week_warrior".to_string(),
-            title: "Week Warrior".to_string(),
-            description: "Maintain a 7-day learning streak. You're building a great habit!".to_string(),
+            title: "Seven Days".to_string(),
+            description: "Learn on 7 days without a long break.".to_string(),
             icon: "\u{f073}", // Calendar
             category: AchievementCategory::Streaks,
             condition: UnlockCondition::MaintainStreak(7),
@@ -237,8 +264,8 @@ pub fn all_achievements() -> Vec<Achievement> {
         },
         Achievement {
             id: "two_week_streak".to_string(),
-            title: "Fortnight Focus".to_string(),
-            description: "Keep learning for 14 days straight. Your dedication is inspiring!".to_string(),
+            title: "Fourteen Days".to_string(),
+            description: "Learn on 14 days without a long break.".to_string(),
             icon: "\u{f274}", // Calendar check
             category: AchievementCategory::Streaks,
             condition: UnlockCondition::MaintainStreak(14),
@@ -246,8 +273,8 @@ pub fn all_achievements() -> Vec<Achievement> {
         },
         Achievement {
             id: "month_master".to_string(),
-            title: "Month Master".to_string(),
-            description: "Achieve a 30-day streak. You've made learning a lifestyle!".to_string(),
+            title: "Thirty Days".to_string(),
+            description: "Learn on 30 days without a long break.".to_string(),
             icon: "\u{f1ec}", // Trophy variant
             category: AchievementCategory::Streaks,
             condition: UnlockCondition::MaintainStreak(30),
@@ -255,8 +282,8 @@ pub fn all_achievements() -> Vec<Achievement> {
         },
         Achievement {
             id: "hundred_day_hero".to_string(),
-            title: "Hundred Day Hero".to_string(),
-            description: "Maintain a 100-day streak. You're a legend!".to_string(),
+            title: "Hundred Days".to_string(),
+            description: "Learn on 100 days without a long break.".to_string(),
             icon: "\u{f2db}", // Hundred points
             category: AchievementCategory::Streaks,
             condition: UnlockCondition::MaintainStreak(100),
@@ -278,15 +305,6 @@ pub fn all_achievements() -> Vec<Achievement> {
             icon: "\u{f54c}", // Sun rising
             category: AchievementCategory::Streaks,
             condition: UnlockCondition::TimeOfDay { start: 5, end: 8 },
-            points: 25,
-        },
-        Achievement {
-            id: "night_owl".to_string(),
-            title: "Night Owl".to_string(),
-            description: "Learn after 10 PM. Burning the midnight oil!".to_string(),
-            icon: "\u{f186}", // Moon
-            category: AchievementCategory::Streaks,
-            condition: UnlockCondition::TimeOfDay { start: 22, end: 24 },
             points: 25,
         },
 
@@ -440,7 +458,7 @@ mod tests {
     #[test]
     fn test_achievement_count() {
         let achievements = all_achievements();
-        assert_eq!(achievements.len(), 32, "Should have exactly 32 achievements");
+        assert_eq!(achievements.len(), 34, "Should have exactly 34 achievements");
     }
 
     #[test]
@@ -452,8 +470,8 @@ mod tests {
         let challenges = achievements.iter().filter(|a| matches!(a.category, AchievementCategory::Challenges)).count();
         let exploration = achievements.iter().filter(|a| matches!(a.category, AchievementCategory::Exploration)).count();
 
-        assert_eq!(lessons, 11, "Should have 11 lesson achievements");
-        assert_eq!(streaks, 8, "Should have 8 streak achievements");
+        assert_eq!(lessons, 14, "Should have 14 lesson achievements");
+        assert_eq!(streaks, 7, "Should have 7 streak achievements");
         assert_eq!(commands, 5, "Should have 5 command achievements");
         assert_eq!(challenges, 3, "Should have 3 challenge achievements");
         assert_eq!(exploration, 5, "Should have 5 exploration achievements");

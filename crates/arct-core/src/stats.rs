@@ -4,8 +4,8 @@
 //! manages achievement unlocking logic.
 
 use crate::achievement::{Achievement, UnlockCondition, UserAchievements, all_achievements};
-use crate::lesson::{Difficulty, LessonLibrary};
-use chrono::{DateTime, Datelike, NaiveDate, Timelike, Utc, Weekday};
+use crate::lesson::{Difficulty, LessonLibrary, Track};
+use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike, Utc, Weekday};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
@@ -45,6 +45,58 @@ pub struct UserStats {
     pub achievements: UserAchievements,
     /// Completed challenges (for exploration/challenge achievements)
     pub completed_challenges: HashSet<String>,
+    /// Lessons finished in a run where the answer was never revealed.
+    /// `#[serde(default)]` keeps older save files loadable.
+    #[serde(default)]
+    pub lessons_mastered: HashSet<String>,
+}
+
+/// Days a learner can take off between learning days without ending
+/// their streak. A missed day is a rest day, not a failure.
+pub const REST_DAYS: i64 = 2;
+
+/// Where a learner's streak stands on a given day
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreakStatus {
+    /// No learning days yet
+    NotStarted,
+    /// Learned today; `days` learning days in this run
+    LearnedToday { days: usize },
+    /// Resting: the run of `days` continues if they learn within `rest_days_left` days
+    Resting { days: usize, rest_days_left: i64 },
+    /// The last run ended after a long break; the next learning day starts a new one
+    WelcomeBack { best: usize },
+}
+
+/// One track's progress against a lesson library
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrackProgress {
+    pub track: Track,
+    /// Lessons in the track, in library order
+    pub total: usize,
+    /// Titles of finished lessons, in library order
+    pub completed: Vec<String>,
+    /// Titles of lessons still to do, in library order
+    pub remaining: Vec<String>,
+    /// Finished lessons that were also mastered
+    pub mastered: usize,
+}
+
+impl TrackProgress {
+    /// Every lesson in the track is finished (and the track has lessons)
+    pub fn is_complete(&self) -> bool {
+        self.total > 0 && self.remaining.is_empty()
+    }
+
+    /// Every lesson in the track was finished without needing the answer
+    pub fn is_mastered(&self) -> bool {
+        self.is_complete() && self.mastered == self.total
+    }
+}
+
+/// Today's date where the learner is (streaks follow the learner's own days)
+pub fn local_today() -> NaiveDate {
+    Local::now().date_naive()
 }
 
 impl UserStats {
@@ -57,37 +109,96 @@ impl UserStats {
             total_commands_executed: 0,
             current_streak: 0,
             longest_streak: 0,
-            last_active_date: Utc::now().date_naive(),
+            last_active_date: local_today(),
             total_time_seconds: 0,
             session_start: Utc::now(),
             achievements: UserAchievements::new(),
             completed_challenges: HashSet::new(),
+            lessons_mastered: HashSet::new(),
         }
     }
 
-    /// Update the streak based on current date
+    /// Count today as a learning day. Call when the learner actually does
+    /// something (runs a command, passes a step), not merely on start-up.
     pub fn update_streak(&mut self) {
-        let today = Utc::now().date_naive();
-        let days_since_last = (today - self.last_active_date).num_days();
+        self.record_learning_day(local_today());
+    }
 
-        match days_since_last {
-            0 => {
-                // Same day, streak continues
+    /// Count `today` as a learning day. Up to `REST_DAYS` days off between
+    /// learning days keep the run going; a longer break starts a new run.
+    /// The best run is always kept.
+    pub fn record_learning_day(&mut self, today: NaiveDate) {
+        let gap = (today - self.last_active_date).num_days();
+        if self.current_streak == 0 {
+            self.current_streak = 1;
+        } else if gap <= 0 {
+            // Same day (or the clock moved back): nothing to add
+            return;
+        } else if gap <= REST_DAYS + 1 {
+            self.current_streak += 1;
+        } else {
+            self.current_streak = 1;
+        }
+        self.last_active_date = today;
+        self.longest_streak = self.longest_streak.max(self.current_streak);
+    }
+
+    /// End a run whose rest days have run out, without counting `today` as
+    /// a learning day. Call on start-up so screens never show a run that
+    /// has already ended.
+    pub fn settle_streak(&mut self, today: NaiveDate) {
+        if self.current_streak > 0 && (today - self.last_active_date).num_days() > REST_DAYS + 1 {
+            self.current_streak = 0;
+        }
+    }
+
+    /// Where the streak stands on `today`
+    pub fn streak_status(&self, today: NaiveDate) -> StreakStatus {
+        let gap = (today - self.last_active_date).num_days();
+        if self.current_streak == 0 {
+            if self.longest_streak > 0 {
+                StreakStatus::WelcomeBack { best: self.longest_streak }
+            } else {
+                StreakStatus::NotStarted
             }
-            1 => {
-                // Next day, increment streak
-                self.current_streak += 1;
-                self.last_active_date = today;
-                if self.current_streak > self.longest_streak {
-                    self.longest_streak = self.current_streak;
+        } else if gap <= 0 {
+            StreakStatus::LearnedToday { days: self.current_streak }
+        } else if gap <= REST_DAYS + 1 {
+            StreakStatus::Resting {
+                days: self.current_streak,
+                rest_days_left: REST_DAYS + 1 - gap,
+            }
+        } else {
+            StreakStatus::WelcomeBack { best: self.longest_streak }
+        }
+    }
+
+    /// Record that a lesson was finished without the answer being revealed
+    pub fn record_lesson_mastered(&mut self, lesson_id: String) {
+        self.lessons_mastered.insert(lesson_id);
+    }
+
+    /// Progress through one track of the given library
+    pub fn track_progress(&self, library: &LessonLibrary, track: Track) -> TrackProgress {
+        let mut progress = TrackProgress {
+            track,
+            total: 0,
+            completed: Vec::new(),
+            remaining: Vec::new(),
+            mastered: 0,
+        };
+        for lesson in library.all().into_iter().filter(|l| l.track == track) {
+            progress.total += 1;
+            if self.lessons_completed.contains(&lesson.id) {
+                progress.completed.push(lesson.title.clone());
+                if self.lessons_mastered.contains(&lesson.id) {
+                    progress.mastered += 1;
                 }
-            }
-            _ => {
-                // Streak broken, reset to 1
-                self.current_streak = 1;
-                self.last_active_date = today;
+            } else {
+                progress.remaining.push(lesson.title.clone());
             }
         }
+        progress
     }
 
     /// Record completion of a lesson
@@ -201,7 +312,7 @@ impl UserStats {
                 self.completed_challenges.contains(challenge_id)
             }
             UnlockCondition::TimeOfDay { start, end } => {
-                let current_hour = Utc::now().hour() as u8;
+                let current_hour = Local::now().hour() as u8;
                 if start < end {
                     current_hour >= *start && current_hour < *end
                 } else {
@@ -210,7 +321,7 @@ impl UserStats {
                 }
             }
             UnlockCondition::IsWeekend => {
-                let weekday = Utc::now().weekday();
+                let weekday = Local::now().weekday();
                 weekday == Weekday::Sat || weekday == Weekday::Sun
             }
         }
@@ -532,6 +643,116 @@ mod tests {
         let summary = stats.progress_summary();
         assert_eq!(summary.total_lessons_completed, 1);
         assert_eq!(summary.unique_commands_used, 1);
+    }
+
+    fn day(n: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 10, n).unwrap()
+    }
+
+    #[test]
+    fn first_learning_day_counts() {
+        let mut stats = UserStats::new();
+        stats.last_active_date = day(1);
+        stats.record_learning_day(day(1));
+        assert_eq!(stats.current_streak, 1);
+        assert_eq!(stats.streak_status(day(1)), StreakStatus::LearnedToday { days: 1 });
+    }
+
+    #[test]
+    fn rest_days_keep_the_streak() {
+        let mut stats = UserStats::new();
+        stats.last_active_date = day(1);
+        stats.record_learning_day(day(1));
+        stats.record_learning_day(day(1)); // same day twice
+        stats.record_learning_day(day(2));
+        assert_eq!(stats.current_streak, 2);
+
+        // Two days off, then back: the run continues
+        assert_eq!(
+            stats.streak_status(day(4)),
+            StreakStatus::Resting { days: 2, rest_days_left: 1 }
+        );
+        // Day 5 is the last day that keeps it going
+        assert_eq!(
+            stats.streak_status(day(5)),
+            StreakStatus::Resting { days: 2, rest_days_left: 0 }
+        );
+        stats.settle_streak(day(5));
+        assert_eq!(stats.current_streak, 2);
+        stats.record_learning_day(day(5));
+        assert_eq!(stats.current_streak, 3);
+        assert_eq!(stats.longest_streak, 3);
+    }
+
+    #[test]
+    fn a_long_break_starts_a_new_run_and_keeps_the_best() {
+        let mut stats = UserStats::new();
+        stats.last_active_date = day(1);
+        for d in 1..=4 {
+            stats.record_learning_day(day(d));
+        }
+        assert_eq!(stats.current_streak, 4);
+
+        // Three days off is past the rest allowance
+        stats.settle_streak(day(8));
+        assert_eq!(stats.current_streak, 0);
+        assert_eq!(stats.streak_status(day(8)), StreakStatus::WelcomeBack { best: 4 });
+        stats.record_learning_day(day(8));
+        assert_eq!(stats.current_streak, 1);
+        assert_eq!(stats.longest_streak, 4);
+    }
+
+    #[test]
+    fn clock_moving_back_changes_nothing() {
+        let mut stats = UserStats::new();
+        stats.last_active_date = day(5);
+        stats.record_learning_day(day(5));
+        stats.record_learning_day(day(6));
+        stats.record_learning_day(day(3));
+        assert_eq!(stats.current_streak, 2);
+        assert_eq!(stats.last_active_date, day(6));
+    }
+
+    #[test]
+    fn track_progress_counts_completion_and_mastery() {
+        let library = LessonLibrary::new();
+        let explorer: Vec<_> = library
+            .all()
+            .into_iter()
+            .filter(|l| l.track == Track::Explorer)
+            .map(|l| l.id.clone())
+            .collect();
+        assert!(explorer.len() > 1);
+
+        let mut stats = UserStats::new();
+        let fresh = stats.track_progress(&library, Track::Explorer);
+        assert_eq!(fresh.total, explorer.len());
+        assert!(fresh.completed.is_empty());
+        assert!(!fresh.is_complete());
+
+        for id in &explorer {
+            stats.lessons_completed.insert(id.clone());
+        }
+        stats.record_lesson_mastered(explorer[0].clone());
+        let done = stats.track_progress(&library, Track::Explorer);
+        assert!(done.is_complete());
+        assert!(!done.is_mastered());
+        assert_eq!(done.mastered, 1);
+
+        for id in &explorer {
+            stats.record_lesson_mastered(id.clone());
+        }
+        assert!(stats.track_progress(&library, Track::Explorer).is_mastered());
+        // The other track is untouched
+        assert!(!stats.track_progress(&library, Track::Operator).is_complete());
+    }
+
+    #[test]
+    fn old_save_files_without_mastery_still_load() {
+        let mut value = serde_json::to_value(UserStats::new()).unwrap();
+        value.as_object_mut().unwrap().remove("lessons_mastered");
+        let stats: UserStats = serde_json::from_value(value).unwrap();
+        assert!(stats.lessons_mastered.is_empty());
     }
 
     #[test]

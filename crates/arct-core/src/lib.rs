@@ -32,6 +32,6 @@ pub use context::{Context, ContextDetector};
 pub use types::{Error, Result};
 pub use virtual_fs::{VirtualFileSystem, DirEntry, TreeNode};
 pub use achievement::{Achievement, AchievementCategory, UnlockCondition, UserAchievements, all_achievements};
-pub use stats::{UserStats, ProgressSummary};
+pub use stats::{UserStats, ProgressSummary, StreakStatus, TrackProgress, REST_DAYS, local_today};
 pub use challenge::{Challenge, ChallengeType, ChallengeStep, ChallengeManager, all_daily_challenges, all_weekly_challenges};
 pub use recommendation::{LessonRecommendation, RecommendationReason, RecommendationEngine};

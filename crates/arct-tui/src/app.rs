@@ -318,9 +318,11 @@ impl App {
             String::new()
         };
 
-        // Load user stats from session and update streak
+        // Load user stats from session. Opening the app doesn't count as a
+        // learning day (doing something does); only end a run whose rest
+        // days have run out, so no screen shows a run that already ended.
         let mut user_stats = session_data.user_stats;
-        user_stats.update_streak(); // Update streak on app start
+        user_stats.settle_streak(arct_core::local_today());
         // session_start is #[serde(skip)] and deserializes to the epoch;
         // reset it so the first update_session_time() doesn't count decades
         user_stats.session_start = chrono::Utc::now();
@@ -1877,7 +1879,7 @@ impl App {
         // If in lesson mode with empty command, skip parsing and go to validation
         if self.lesson_mode && command_str.is_empty() {
             // Extract lesson completion info outside the borrow scope
-            let mut lesson_completed_info: Option<(String, arct_core::Difficulty, u32, u64, usize)> =
+            let mut lesson_completed_info: Option<(String, arct_core::Difficulty, u32, u64, usize, bool)> =
                 None;
             let mut step_advanced = false;
 
@@ -1903,6 +1905,7 @@ impl App {
                                 lesson.estimated_minutes,
                                 lesson_panel.elapsed_seconds(),
                                 lesson_panel.wrong_answers(),
+                                lesson_panel.mastered_run(),
                             ));
                         }
                         self.last_output.push_str(&format!("\n{}Congratulations! You've completed this lesson!\n\nPress Ctrl+L to exit lesson mode or 'm' to select another lesson.\n", icons::celebration().content));
@@ -1924,9 +1927,10 @@ impl App {
             }
 
             // Process lesson completion outside the borrow scope
-            if let Some((lesson_id, difficulty, estimated, elapsed, wrong)) = lesson_completed_info
+            if let Some((lesson_id, difficulty, estimated, elapsed, wrong, mastered)) =
+                lesson_completed_info
             {
-                self.record_lesson_completion(lesson_id, difficulty, estimated, elapsed, wrong);
+                self.record_lesson_completion(lesson_id, difficulty, estimated, elapsed, wrong, mastered);
             }
 
             return Ok(());
@@ -1964,7 +1968,7 @@ impl App {
                 .unwrap_or(false);
 
             // Extract lesson completion info outside the borrow scope
-            let mut lesson_completed_info: Option<(String, arct_core::Difficulty, u32, u64, usize)> =
+            let mut lesson_completed_info: Option<(String, arct_core::Difficulty, u32, u64, usize, bool)> =
                 None;
             let mut step_advanced = false;
 
@@ -2016,6 +2020,7 @@ impl App {
                                 lesson.estimated_minutes,
                                 lesson_panel.elapsed_seconds(),
                                 lesson_panel.wrong_answers(),
+                                lesson_panel.mastered_run(),
                             ));
                         }
                         output.push_str(&format!("{}Congratulations! You've completed this lesson!\n\nPress Ctrl+L to exit lesson mode or 'm' to select another lesson.\n", icons::celebration().content));
@@ -2069,9 +2074,10 @@ impl App {
             }
 
             // Process lesson completion outside the borrow scope
-            if let Some((lesson_id, difficulty, estimated, elapsed, wrong)) = lesson_completed_info
+            if let Some((lesson_id, difficulty, estimated, elapsed, wrong, mastered)) =
+                lesson_completed_info
             {
-                self.record_lesson_completion(lesson_id, difficulty, estimated, elapsed, wrong);
+                self.record_lesson_completion(lesson_id, difficulty, estimated, elapsed, wrong, mastered);
             }
 
             return Ok(());
@@ -3626,13 +3632,15 @@ impl App {
         let command_name = command.split_whitespace().next().unwrap_or("");
         if !command_name.is_empty() {
             self.user_stats.record_command_use(command_name.to_string());
+            self.user_stats.update_streak();
         }
     }
 
     /// Record lesson completion and check for achievements.
     ///
     /// `estimated_minutes` / `elapsed_secs` / `wrong_answers` feed the
-    /// "speed_lesson" and "perfect_lesson" achievement events.
+    /// "speed_lesson" and "perfect_lesson" achievement events; `mastered`
+    /// is true when the run finished without the answer being revealed.
     pub fn record_lesson_completion(
         &mut self,
         lesson_id: String,
@@ -3640,7 +3648,12 @@ impl App {
         estimated_minutes: u32,
         elapsed_secs: u64,
         wrong_answers: usize,
+        mastered: bool,
     ) {
+        self.user_stats.update_streak();
+        if mastered {
+            self.user_stats.record_lesson_mastered(lesson_id.clone());
+        }
         // Record in stats. Explorer lessons count toward lessons completed
         // and their own track badge, not the Operator difficulty badges.
         let is_explorer = self
@@ -3673,16 +3686,30 @@ impl App {
         );
         self.output_scroll = 0;
 
-        if is_explorer {
-            let all_explorer_done = self
-                .lesson_library
-                .all()
-                .iter()
-                .filter(|l| l.track == arct_core::Track::Explorer)
-                .all(|l| self.completed_lessons.contains(&l.id));
-            if all_explorer_done {
-                self.record_feature_event("explorer_complete");
-            }
+        // Track badges: finished every lesson, and finished them all
+        // without needing the answer
+        let track = if is_explorer {
+            arct_core::Track::Explorer
+        } else {
+            arct_core::Track::Operator
+        };
+        let progress = self.user_stats.track_progress(&self.lesson_library, track);
+        let key = crate::streak::track_name(track).to_lowercase();
+        let first_time = !self
+            .user_stats
+            .completed_challenges
+            .contains(&format!("{key}_complete"));
+        if progress.is_complete() {
+            self.record_feature_event(&format!("{key}_complete"));
+        }
+        if progress.is_complete() && first_time {
+            self.last_output.push_str(&format!(
+                "\nYou finished the {} track. Print your certificate with: arct certificate --track {key}\n",
+                crate::streak::track_name(track)
+            ));
+        }
+        if progress.is_mastered() {
+            self.record_feature_event(&format!("{key}_mastered"));
         }
 
         // Speed / perfect lesson events
