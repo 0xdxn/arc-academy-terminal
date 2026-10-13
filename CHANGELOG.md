@@ -8,7 +8,7 @@
 - In the simulated sandbox, `rm -rf /` now gets the safety lesson instead of wiping the sandbox, and flags like `-rf` are never treated as file names.
 - A lesson step only passes if its command actually worked.
 - The guard also checks each command after variables and wildcards are filled in, so `X=/; rm -rf $X` is refused like `rm -rf /`. Redirecting into `/dev/null` is allowed; into a real device it is not.
-- Real-files lessons can use `$`: arct fills in each variable itself, the guard checks the command with the real values, and exactly that command runs, with nothing expanded a second time. `$(...)` and backticks are still refused, and so is `$` inside `for`, `while` and `if`, whose values only exist as the shell runs them.
+- Real-files lessons can use `$`: arct fills in variables, `~` and wildcards itself, the guard checks the command with the real values and file names, and exactly that command runs, with nothing expanded a second time. Wildcards never match `.` or `..`. `$(...)` and backticks are still refused, and so is `$` inside `for`, `while` and `if`, whose values only exist as the shell runs them.
 - The guard reads quoted words the way the shell does, and checks paths after `=` (`of=...`, `--target-directory=...`) like any other path.
 
 ### Learning
