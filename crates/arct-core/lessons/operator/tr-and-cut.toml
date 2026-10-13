@@ -4,13 +4,187 @@ description = "Change letters, delete characters, and pull columns out of data."
 difficulty = "Intermediate"
 estimated_minutes = 12
 prerequisites = ["pipelines"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "tr", "cut", "csv", "text"]
+
+[[setup]]
+path = "tour/poster.txt"
+contents = "the band plays riverton tonight\n"
+
+[[setup]]
+path = "tour/attendance.txt"
+contents = "Total attendance: 1,300\n"
+
+[[setup]]
+path = "tour/review.txt"
+contents = """the crowd sang the chorus
+the drummer broke a stick
+"""
+
+[[setup]]
+path = "tour/dates.csv"
+contents = """date,city,venue,tickets
+2026-04-02,Riverton,The Old Mill,180
+2026-04-04,Lakeside,Harbour Hall,240
+2026-04-05,Riverton,Corn Exchange,150
+2026-04-09,Hillford,The Granary,200
+2026-04-11,Lakeside,Pier Stage,320
+2026-04-12,Riverton,Town Hall,210
+"""
+
+[[setup]]
+path = "tour/crew.txt"
+contents = """ada:sound:van
+omar:lights:van
+mei:drums:bus
+sam:merch:bus
+grace:driver:van
+"""
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "Two small tools"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+tr swaps or deletes single characters. It only reads from
+a pipe (or <), never from a file name.
+
+  ... | tr a-z A-Z        every lowercase letter to capitals
+  ... | tr -d ,           delete every comma
+  ... | tr ' ' '\\n'       every space becomes a new line
+
+cut pulls columns out of each line. -d says what separates
+the columns, -f says which ones you want.
+
+  cut -d , -f 2 FILE      the 2nd comma-separated column
+  cut -d : -f 1 FILE      the 1st colon-separated column
+
+A band's tour files are in the tour folder."""
+
+[[steps]]
+step_number = 2
+title = "Shout it"
+instruction = "Go into tour. The poster needs capitals. Pipe poster.txt into tr to turn every lowercase letter into a capital."
+hints = ["cd tour, then cat poster.txt | tr ...", "Type: cd tour   then: cat poster.txt | tr a-z A-Z"]
+solution = ["cd tour", "cat poster.txt | tr a-z A-Z"]
+
+[steps.step_type.Task]
+goal = "Print the poster in capitals"
+success_message = "a-z is a range of letters, and tr swaps each one for the letter in the same place in A-Z."
+checks = [{ Used = "tr" }, { OutputContains = "THE BAND PLAYS RIVERTON TONIGHT" }]
+
+[[steps]]
+step_number = 3
+title = "Delete characters"
+instruction = "attendance.txt says 1,300. A spreadsheet wants 1300. Delete the comma with tr -d."
+hints = ["tr -d takes the characters to delete.", "Type: cat attendance.txt | tr -d ,"]
+solution = ["cat attendance.txt | tr -d ,"]
+
+[steps.step_type.Task]
+goal = "Remove the comma"
+success_message = "1300. tr -d deletes every character in its set, wherever it appears."
+checks = [{ Used = "tr" }, { OutputContains = "1300" }]
+
+[[steps]]
+step_number = 4
+title = "One word per line"
+instruction = "Turn every space in review.txt into a new line, so each word sits on its own line. In tr, \\n means a new line; quote both sets."
+hints = ["The two sets are ' ' and '\\n'.", "Type: cat review.txt | tr ' ' '\\n'"]
+solution = ["cat review.txt | tr ' ' '\\n'"]
+
+[steps.step_type.Task]
+goal = "Split the review into words"
+success_message = "One word per line. Lines are what sort and uniq work on, so now you can count words."
+checks = [{ Used = "tr" }, { OutputContains = "crowd\nsang" }]
+
+[[steps]]
+step_number = 5
+title = "Count the words"
+instruction = "Add the counting pattern from the pipelines lesson to the end: which word comes up most in the review?"
+hints = ["sort, then uniq -c, then sort -rn.", "Type: cat review.txt | tr ' ' '\\n' | sort | uniq -c | sort -rn"]
+solution = ["cat review.txt | tr ' ' '\\n' | sort | uniq -c | sort -rn"]
+
+[steps.step_type.Task]
+goal = "Count each word"
+success_message = "'the', 3 times. This is how word counts and tag clouds start."
+checks = [{ Used = "uniq" }, { OutputContains = "3 the" }]
+
+[[steps]]
+step_number = 6
+title = "Letters, not words"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "What does echo 'cat scat' | tr cat dog print?"
+options = ["dog scat", "dog sdog", "dog dog"]
+correct_index = 1
+explanation = "tr works letter by letter: c becomes d, a becomes o, t becomes g, wherever they are. So scat turns into sdog. To replace whole words, use sed 's/cat/dog/'."
+
+[[steps]]
+step_number = 7
+title = "A CSV column"
+instruction = "dates.csv is the tour list: date, city, venue, tickets, separated by commas. Show just the city column."
+hints = ["City is the 2nd field. -d , says the fields are split by commas.", "Type: cut -d , -f 2 dates.csv"]
+solution = ["cut -d , -f 2 dates.csv"]
+
+[steps.step_type.Task]
+goal = "Show the cities"
+success_message = "One city per line. The header line's 'city' comes along too: cut doesn't know it's a header."
+checks = [{ Used = "cut" }, { OutputContains = "Riverton\nLakeside\nRiverton" }]
+
+[[steps]]
+step_number = 8
+title = "A different separator"
+instruction = "crew.txt uses colons: name, job, vehicle. Show only the names."
+hints = ["This time the separator is : and you want field 1.", "Type: cut -d : -f 1 crew.txt"]
+solution = ["cut -d : -f 1 crew.txt"]
+
+[steps.step_type.Task]
+goal = "List the crew's names"
+success_message = "Colons, commas, tabs: cut splits on any single character you give -d. With no -d it splits on tabs."
+checks = [{ Used = "cut" }, { OutputContains = "ada\nomar\nmei" }]
+
+[[steps]]
+step_number = 9
+title = "Column, then count"
+instruction = "How many of the crew ride in each vehicle? Cut out the vehicle column, then count it."
+hints = ["Vehicle is field 3. Then sort and uniq -c.", "Type: cut -d : -f 3 crew.txt | sort | uniq -c"]
+solution = ["cut -d : -f 3 crew.txt | sort | uniq -c"]
+
+[steps.step_type.Task]
+goal = "Count the crew per vehicle"
+success_message = "3 in the van, 2 on the bus. cut | sort | uniq -c counts the values in any column."
+checks = [{ Used = "uniq" }, { OutputContains = "3 van" }, { OutputContains = "2 bus" }]
+
+[[steps]]
+step_number = 10
+title = "On your own"
+instruction = "No hints. For the tour poster: show each city from dates.csv in capitals, with how many shows it has, busiest city first. One pipeline."
+challenge = true
+solution = ["cut -d , -f 2 dates.csv | tr a-z A-Z | sort | uniq -c | sort -rn"]
+
+[steps.step_type.Task]
+goal = "Count shows per city, in capitals"
+success_message = "RIVERTON 3, LAKESIDE 2, HILLFORD 1, plus the header as CITY 1. Two new tools and one old pattern, in a single line."
+checks = [{ Used = "cut" }, { Used = "tr" }, { OutputContains = "3 RIVERTON" }, { OutputContains = "2 LAKESIDE" }]
+
+[[steps]]
+step_number = 11
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  ... | tr a-z A-Z          change letters (lowercase to capitals)
+  ... | tr -d ,             delete characters
+  ... | tr ' ' '\\n'         one word per line
+  cut -d , -f 2 FILE        a comma-separated column
+  cut -d : -f 1 FILE        a colon-separated column
+  cut ... | sort | uniq -c  count the values in a column
+
+tr works on single letters, never whole words (that's sed).
+cut splits on exactly one character, so it trips on text
+lined up with several spaces, and on CSV files that have
+commas inside quoted values. For those, reach for awk or
+a proper CSV tool."""
