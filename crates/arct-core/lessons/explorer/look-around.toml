@@ -1,0 +1,111 @@
+id = "explorer-look-around"
+title = "Wake Up on Arc Station"
+description = "You're the newest crew member on Arc Station. Find out where you are and what's around you with pwd and ls."
+difficulty = "Beginner"
+estimated_minutes = 8
+prerequisites = []
+tags = ["explorer", "navigation", "pwd", "ls"]
+track = "Explorer"
+
+[[setup]]
+path = "station/README.txt"
+contents = "ARC STATION - crew quarters\nThe station computer only understands typed commands.\n"
+
+[[setup]]
+path = "station/bridge/captains-log.txt"
+contents = "Day 1: New crew member arrives today.\n"
+
+[[setup]]
+path = "station/cargo/crate-7.txt"
+contents = "Spare parts for the airlock.\n"
+
+[[setup]]
+path = "station/cargo/crate-12.txt"
+contents = "Freeze-dried strawberries.\n"
+
+[[setup]]
+path = "station/engine-room/notes.txt"
+contents = "Do not press the big red button.\n"
+
+[[steps]]
+step_number = 1
+title = "Welcome aboard"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+The lights flicker on. You're aboard Arc Station.
+
+The station's computer has no buttons and no mouse.
+You talk to it by typing commands and pressing Enter.
+
+Every place on the station is a folder. Folders can hold
+files and other folders. Let's find out where you are."""
+
+[[steps]]
+step_number = 2
+title = "Where am I?"
+instruction = "Type pwd and press Enter. It stands for 'print working directory': the folder you're in right now."
+hints = ["Three letters: p, w, d."]
+
+[steps.step_type.CommandExercise]
+expected_command = "pwd"
+validation = "CommandOnly"
+success_message = "That's your spot. Every command you type happens here, unless you say otherwise."
+
+[[steps]]
+step_number = 3
+title = "What's here?"
+instruction = "Type ls to list what's in this folder. Names ending in / are folders."
+hints = ["ls is short for 'list'.", "Type: ls"]
+
+[steps.step_type.CommandExercise]
+expected_command = "ls"
+validation = "CommandOnly"
+success_message = "See the station/ folder? That's the station itself."
+
+[[steps]]
+step_number = 4
+title = "Look inside a folder"
+instruction = "You can look inside a folder without going in: put its name after ls. List what's inside station."
+hints = ["ls, then a space, then the folder name.", "Type: ls station"]
+
+[steps.step_type.CommandExercise]
+expected_command = "ls station"
+validation = "Exact"
+success_message = "The bridge, the cargo bay, the engine room. A real station."
+
+[[steps]]
+step_number = 5
+title = "Quick check"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "Which command tells you which folder you're in?"
+options = ["ls", "pwd", "station"]
+correct_index = 1
+explanation = "pwd prints where you are. ls lists what's there."
+
+[[steps]]
+step_number = 6
+title = "Peek into the cargo bay"
+instruction = "The cargo bay is a folder inside station. Folder paths use / between names, like station/bridge."
+hints = ["ls can look into a folder inside a folder.", "Put the path after ls: station, then /, then cargo.", "Type: ls station/cargo"]
+
+solution = ["ls station/cargo"]
+[steps.step_type.Task]
+goal = "List what's inside the cargo bay"
+success_message = "Two crates. You'll need those later."
+checks = [{ Used = "ls" }, { OutputContains = "crate-12" }]
+
+[[steps]]
+step_number = 7
+title = "On your own"
+instruction = "No hints this time. You've got this."
+challenge = true
+
+solution = ["ls station/engine-room"]
+[steps.step_type.Task]
+goal = "Find out what's in the engine room"
+success_message = "You found the engine room notes. You know how to look around a computer now."
+checks = [{ Used = "ls" }, { OutputContains = "notes.txt" }]

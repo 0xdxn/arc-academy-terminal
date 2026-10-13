@@ -47,12 +47,20 @@ impl SessionData {
     }
 }
 
+/// arct's data folder: $ARCT_DATA_DIR if set (portable installs, tests),
+/// otherwise the platform's local data folder + /arct
+pub fn arct_data_dir() -> Result<PathBuf> {
+    if let Some(dir) = std::env::var_os("ARCT_DATA_DIR").filter(|d| !d.is_empty()) {
+        return Ok(PathBuf::from(dir));
+    }
+    Ok(dirs::data_local_dir()
+        .ok_or_else(|| anyhow::anyhow!("Could not find local data directory"))?
+        .join("arct"))
+}
+
 /// Get the path to the session file
 pub fn get_session_file_path() -> Result<PathBuf> {
-    let data_dir = dirs::data_local_dir()
-        .ok_or_else(|| anyhow::anyhow!("Could not find local data directory"))?;
-
-    let arct_dir = data_dir.join("arct");
+    let arct_dir = arct_data_dir()?;
 
     // Create directory if it doesn't exist
     if !arct_dir.exists() {

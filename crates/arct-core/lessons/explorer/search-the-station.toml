@@ -1,0 +1,102 @@
+id = "explorer-search-the-station"
+title = "Search the Station"
+description = "Find words inside files with grep."
+difficulty = "Beginner"
+estimated_minutes = 10
+prerequisites = ["explorer-read-the-logs"]
+tags = ["explorer", "search", "grep"]
+track = "Explorer"
+
+[[setup]]
+path = "station/logs/monday.txt"
+contents = """08:00 Breakfast: porridge
+09:30 Repaired the airlock
+14:00 Gerald escaped again
+"""
+
+[[setup]]
+path = "station/logs/tuesday.txt"
+contents = """08:00 Breakfast: strawberries
+11:00 Watered the space lettuce
+16:45 Comet sighted, very bright
+"""
+
+[[setup]]
+path = "station/logs/wednesday.txt"
+contents = """08:00 Breakfast: porridge again
+10:00 Engine check: all fine
+13:15 GERALD found in the vents
+"""
+
+[[setup]]
+path = "station/manual.txt"
+contents = """Arc Station Manual
+Airlock: always close the inner door first.
+Reactor: never press the big red button.
+Garden: water the tomatoes every other day.
+Emergency: the escape pod code is NOVA-7.
+"""
+
+[[steps]]
+step_number = 1
+title = "Searching instead of reading"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Reading every file to find one word takes forever.
+grep searches for you.
+
+  grep WORD FILE       show the lines in FILE that contain WORD
+  grep -i WORD FILE    the same, ignoring capital letters
+  grep -n WORD FILE    also show the line numbers
+
+grep is one of the most-used commands there is."""
+
+[[steps]]
+step_number = 2
+title = "Search the manual"
+instruction = "Go to station, then search manual.txt for Reactor (capital R, the way the manual writes it)."
+hints = ["cd station first, then grep WORD FILE.", "Type: grep Reactor manual.txt"]
+
+solution = ["cd station", "grep Reactor manual.txt"]
+[steps.step_type.Task]
+goal = "Find the reactor rule in the manual"
+success_message = "One line, straight to the point."
+checks = [{ Used = "grep" }, { OutputContains = "big red button" }]
+
+[[steps]]
+step_number = 3
+title = "Capital letters matter"
+instruction = "grep cares about capitals: 'gerald' and 'GERALD' are different to it. In the logs folder, search wednesday.txt for gerald, ignoring capitals."
+hints = ["-i means ignore case.", "Type: grep -i gerald logs/wednesday.txt"]
+
+solution = ["grep -i gerald logs/wednesday.txt"]
+[steps.step_type.Task]
+goal = "Find GERALD in Wednesday's log"
+success_message = "Found him. In the vents, of course."
+checks = [{ Used = "grep" }, { OutputContains = "vents" }]
+
+[[steps]]
+step_number = 4
+title = "Which line?"
+instruction = "Show the line number too: search manual.txt for Garden with line numbers."
+hints = ["-n adds line numbers.", "Type: grep -n Garden manual.txt"]
+
+solution = ["grep -n Garden manual.txt"]
+[steps.step_type.Task]
+goal = "Find Garden with its line number"
+success_message = "Line numbers help when files get long."
+checks = [{ Used = "grep" }, { OutputContains = "tomatoes" }]
+
+[[steps]]
+step_number = 5
+title = "On your own"
+instruction = "No hints. The captain forgot the escape pod code. It's in the manual. Use grep to find it."
+challenge = true
+
+solution = ["grep NOVA manual.txt"]
+[steps.step_type.Task]
+goal = "Find the escape pod code with grep"
+success_message = "NOVA-7. You can find anything in any file now."
+checks = [{ Used = "grep" }, { OutputContains = "NOVA-7" }]

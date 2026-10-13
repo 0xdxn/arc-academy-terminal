@@ -569,6 +569,7 @@ mod ladder_tests {
                 },
                 hints: vec!["It prints the folder you're in.".into(), "p, w, d".into()],
                 challenge,
+                solution: vec![],
             }],
             prerequisites: vec![],
             tags: vec![],

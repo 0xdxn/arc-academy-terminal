@@ -23,6 +23,7 @@ fn task(checks: Vec<Check>) -> LessonStep {
         },
         hints: vec!["mkdir makes folders".into()],
         challenge: false,
+        solution: vec![],
     }
 }
 
@@ -114,6 +115,7 @@ fn right_command_that_failed_does_not_pass() {
         },
         hints: vec![],
         challenge: false,
+        solution: vec![],
     };
     let validator = LessonValidator::new();
     let attempt = Attempt { input: "cd nowhere", output: "" };

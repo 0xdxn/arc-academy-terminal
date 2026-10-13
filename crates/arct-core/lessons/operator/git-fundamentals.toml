@@ -12,7 +12,6 @@ tags = [
     "git",
     "version-control",
 ]
-setup = []
 
 [[steps]]
 step_number = 1

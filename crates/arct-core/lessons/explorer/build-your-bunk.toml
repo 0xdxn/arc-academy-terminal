@@ -1,0 +1,99 @@
+id = "explorer-build-your-bunk"
+title = "Build Your Bunk"
+description = "Make your own folders and files with mkdir and touch."
+difficulty = "Beginner"
+estimated_minutes = 10
+prerequisites = ["explorer-walk-the-halls"]
+tags = ["explorer", "files", "mkdir", "touch"]
+track = "Explorer"
+
+[[setup]]
+path = "station/quarters/README.txt"
+contents = "Crew quarters. Every crew member builds their own bunk here.\n"
+
+[[steps]]
+step_number = 1
+title = "Your own space"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Every crew member gets a bunk. Time to build yours.
+
+  mkdir NAME     make a new folder ('make directory')
+  touch NAME     make a new, empty file
+
+Names can't have spaces unless you put them in quotes,
+so people use dashes instead: my-bunk, star-poster.txt"""
+
+[[steps]]
+step_number = 2
+title = "Go to the quarters"
+instruction = "Walk into station/quarters."
+hints = ["You know this one: cd.", "Type: cd station/quarters"]
+
+solution = ["cd station/quarters"]
+[steps.step_type.Task]
+goal = "Go to the crew quarters"
+success_message = "Lots of empty space. Let's build."
+checks = [{ CwdIs = "station/quarters" }]
+
+[[steps]]
+step_number = 3
+title = "Make your bunk"
+instruction = "Make a folder called bunk."
+hints = ["mkdir makes a folder.", "Type: mkdir bunk"]
+
+solution = ["mkdir bunk"]
+[steps.step_type.Task]
+goal = "Make a folder called bunk"
+success_message = "Your bunk exists. Check with ls if you like."
+checks = [{ DirExists = "station/quarters/bunk" }]
+
+[[steps]]
+step_number = 4
+title = "Put up a poster"
+instruction = "Make an empty file called poster.txt inside your bunk."
+hints = ["touch makes an empty file.", "The file goes inside bunk, so the path is bunk/poster.txt.", "Type: touch bunk/poster.txt"]
+
+solution = ["touch bunk/poster.txt"]
+[steps.step_type.Task]
+goal = "Make bunk/poster.txt"
+success_message = "Poster up."
+checks = [{ FileExists = "station/quarters/bunk/poster.txt" }]
+
+[[steps]]
+step_number = 5
+title = "A drawer for your stuff"
+instruction = "Make a folder called drawer inside your bunk."
+hints = ["mkdir works with paths too.", "Type: mkdir bunk/drawer"]
+
+solution = ["mkdir bunk/drawer"]
+[steps.step_type.Task]
+goal = "Make bunk/drawer"
+success_message = "Folders inside folders: that's how every computer is organised."
+checks = [{ DirExists = "station/quarters/bunk/drawer" }]
+
+[[steps]]
+step_number = 6
+title = "Look at your work"
+instruction = "List what's inside your bunk."
+hints = ["ls with the folder name.", "Type: ls bunk"]
+
+solution = ["ls bunk"]
+[steps.step_type.Task]
+goal = "List your bunk"
+success_message = "A drawer and a poster. Cosy."
+checks = [{ Used = "ls" }, { OutputContains = "poster.txt" }]
+
+[[steps]]
+step_number = 7
+title = "On your own"
+instruction = "No hints. Build a workshop: a folder called workshop in the quarters, with a folder called tools inside it and an empty file called plans.txt inside tools."
+challenge = true
+
+solution = ["mkdir workshop", "mkdir workshop/tools", "touch workshop/tools/plans.txt"]
+[steps.step_type.Task]
+goal = "Build workshop/tools/plans.txt"
+success_message = "A whole workshop, built by typing. You can organise any computer now."
+checks = [{ DirExists = "station/quarters/workshop" }, { DirExists = "station/quarters/workshop/tools" }, { FileExists = "station/quarters/workshop/tools/plans.txt" }]

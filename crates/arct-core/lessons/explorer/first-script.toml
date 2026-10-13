@@ -1,0 +1,116 @@
+id = "explorer-first-script"
+title = "Your First Script"
+description = "Save commands in a file and run them all at once: a script."
+difficulty = "Intermediate"
+estimated_minutes = 15
+prerequisites = ["explorer-write-in-the-log"]
+tags = ["explorer", "scripts", "sh", "chmod"]
+track = "Explorer"
+
+[[setup]]
+path = "station/robot/hello.sh"
+contents = """# The station robot's greeting
+echo Beep boop.
+echo Hello, crew member.
+echo Station status: all systems go.
+"""
+
+[[steps]]
+step_number = 1
+title = "Commands in a file"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+A script is a file full of commands. When you run it,
+the computer does each line, top to bottom.
+
+Lines that start with # are notes for humans. The computer
+skips them.
+
+  sh hello.sh         run the script in hello.sh
+
+Real programmers write scripts to do boring jobs for them."""
+
+[[steps]]
+step_number = 2
+title = "Read the robot's script"
+instruction = "Go to station/robot and read hello.sh before running it. Always read a script before you run it."
+hints = ["cd there, then cat the file.", "Type: cd station/robot   then: cat hello.sh"]
+
+solution = ["cd station/robot", "cat hello.sh"]
+[steps.step_type.Task]
+goal = "Read hello.sh"
+success_message = "Three echo lines and a note. Nothing scary."
+checks = [{ Used = "cat" }, { OutputContains = "Beep boop" }]
+
+[[steps]]
+step_number = 3
+title = "Run it"
+instruction = "Run the script with sh."
+hints = ["sh, then the script's name.", "Type: sh hello.sh"]
+
+solution = ["sh hello.sh"]
+[steps.step_type.Task]
+goal = "Run hello.sh"
+success_message = "Three commands, one line from you."
+checks = [{ Used = "sh" }, { OutputContains = "all systems go" }]
+
+[[steps]]
+step_number = 4
+title = "Write your own"
+instruction = "Make a script called greet.sh with one line: echo Welcome aboard. Use echo with quotes so the whole command lands in the file: echo 'echo Welcome aboard' > greet.sh"
+hints = ["The quotes keep 'echo Welcome aboard' together as the text to write.", "Type: echo 'echo Welcome aboard' > greet.sh"]
+
+solution = ["echo 'echo Welcome aboard' > greet.sh"]
+[steps.step_type.Task]
+goal = "Make greet.sh"
+success_message = "Your script exists. Read it with cat to check."
+checks = [{ FileContains = { path = "station/robot/greet.sh", text = "echo Welcome aboard" } }]
+
+[[steps]]
+step_number = 5
+title = "Run your script"
+instruction = "Run greet.sh."
+hints = ["Same as before, with your script's name.", "Type: sh greet.sh"]
+
+solution = ["sh greet.sh"]
+[steps.step_type.Task]
+goal = "Run greet.sh"
+success_message = "You wrote a program. Really."
+checks = [{ OutputContains = "Welcome aboard" }]
+
+[[steps]]
+step_number = 6
+title = "Make it a real program"
+instruction = "Programs can run by name with ./ in front, but only once they're marked 'executable'. Try ./greet.sh and read what happens, then mark it executable with chmod +x greet.sh."
+hints = ["chmod changes a file's permissions; +x adds 'can run'.", "Type: chmod +x greet.sh"]
+
+[steps.step_type.CommandExercise]
+expected_command = "chmod +x greet.sh"
+validation = "Exact"
+success_message = "greet.sh is now executable."
+
+[[steps]]
+step_number = 7
+title = "Run it like a program"
+instruction = "Now run it with ./ in front."
+hints = ["./ means 'the file right here'.", "Type: ./greet.sh"]
+
+solution = ["./greet.sh"]
+[steps.step_type.Task]
+goal = "Run ./greet.sh"
+success_message = "That's how every program on your computer starts."
+checks = [{ OutputContains = "Welcome aboard" }]
+
+[[steps]]
+step_number = 8
+title = "On your own"
+instruction = "No hints. Write a script called status.sh that prints two lines, 'Oxygen: OK' and then 'Gerald: missing', and run it."
+challenge = true
+
+solution = ["echo 'echo Oxygen: OK' > status.sh", "echo 'echo Gerald: missing' >> status.sh", "sh status.sh"]
+[steps.step_type.Task]
+goal = "Write and run status.sh"
+success_message = "Your own status report program. Arc Station is lucky to have you."
+checks = [{ FileContains = { path = "station/robot/status.sh", text = "Oxygen: OK" } }, { FileContains = { path = "station/robot/status.sh", text = "Gerald: missing" } }, { OutputContains = "Gerald: missing" }]

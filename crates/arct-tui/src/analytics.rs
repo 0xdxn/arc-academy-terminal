@@ -54,10 +54,7 @@ impl Analytics {
 
     /// Get the database file path
     fn get_db_path() -> Result<PathBuf> {
-        let data_dir = dirs::data_local_dir()
-            .ok_or_else(|| anyhow::anyhow!("Could not find local data directory"))?;
-
-        let arct_dir = data_dir.join("arct");
+        let arct_dir = crate::persistence::arct_data_dir()?;
         if !arct_dir.exists() {
             std::fs::create_dir_all(&arct_dir)?;
         }

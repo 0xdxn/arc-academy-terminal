@@ -1,0 +1,136 @@
+id = "explorer-careful-with-rm"
+title = "Careful with rm"
+description = "Delete files with rm, and learn why there is no undo."
+difficulty = "Beginner"
+estimated_minutes = 12
+prerequisites = ["explorer-move-the-cargo"]
+tags = ["explorer", "files", "rm", "safety"]
+track = "Explorer"
+
+[[setup]]
+path = "station/trash-bay/old-wrapper.txt"
+contents = "A strawberry wrapper.\n"
+
+[[setup]]
+path = "station/trash-bay/broken-bolt.txt"
+contents = "Bent. Useless.\n"
+
+[[setup]]
+path = "station/trash-bay/junk/sock.txt"
+contents = "A single sock. Its partner is lost in space.\n"
+
+[[setup]]
+path = "station/trash-bay/junk/chewed-pencil.txt"
+contents = "Gerald chewed it.\n"
+
+[[setup]]
+path = "station/trash-bay/flight-plan.txt"
+contents = "IMPORTANT: route home. Do not delete.\n"
+
+[[setup]]
+path = "station/attic/junk-a.txt"
+contents = "junk\n"
+
+[[setup]]
+path = "station/attic/junk-b.txt"
+contents = "more junk\n"
+
+[[setup]]
+path = "station/attic/family-photo.txt"
+contents = "The whole crew, smiling. Keep this one.\n"
+
+[[steps]]
+step_number = 1
+title = "There is no trash can"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+rm removes files. It's useful, and it's the one command
+to slow down for.
+
+When you drag a file to the trash on a desktop, you can
+get it back. rm doesn't use a trash can. Once a file is
+removed, it's gone.
+
+So the rule every expert follows:
+  1. ls first, to see exactly what's there
+  2. rm one named thing at a time
+  3. read the command again before pressing Enter
+
+  rm FILE        remove one file
+  rm -r FOLDER   remove a folder and everything inside it"""
+
+[[steps]]
+step_number = 2
+title = "Look before you delete"
+instruction = "Go to station/trash-bay and list what's there."
+hints = ["cd, then ls.", "Type: cd station/trash-bay   then: ls"]
+
+solution = ["cd station/trash-bay"]
+[steps.step_type.Task]
+goal = "Go to the trash bay and look around"
+success_message = "Spot the file you must NOT delete?"
+checks = [{ CwdIs = "station/trash-bay" }]
+
+[[steps]]
+step_number = 3
+title = "Remove one file"
+instruction = "Remove old-wrapper.txt. Just that one."
+hints = ["rm, then the file name.", "Type: rm old-wrapper.txt"]
+
+solution = ["rm old-wrapper.txt"]
+[steps.step_type.Task]
+goal = "Remove the old wrapper"
+success_message = "Gone. For good."
+checks = [{ Missing = "station/trash-bay/old-wrapper.txt" }, { FileExists = "station/trash-bay/flight-plan.txt" }]
+
+[[steps]]
+step_number = 4
+title = "Remove a folder"
+instruction = "The junk folder is full of junk. rm needs -r to remove a folder and everything in it. Remove the junk folder."
+hints = ["-r means 'recursive': the folder and everything inside.", "Type: rm -r junk"]
+
+solution = ["rm -r junk"]
+[steps.step_type.Task]
+goal = "Remove the junk folder"
+success_message = "Junk folder gone, sock and all."
+checks = [{ Missing = "station/trash-bay/junk" }, { FileExists = "station/trash-bay/flight-plan.txt" }]
+
+[[steps]]
+step_number = 5
+title = "Which is safe?"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "You want to delete broken-bolt.txt. Which is the safest command?"
+options = ["rm -r .", "rm broken-bolt.txt", "rm *"]
+correct_index = 1
+explanation = "Name exactly the one file. 'rm -r .' and 'rm *' would delete the flight plan too."
+
+[[steps]]
+step_number = 6
+title = "The command nobody runs"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+You may hear about 'rm -rf /'. It means: remove everything,
+starting from the very top of the computer, without asking.
+
+It would wipe the whole system. arct will never run it: try
+it and the safety guard stops it and explains why. On a real
+computer there's no guard, so never type a command someone
+dares you to run unless you know exactly what it does."""
+
+[[steps]]
+step_number = 7
+title = "On your own"
+instruction = "No hints. Tidy the attic: remove both junk files, and keep the family photo."
+challenge = true
+
+solution = ["rm ../attic/junk-a.txt", "rm ../attic/junk-b.txt"]
+[steps.step_type.Task]
+goal = "Remove the attic junk, keep the photo"
+success_message = "Clean attic, photo safe. You can be trusted with rm."
+checks = [{ Missing = "station/attic/junk-a.txt" }, { Missing = "station/attic/junk-b.txt" }, { FileExists = "station/attic/family-photo.txt" }]

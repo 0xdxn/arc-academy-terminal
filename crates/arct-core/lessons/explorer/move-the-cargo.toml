@@ -1,0 +1,124 @@
+id = "explorer-move-the-cargo"
+title = "Move the Cargo"
+description = "Move, rename and copy files with mv and cp."
+difficulty = "Beginner"
+estimated_minutes = 12
+prerequisites = ["explorer-build-your-bunk"]
+tags = ["explorer", "files", "mv", "cp"]
+track = "Explorer"
+
+[[setup]]
+path = "station/cargo/apples.crate"
+contents = "40 apples\n"
+
+[[setup]]
+path = "station/cargo/bolts.crate"
+contents = "500 bolts\n"
+
+[[setup]]
+path = "station/cargo/bananas.crate"
+contents = "12 bananas\n"
+
+[[setup]]
+path = "station/cargo/wrenches.crate"
+contents = "6 wrenches\n"
+
+[[setup]]
+path = "station/cargo/mystery.crate"
+contents = "It's a very small goat. Its name is Gerald.\n"
+
+[[setup]]
+path = "station/cargo/food/README.txt"
+contents = "Food goes here.\n"
+
+[[setup]]
+path = "station/cargo/tools/README.txt"
+contents = "Tools go here.\n"
+
+[[steps]]
+step_number = 1
+title = "Cargo day"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+A supply ship dropped crates all over the cargo bay.
+Your job: sort them.
+
+  mv FROM TO     move a file (or rename it)
+  cp FROM TO     copy a file, keeping the original
+
+If TO is a folder, the file goes inside it with the same name.
+If TO is a new name, mv renames the file."""
+
+[[steps]]
+step_number = 2
+title = "Into the cargo bay"
+instruction = "Walk into station/cargo and list the crates."
+hints = ["cd first, then ls.", "Type: cd station/cargo   then: ls"]
+
+solution = ["cd station/cargo"]
+[steps.step_type.Task]
+goal = "Go to the cargo bay"
+success_message = "Crates everywhere."
+checks = [{ CwdIs = "station/cargo" }]
+
+[[steps]]
+step_number = 3
+title = "Food goes in food"
+instruction = "Move apples.crate into the food folder."
+hints = ["mv, then the crate, then where it goes.", "Type: mv apples.crate food"]
+
+solution = ["mv apples.crate food"]
+[steps.step_type.Task]
+goal = "Move the apples into food"
+success_message = "Apples stowed."
+checks = [{ FileExists = "station/cargo/food/apples.crate" }, { Missing = "station/cargo/apples.crate" }]
+
+[[steps]]
+step_number = 4
+title = "Tools go in tools"
+instruction = "Move bolts.crate into the tools folder."
+hints = ["Same idea, different crate and folder.", "Type: mv bolts.crate tools"]
+
+solution = ["mv bolts.crate tools"]
+[steps.step_type.Task]
+goal = "Move the bolts into tools"
+success_message = "Bolts stowed."
+checks = [{ FileExists = "station/cargo/tools/bolts.crate" }, { Missing = "station/cargo/bolts.crate" }]
+
+[[steps]]
+step_number = 5
+title = "Rename the mystery"
+instruction = "mystery.crate isn't a mystery anymore (read it if you're curious). Rename it to gerald.crate."
+hints = ["mv renames when TO is a new name, not a folder.", "Type: mv mystery.crate gerald.crate"]
+
+solution = ["mv mystery.crate gerald.crate"]
+[steps.step_type.Task]
+goal = "Rename mystery.crate to gerald.crate"
+success_message = "Hello, Gerald."
+checks = [{ FileExists = "station/cargo/gerald.crate" }, { Missing = "station/cargo/mystery.crate" }]
+
+[[steps]]
+step_number = 6
+title = "Make a backup"
+instruction = "The captain wants a spare copy of the bananas list. Copy bananas.crate to bananas-backup.crate."
+hints = ["cp copies, so the original stays.", "Type: cp bananas.crate bananas-backup.crate"]
+
+solution = ["cp bananas.crate bananas-backup.crate"]
+[steps.step_type.Task]
+goal = "Copy bananas.crate to bananas-backup.crate"
+success_message = "Two banana lists. cp keeps the original; mv doesn't."
+checks = [{ FileExists = "station/cargo/bananas.crate" }, { FileExists = "station/cargo/bananas-backup.crate" }]
+
+[[steps]]
+step_number = 7
+title = "On your own"
+instruction = "No hints. Finish sorting: bananas.crate goes in food, wrenches.crate goes in tools."
+challenge = true
+
+solution = ["mv bananas.crate food", "mv wrenches.crate tools"]
+[steps.step_type.Task]
+goal = "Sort the last crates"
+success_message = "Cargo bay sorted. The captain is impressed (and so is Gerald)."
+checks = [{ FileExists = "station/cargo/food/bananas.crate" }, { FileExists = "station/cargo/tools/wrenches.crate" }, { Missing = "station/cargo/bananas.crate" }, { Missing = "station/cargo/wrenches.crate" }]

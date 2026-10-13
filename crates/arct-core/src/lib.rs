@@ -6,6 +6,7 @@
 pub mod command;
 pub mod education;
 pub mod guard;
+pub mod text_filter;
 pub mod lesson;
 pub mod playground;
 pub mod session;

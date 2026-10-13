@@ -9,7 +9,6 @@ tags = [
     "network",
     "internet",
 ]
-setup = []
 
 [[steps]]
 step_number = 1
@@ -146,13 +145,13 @@ Testing:
 [[steps]]
 step_number = 6
 title = "Practice: Using curl"
-instruction = "Try fetching your public IP address using curl: curl -s https://ifconfig.me"
-hint = "Type: curl -s https://ifconfig.me (-s makes it silent/no progress bar)"
+instruction = "Fetch a web page with curl: curl -s https://example.com"
+hint = "Type: curl -s https://example.com (-s makes it silent/no progress bar)"
 
 [steps.step_type.CommandExercise]
-expected_command = "curl -s https://ifconfig.me"
+expected_command = "curl -s https://example.com"
 validation = "Exact"
-success_message = "Great! You just fetched your public IP address. The -s flag suppresses the progress bar. curl is incredibly versatile - it's like a Swiss Army knife for web requests!"
+success_message = "Great! You just fetched a web page as raw HTML, the same thing your browser downloads before drawing it. The -s flag suppresses the progress bar. curl is incredibly versatile - it's like a Swiss Army knife for web requests!"
 
 [[steps]]
 step_number = 7

@@ -1,0 +1,129 @@
+id = "explorer-walk-the-halls"
+title = "Walk the Halls"
+description = "Move around the station with cd: into folders, back out with .., and home with ~."
+difficulty = "Beginner"
+estimated_minutes = 10
+prerequisites = ["explorer-look-around"]
+tags = ["explorer", "navigation", "cd"]
+track = "Explorer"
+
+[[setup]]
+path = "station/bridge/captains-log.txt"
+contents = "Day 2: The new crew member is learning to walk the halls.\n"
+
+[[setup]]
+path = "station/bridge/star-map.txt"
+contents = "Nearest star: Proxima Centauri, 4.2 light years.\n"
+
+[[setup]]
+path = "station/engine-room/notes.txt"
+contents = "Do not press the big red button.\n"
+
+[[setup]]
+path = "station/engine-room/reactor/status.txt"
+contents = "Reactor: humming happily.\n"
+
+[[setup]]
+path = "station/garden/tomatoes.txt"
+contents = "17 tomatoes, 3 nearly ripe.\n"
+
+[[steps]]
+step_number = 1
+title = "Moving around"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Looking is good. Walking is better.
+
+cd means 'change directory'. It moves you into a folder,
+like walking through a door.
+
+  cd station      walk into the station folder
+  cd ..           walk back out one level
+  cd ~            jump straight home to where you started
+
+After you move, pwd will show your new spot."""
+
+[[steps]]
+step_number = 2
+title = "Through the first door"
+instruction = "Walk into the station folder."
+hints = ["cd moves you into a folder.", "Type: cd station"]
+
+solution = ["cd station"]
+[steps.step_type.Task]
+goal = "Go into station"
+success_message = "You're in the station's main hall."
+checks = [{ CwdIs = "station" }]
+
+[[steps]]
+step_number = 3
+title = "Check where you are"
+instruction = "Make sure you really moved. Which command shows where you are?"
+hints = ["It's the first command you learned.", "Type: pwd"]
+
+[steps.step_type.CommandExercise]
+expected_command = "pwd"
+validation = "CommandOnly"
+success_message = "The path ends in /station. You moved."
+
+[[steps]]
+step_number = 4
+title = "To the bridge"
+instruction = "The bridge is a folder inside station. Walk onto the bridge."
+hints = ["You're already in station, so the bridge is right here.", "Type: cd bridge"]
+
+solution = ["cd bridge"]
+[steps.step_type.Task]
+goal = "Go to the bridge"
+success_message = "You're on the bridge. Stars everywhere."
+checks = [{ CwdIs = "station/bridge" }]
+
+[[steps]]
+step_number = 5
+title = "Back out"
+instruction = "Two dots, .., always mean 'the folder one level up'. Step back out to the main hall."
+hints = ["cd, a space, then two dots.", "Type: cd .."]
+
+solution = ["cd .."]
+[steps.step_type.Task]
+goal = "Go back up to station"
+success_message = "Back in the main hall."
+checks = [{ CwdIs = "station" }]
+
+[[steps]]
+step_number = 6
+title = "Two doors at once"
+instruction = "You can walk through several doors in one go: separate the folder names with /. Go straight to the reactor, which is inside the engine room."
+hints = ["The reactor is at engine-room/reactor.", "Type: cd engine-room/reactor"]
+
+solution = ["cd engine-room/reactor"]
+[steps.step_type.Task]
+goal = "Go to the reactor"
+success_message = "Two doors, one command."
+checks = [{ CwdIs = "station/engine-room/reactor" }]
+
+[[steps]]
+step_number = 7
+title = "Home in one jump"
+instruction = "The ~ sign means your home folder, where you started. Jump home from here."
+hints = ["cd ~ takes you home from anywhere.", "Type: cd ~"]
+
+solution = ["cd ~"]
+[steps.step_type.Task]
+goal = "Go home"
+success_message = "Home. However lost you get, cd ~ brings you back."
+checks = [{ CwdIs = "" }]
+
+[[steps]]
+step_number = 8
+title = "On your own"
+instruction = "No hints. Find the garden and stand in it."
+challenge = true
+
+solution = ["cd station/garden"]
+[steps.step_type.Task]
+goal = "Go to the station's garden"
+success_message = "You found the garden. You can walk anywhere on a computer now."
+checks = [{ CwdIs = "station/garden" }]

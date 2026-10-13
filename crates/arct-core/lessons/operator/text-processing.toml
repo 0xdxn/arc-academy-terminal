@@ -51,11 +51,11 @@ success_message = "Perfect! The pipe takes 'ls -l' output and filters it through
 [[steps]]
 step_number = 3
 title = "Advanced grep Patterns"
-instruction = "grep can use regular expressions. The -E flag enables extended regex. Try finding lines starting with numbers in /etc/services: grep -E '^[0-9]' /etc/services"
-hint = "Type: grep -E '^[0-9]' /etc/services (^ means start of line, [0-9] means any digit)"
+instruction = "grep can use regular expressions. The -E flag enables extended regex. Try finding the lines in access.log that start with 10: grep -E '^10' access.log"
+hint = "Type: grep -E '^10' access.log (^ means start of line)"
 
 [steps.step_type.CommandExercise]
-expected_command = "grep -E '^[0-9]' /etc/services"
+expected_command = "grep -E '^10' access.log"
 validation = "Exact"
 success_message = """
 Great! Regular expressions are powerful:
@@ -70,11 +70,11 @@ Great! Regular expressions are powerful:
 [[steps]]
 step_number = 4
 title = "Showing Line Numbers and Context"
-instruction = "grep -n shows line numbers. Try: grep -n http /etc/services | head -5"
-hint = "Type: grep -n http /etc/services | head -5"
+instruction = "grep -n shows line numbers. Try: grep -n ERROR access.log | head -5"
+hint = "Type: grep -n ERROR access.log | head -5"
 
 [steps.step_type.CommandExercise]
-expected_command = "grep -n http /etc/services | head -5"
+expected_command = "grep -n ERROR access.log | head -5"
 validation = "Exact"
 success_message = """
 Excellent! The -n flag adds line numbers. Other useful grep flags:
@@ -117,22 +117,22 @@ Great for:
 [[steps]]
 step_number = 6
 title = "Practice: Extract Usernames"
-instruction = "Extract just the usernames (first field) from /etc/passwd. Use cut with colon delimiter: cut -d':' -f1 /etc/passwd"
-hint = "Type: cut -d':' -f1 /etc/passwd"
+instruction = "Extract just the names (first field) from scores.txt. Use cut with a colon delimiter: cut -d':' -f1 scores.txt"
+hint = "Type: cut -d':' -f1 scores.txt"
 
 [steps.step_type.CommandExercise]
-expected_command = "cut -d':' -f1 /etc/passwd"
+expected_command = "cut -d':' -f1 scores.txt"
 validation = "Exact"
-success_message = "Perfect! You've extracted all usernames. The /etc/passwd file uses colons as delimiters, and field 1 is the username. This is how you parse structured text files!"
+success_message = "Perfect! You've extracted the names. scores.txt uses colons as delimiters, and field 1 is the name. Many system files work the same way (try /etc/passwd in your own terminal). This is how you parse structured text!"
 
 [[steps]]
 step_number = 7
 title = "Sorting Text with sort"
-instruction = "The 'sort' command organizes lines alphabetically. Try sorting usernames: cut -d':' -f1 /etc/passwd | sort"
-hint = "Type: cut -d':' -f1 /etc/passwd | sort"
+instruction = "The 'sort' command organizes lines alphabetically. Try sorting the names: cut -d':' -f1 scores.txt | sort"
+hint = "Type: cut -d':' -f1 scores.txt | sort"
 
 [steps.step_type.CommandExercise]
-expected_command = "cut -d':' -f1 /etc/passwd | sort"
+expected_command = "cut -d':' -f1 scores.txt | sort"
 validation = "Exact"
 success_message = """
 Excellent! sort arranges lines alphabetically. Useful flags:

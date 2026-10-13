@@ -12,7 +12,6 @@ tags = [
     "permissions",
     "security",
 ]
-setup = []
 
 [[steps]]
 step_number = 1
@@ -154,7 +153,7 @@ This is perfect for scripts and executables - the owner can modify it, but every
 step_number = 7
 title = "Using chmod with Numbers"
 instruction = "Let's practice! First, create a test file: touch testfile.txt, then set its permissions to 644: chmod 644 testfile.txt"
-hint = "Type two commands: touch testfile.txt then chmod 644 testfile.txt"
+hint = "Type: chmod 644 testfile.txt"
 
 [steps.step_type.CommandExercise]
 expected_command = "chmod 644 testfile.txt"
@@ -298,3 +297,7 @@ Safety rules:
   ✓ Be careful with -R (recursive)
 
 Next: Learn process management!"""
+
+[[setup]]
+path = "testfile.txt"
+contents = "A file to practise permissions on.\n"

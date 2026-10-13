@@ -1,0 +1,120 @@
+id = "explorer-read-the-logs"
+title = "Read the Logs"
+description = "Open files and read them with cat, head and tail."
+difficulty = "Beginner"
+estimated_minutes = 10
+prerequisites = ["explorer-walk-the-halls"]
+tags = ["explorer", "files", "cat", "head", "tail"]
+track = "Explorer"
+
+[[setup]]
+path = "station/bridge/captains-log.txt"
+contents = """Day 1: New crew member arrives.
+Day 2: Crew member learns to walk the halls.
+Day 3: Strange humming from the engine room.
+Day 4: Humming stopped. Reactor fine.
+Day 5: The secret word for the airlock is ORION.
+Day 6: Strawberries running low.
+Day 7: Comet spotted off the port side.
+"""
+
+[[setup]]
+path = "station/bridge/welcome.txt"
+contents = "Welcome to the bridge. Please don't touch the big red button.\n"
+
+[[setup]]
+path = "station/garden/watering-schedule.txt"
+contents = """Monday: tomatoes
+Tuesday: beans
+Wednesday: tomatoes
+Thursday: space lettuce
+Friday: everything
+"""
+
+[[steps]]
+step_number = 1
+title = "Files hold words"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Folders hold things. Files hold words.
+
+  cat FILE        show the whole file
+  head FILE       show just the first lines
+  tail FILE       show just the last lines
+
+cat comes from 'concatenate', an old word for joining
+things together. Most people just think 'show me'."""
+
+[[steps]]
+step_number = 2
+title = "Read a welcome note"
+instruction = "Read station/bridge/welcome.txt with cat."
+hints = ["cat, then the path to the file.", "Type: cat station/bridge/welcome.txt"]
+
+solution = ["cat station/bridge/welcome.txt"]
+[steps.step_type.Task]
+goal = "Show the bridge welcome note"
+success_message = "Noted: don't touch the big red button."
+checks = [{ Used = "cat" }, { OutputContains = "big red button" }]
+
+[[steps]]
+step_number = 3
+title = "Walk there first"
+instruction = "Long paths are a lot of typing. Walk onto the bridge first, then you can use short names."
+hints = ["Use cd with the path to the bridge.", "Type: cd station/bridge"]
+
+solution = ["cd station/bridge"]
+[steps.step_type.Task]
+goal = "Go to the bridge"
+success_message = "Now the files here only need their short names."
+checks = [{ CwdIs = "station/bridge" }]
+
+[[steps]]
+step_number = 4
+title = "The captain's log"
+instruction = "Read the whole captain's log."
+hints = ["The file is captains-log.txt, right here.", "Type: cat captains-log.txt"]
+
+solution = ["cat captains-log.txt"]
+[steps.step_type.Task]
+goal = "Show the captain's log"
+success_message = "Seven days of station life. Did you spot the secret word?"
+checks = [{ Used = "cat" }, { OutputContains = "Day 7" }]
+
+[[steps]]
+step_number = 5
+title = "Just the start"
+instruction = "Long files are easier with head. Show only the first lines of the captain's log. Add -n 2 to see just two lines."
+hints = ["head works like cat but stops early.", "Type: head -n 2 captains-log.txt"]
+
+solution = ["head -n 2 captains-log.txt"]
+[steps.step_type.Task]
+goal = "Show the first two days"
+success_message = "head is perfect for a quick peek."
+checks = [{ Used = "head" }, { OutputContains = "Day 1" }]
+
+[[steps]]
+step_number = 6
+title = "Just the end"
+instruction = "The newest entries are at the bottom. Show the last line of the log with tail."
+hints = ["tail is the opposite of head.", "Type: tail -n 1 captains-log.txt"]
+
+solution = ["tail -n 1 captains-log.txt"]
+[steps.step_type.Task]
+goal = "Show the newest entry"
+success_message = "A comet! tail shows what happened most recently."
+checks = [{ Used = "tail" }, { OutputContains = "Comet" }]
+
+[[steps]]
+step_number = 7
+title = "On your own"
+instruction = "No hints. The garden has a watering schedule. Read it and show what gets watered on Thursday."
+challenge = true
+
+solution = ["cat ../garden/watering-schedule.txt"]
+[steps.step_type.Task]
+goal = "Show the garden's watering schedule"
+success_message = "Space lettuce on Thursday. You can read any file on a computer now."
+checks = [{ OutputContains = "space lettuce" }]

@@ -9,7 +9,6 @@ tags = [
     "processes",
     "system",
 ]
-setup = []
 
 [[steps]]
 step_number = 1
@@ -109,18 +108,19 @@ explanation = "Correct! A 'Z' (zombie) process has completed execution but its p
 [[steps]]
 step_number = 6
 title = "Real-Time Monitoring with top"
-instruction = "The 'top' command shows processes in real-time, updating every few seconds. Try it: top"
-hint = "Type: top (press 'q' to quit when you're done looking)"
+instruction = ""
 
-[steps.step_type.CommandExercise]
-expected_command = "top"
-validation = "CommandOnly"
-success_message = """
-Great! 'top' is like a live dashboard. It shows:
+[steps.step_type.Information]
+content = """
+'top' is a live dashboard of running processes:
   • Top section: system summary (CPU, memory, uptime)
-  • Bottom: processes sorted by CPU usage
+  • Below: processes sorted by CPU usage
   • Press 'M' to sort by memory, 'P' for CPU, 'q' to quit
-  • Press 'k' to kill a process by PID"""
+
+top takes over the whole screen and keeps running until you
+press q, so it doesn't run inside arct's panels. Try it in
+your own terminal. (htop is a friendlier version, if it's
+installed.)"""
 
 [[steps]]
 step_number = 7

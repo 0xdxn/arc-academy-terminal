@@ -1,0 +1,101 @@
+id = "explorer-hidden-compartments"
+title = "Hidden Compartments"
+description = "Files whose names start with a dot hide from plain ls. Find them with ls -a."
+difficulty = "Beginner"
+estimated_minutes = 8
+prerequisites = ["explorer-read-the-logs"]
+tags = ["explorer", "files", "hidden", "ls"]
+track = "Explorer"
+
+[[setup]]
+path = "station/vents/dust.txt"
+contents = "Just dust.\n"
+
+[[setup]]
+path = "station/vents/.stowaway.txt"
+contents = "Psst. I'm Pip, the station cat. You found me! Don't tell the captain.\n"
+
+[[setup]]
+path = "station/bridge/.spare-key.txt"
+contents = "Spare key to the snack cupboard.\n"
+
+[[setup]]
+path = "station/bridge/controls.txt"
+contents = "Steering: left, right, up, down, and a very confusing fifth direction.\n"
+
+[[steps]]
+step_number = 1
+title = "Things that hide"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+Some files hide. If a name starts with a dot, like .secret,
+plain ls won't show it.
+
+Computers use hidden files for settings that you don't need
+to see every day. Nothing magic: they're normal files that
+ls skips unless you ask.
+
+  ls -a          list ALL files, hidden ones too
+
+The -a is a 'flag'. Flags change how a command behaves."""
+
+[[steps]]
+step_number = 2
+title = "Look at the vents"
+instruction = "List what's in station/vents the normal way."
+hints = ["Use ls with the folder path.", "Type: ls station/vents"]
+
+solution = ["ls station/vents"]
+[steps.step_type.Task]
+goal = "List the vents"
+success_message = "Only dust. Or is it?"
+checks = [{ Used = "ls" }, { OutputContains = "dust.txt" }]
+
+[[steps]]
+step_number = 3
+title = "Look harder"
+instruction = "Now list the vents again, this time showing hidden files too."
+hints = ["Add the flag that means 'all'.", "Type: ls -a station/vents"]
+
+solution = ["ls -a station/vents"]
+[steps.step_type.Task]
+goal = "Show everything in the vents"
+success_message = "There's something hiding in there."
+checks = [{ Used = "ls" }, { OutputContains = ".stowaway.txt" }]
+
+[[steps]]
+step_number = 4
+title = "Meet the stowaway"
+instruction = "Read the hidden file you just found. Hidden files open the same way as any other file."
+hints = ["cat works on hidden files too. Remember the dot in the name.", "Type: cat station/vents/.stowaway.txt"]
+
+solution = ["cat station/vents/.stowaway.txt"]
+[steps.step_type.Task]
+goal = "Read the stowaway's note"
+success_message = "Pip the station cat says hello."
+checks = [{ OutputContains = "Pip" }]
+
+[[steps]]
+step_number = 5
+title = "Quick check"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "Why didn't plain ls show .stowaway.txt?"
+options = ["The file was empty", "Its name starts with a dot", "It was in the wrong folder"]
+correct_index = 1
+explanation = "Names that start with a dot are hidden. ls -a shows them."
+
+[[steps]]
+step_number = 6
+title = "On your own"
+instruction = "No hints. Something is hidden on the bridge. Find it and read it."
+challenge = true
+
+solution = ["cat station/bridge/.spare-key.txt"]
+[steps.step_type.Task]
+goal = "Find and read the hidden file on the bridge"
+success_message = "The snack cupboard key! Nothing on a computer can hide from you now."
+checks = [{ OutputContains = "snack cupboard" }]

@@ -312,10 +312,13 @@ struct TelemetryExport {
 
 /// Get the telemetry database path
 pub fn get_telemetry_db_path() -> Result<PathBuf> {
-    let data_dir = dirs::data_local_dir()
-        .context("Could not find local data directory")?;
-
-    let arct_dir = data_dir.join("arct");
+    // $ARCT_DATA_DIR overrides the location (portable installs, tests)
+    let arct_dir = match std::env::var_os("ARCT_DATA_DIR").filter(|d| !d.is_empty()) {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => dirs::data_local_dir()
+            .context("Could not find local data directory")?
+            .join("arct"),
+    };
 
     if !arct_dir.exists() {
         std::fs::create_dir_all(&arct_dir)

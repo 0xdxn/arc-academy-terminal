@@ -1,0 +1,91 @@
+id = "explorer-write-in-the-log"
+title = "Write in the Log"
+description = "Print words with echo, then write them into files with > and >>."
+difficulty = "Beginner"
+estimated_minutes = 12
+prerequisites = ["explorer-build-your-bunk"]
+tags = ["explorer", "files", "echo", "redirection"]
+track = "Explorer"
+
+[[setup]]
+path = "station/bridge/crew-log.txt"
+contents = "Crew log, Arc Station\n"
+
+[[steps]]
+step_number = 1
+title = "Saying things"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+echo prints whatever you give it:
+
+  echo Hello crew
+
+The real trick is sending those words into a file instead
+of the screen:
+
+  echo Hello > note.txt      write into note.txt (replaces what was there)
+  echo Again >> note.txt     add to the end of note.txt
+
+One arrow: replace. Two arrows: add. Mixing them up is the
+most common way people lose a file's contents."""
+
+[[steps]]
+step_number = 2
+title = "Say hello"
+instruction = "Use echo to print: Hello Arc Station"
+hints = ["echo, then the words.", "Type: echo Hello Arc Station"]
+
+solution = ["echo Hello Arc Station"]
+[steps.step_type.Task]
+goal = "Print Hello Arc Station"
+success_message = "The computer says it back."
+checks = [{ Used = "echo" }, { OutputContains = "Hello Arc Station" }]
+
+[[steps]]
+step_number = 3
+title = "Write a note"
+instruction = "Go to station/bridge and write the words 'Shift started' into a new file called shift.txt."
+hints = ["cd first. Then echo the words, one arrow, and the file name.", "Type: echo Shift started > shift.txt"]
+
+solution = ["cd station/bridge", "echo Shift started > shift.txt"]
+[steps.step_type.Task]
+goal = "Write Shift started into shift.txt"
+success_message = "Your first file with words in it. Check it with cat."
+checks = [{ FileContains = { path = "station/bridge/shift.txt", text = "Shift started" } }]
+
+[[steps]]
+step_number = 4
+title = "Add to the crew log"
+instruction = "The crew log already has a title. Add the line 'Day 1: all quiet' to the end of crew-log.txt without wiping the title."
+hints = ["Two arrows add to the end.", "Type: echo Day 1: all quiet >> crew-log.txt"]
+
+solution = ["echo Day 1: all quiet >> crew-log.txt"]
+[steps.step_type.Task]
+goal = "Add Day 1 to the crew log, keeping the title"
+success_message = "Title still there, Day 1 added below it."
+checks = [{ FileContains = { path = "station/bridge/crew-log.txt", text = "Crew log, Arc Station" } }, { FileContains = { path = "station/bridge/crew-log.txt", text = "Day 1: all quiet" } }]
+
+[[steps]]
+step_number = 5
+title = "One arrow or two?"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "You want to add a line to the end of crew-log.txt. Which do you use?"
+options = [">", ">>"]
+correct_index = 1
+explanation = "Two arrows add. One arrow would replace the whole log with just your line."
+
+[[steps]]
+step_number = 6
+title = "On your own"
+instruction = "No hints. Add two more lines to the crew log: 'Day 2: comet spotted' and then 'Day 3: Gerald escaped'. The title and Day 1 must survive."
+challenge = true
+
+solution = ["echo Day 2: comet spotted >> crew-log.txt", "echo Day 3: Gerald escaped >> crew-log.txt"]
+[steps.step_type.Task]
+goal = "Add Day 2 and Day 3 to the crew log"
+success_message = "A proper log. You can write files from the command line now."
+checks = [{ FileContains = { path = "station/bridge/crew-log.txt", text = "Crew log, Arc Station" } }, { FileContains = { path = "station/bridge/crew-log.txt", text = "Day 1: all quiet" } }, { FileContains = { path = "station/bridge/crew-log.txt", text = "Day 2: comet spotted" } }, { FileContains = { path = "station/bridge/crew-log.txt", text = "Day 3: Gerald escaped" } }]

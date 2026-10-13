@@ -1197,10 +1197,198 @@ impl App {
         })
     }
 
+    /// Apply a chmod mode to a sandbox file for the modes lessons rely on:
+    /// octal numbers and adding/removing execute (`+x`, `u+x`, `a-x`...).
+    /// Returns false for modes it leaves simulated.
+    #[cfg(unix)]
+    fn apply_sandbox_mode(real: &std::path::Path, mode: &str) -> bool {
+        use std::os::unix::fs::PermissionsExt;
+        let Ok(meta) = std::fs::metadata(real) else {
+            return false;
+        };
+        let current = meta.permissions().mode() & 0o7777;
+        let new_mode = if mode.chars().all(|c| c.is_digit(8)) && (3..=4).contains(&mode.len()) {
+            u32::from_str_radix(mode, 8).ok()
+        } else if let Some((who, perm)) = mode.split_once(['+', '-']) {
+            if perm != "x" || !who.chars().all(|c| "ugoa".contains(c)) {
+                None
+            } else {
+                let mut bits = 0;
+                if who.is_empty() || who.contains('a') || who.contains('u') {
+                    bits |= 0o100;
+                }
+                if who.is_empty() || who.contains('a') || who.contains('g') {
+                    bits |= 0o010;
+                }
+                if who.is_empty() || who.contains('a') || who.contains('o') {
+                    bits |= 0o001;
+                }
+                Some(if mode.contains('+') { current | bits } else { current & !bits })
+            }
+        } else {
+            None
+        };
+        match new_mode {
+            // Never lock the learner out of their own sandbox file
+            Some(m) => std::fs::set_permissions(real, std::fs::Permissions::from_mode(m | 0o600)).is_ok(),
+            None => false,
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn apply_sandbox_mode(_real: &std::path::Path, _mode: &str) -> bool {
+        false
+    }
+
+    /// Run `a | b | c` in the simulated sandbox: `a` is a sandbox command,
+    /// every later stage is a text filter (grep, head, tail, wc, sort, uniq,
+    /// cut) applied to the text flowing through
+    fn run_virtual_pipeline(&mut self, tokens: &[String]) -> String {
+        let stages: Vec<&[String]> = tokens.split(|t| t == "|").collect();
+        if stages.iter().any(|stage| stage.is_empty()) {
+            return format!(
+                "{}A pipe needs a command on both sides, like: cat log.txt | grep ERROR\n",
+                icons::error().content
+            );
+        }
+        let first = match self.analyzer.parse(&shellwords::join(
+            &stages[0].iter().map(String::as_str).collect::<Vec<_>>(),
+        )) {
+            Ok(first) => first,
+            Err(e) => return format!("{}{}\n", icons::error().content, e),
+        };
+        let mut text = match self.execute_virtual_fs_command(&first) {
+            Some(out) if Self::output_reports_failure(&out) => return out,
+            Some(out) => out,
+            None => {
+                return format!(
+                    "{}{} isn't available in the sandbox\n",
+                    icons::error().content,
+                    first.program
+                )
+            }
+        };
+        for stage in &stages[1..] {
+            let (program, args) = (stage[0].as_str(), &stage[1..]);
+            if !arct_core::text_filter::FILTERS.contains(&program) {
+                return format!(
+                    "{}{} can't be used after a pipe in the sandbox (try grep, head, tail, wc, sort, uniq or cut)\n",
+                    icons::error().content,
+                    program
+                );
+            }
+            match arct_core::text_filter::apply(program, args, &text) {
+                Ok(out) => text = out,
+                Err(message) => return format!("{}{}\n", icons::error().content, message),
+            }
+        }
+        text
+    }
+
+    /// Run a script in the simulated sandbox: each line is one sandbox
+    /// command. Scripts can't start other scripts, and the safety guard
+    /// still applies line by line.
+    fn run_virtual_script(&mut self, cmd: &arct_core::Command) -> String {
+        let (name, direct) = if let Some(path) = cmd.program.strip_prefix("./") {
+            (path.to_string(), true)
+        } else {
+            match cmd.args.iter().find(|a| !a.starts_with('-')) {
+                Some(file) => (file.clone(), false),
+                None => {
+                    return format!(
+                        "{}{}: which script? Try: {} hello.sh\n",
+                        icons::error().content,
+                        cmd.program,
+                        cmd.program
+                    )
+                }
+            }
+        };
+        let Some(vfs) = self.virtual_fs.as_ref() else {
+            return String::new();
+        };
+        let real = match vfs.resolve_path(&name) {
+            Ok(real) => real,
+            Err(e) => return format!("{}{}: {}\n", icons::error().content, name, e),
+        };
+        if direct {
+            #[cfg(unix)]
+            let executable = {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::metadata(&real)
+                    .map(|m| m.permissions().mode() & 0o111 != 0)
+                    .unwrap_or(false)
+            };
+            #[cfg(not(unix))]
+            let executable = true;
+            if real.is_file() && !executable {
+                return format!(
+                    "{}./{}: permission denied\n\n{}A file must be marked executable before ./ can run it: chmod +x {}\n",
+                    icons::error().content,
+                    name,
+                    icons::hint().content,
+                    name
+                );
+            }
+        }
+        let script = match std::fs::read_to_string(&real) {
+            Ok(text) => text,
+            Err(_) => return format!("{}{}: no such script\n", icons::error().content, name),
+        };
+
+        let mut output = String::new();
+        for line in script.lines().map(str::trim) {
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let arct_core::GuardVerdict::Refuse { reason } =
+                arct_core::PlaygroundGuard::check_catastrophic(line)
+            {
+                output.push_str(&format!("{}Blocked: {}\n", icons::warning().content, reason));
+                continue;
+            }
+            let Ok(inner) = self.analyzer.parse(line) else {
+                output.push_str(&format!("{}could not read: {}\n", icons::error().content, line));
+                continue;
+            };
+            if matches!(inner.program.as_str(), "sh" | "bash") || inner.program.starts_with("./") {
+                output.push_str(&format!(
+                    "{}scripts can't start other scripts in the sandbox\n",
+                    icons::error().content
+                ));
+                continue;
+            }
+            match self.execute_virtual_fs_command(&inner) {
+                Some(out) => output.push_str(&out),
+                None => output.push_str(&format!(
+                    "{}{}: not available in the sandbox\n",
+                    icons::error().content,
+                    inner.program
+                )),
+            }
+        }
+        if output.is_empty() {
+            output.push_str("(the script ran and printed nothing)\n");
+        }
+        output
+    }
+
     /// Execute command against virtual filesystem and return output
     fn execute_virtual_fs_command(&mut self, cmd: &arct_core::Command) -> Option<String> {
         if !self.lesson_mode {
             return None;
+        }
+
+        // Pipes: the first command runs in the sandbox, the rest filter text
+        if let Ok(tokens) = shellwords::split(&cmd.raw) {
+            if tokens.iter().any(|t| t == "|") {
+                return Some(self.run_virtual_pipeline(&tokens));
+            }
+        }
+
+        // Scripts: `sh file`, `bash file`, or `./file` once it is executable
+        if matches!(cmd.program.as_str(), "sh" | "bash") || cmd.program.starts_with("./") {
+            return Some(self.run_virtual_script(cmd));
         }
 
         let vfs = self.virtual_fs.as_mut()?;
@@ -1222,33 +1410,80 @@ impl App {
             }
 
             "ls" => {
-                // Check for -a flag (show hidden files)
                 let show_hidden = Self::has_flag(cmd, "-a") || Self::has_flag(cmd, "--all");
+                let long = Self::has_flag(cmd, "-l");
+                let human = Self::has_flag(cmd, "-h");
+                let size_text = |bytes: u64| -> String {
+                    if human && bytes >= 1024 {
+                        format!("{:.1}K", bytes as f64 / 1024.0)
+                    } else {
+                        bytes.to_string()
+                    }
+                };
 
-                match vfs.list_directory(None) {
-                    Ok(mut entries) => {
-                        // Filter out hidden files if -a not specified
-                        if !show_hidden {
-                            entries.retain(|e| !e.name.starts_with('.'));
+                let targets: Vec<Option<&str>> = if operands.is_empty() {
+                    vec![None]
+                } else {
+                    operands.iter().map(|o| Some(o.as_str())).collect()
+                };
+                let mut output = String::new();
+                for target in &targets {
+                    // `ls file` prints the file itself
+                    if let Some(name) = target {
+                        match vfs.resolve_path(name) {
+                            Ok(real) if real.is_file() => {
+                                let size = std::fs::metadata(&real).map(|m| m.len()).unwrap_or(0);
+                                if long {
+                                    output.push_str(&format!("-rw-r--r--  {:>6}  {}\n", size_text(size), name));
+                                } else {
+                                    output.push_str(&format!("{}\n", name));
+                                }
+                                continue;
+                            }
+                            Ok(real) if !real.exists() => {
+                                output.push_str(&format!(
+                                    "{}ls: {}: No such file or directory\n",
+                                    icons::error().content,
+                                    name
+                                ));
+                                continue;
+                            }
+                            Err(e) => {
+                                output.push_str(&format!("{}ls: {}\n", icons::error().content, e));
+                                continue;
+                            }
+                            _ => {}
                         }
-
-                        let mut output = String::new();
-                        for entry in entries {
-                            if entry.is_dir {
-                                output.push_str(&format!("{}{}/\n", icons::folder().content, entry.name));
-                            } else {
-                                output.push_str(&format!("{}{}\n", icons::file().content, entry.name));
+                    }
+                    if targets.len() > 1 {
+                        output.push_str(&format!("{}:\n", target.unwrap_or(".")));
+                    }
+                    match vfs.list_directory(*target) {
+                        Ok(mut entries) => {
+                            if !show_hidden {
+                                entries.retain(|e| !e.name.starts_with('.'));
+                            }
+                            if entries.is_empty() {
+                                output.push_str("(empty folder)\n");
+                            }
+                            for entry in entries {
+                                let shown = if entry.is_dir {
+                                    format!("{}/", entry.name)
+                                } else {
+                                    entry.name.clone()
+                                };
+                                if long {
+                                    let mode = if entry.is_dir { "drwxr-xr-x" } else { "-rw-r--r--" };
+                                    output.push_str(&format!("{}  {:>6}  {}\n", mode, size_text(entry.size), shown));
+                                } else {
+                                    output.push_str(&format!("{}\n", shown));
+                                }
                             }
                         }
-
-                        if output.is_empty() {
-                            output = "Empty directory\n".to_string();
-                        }
-
-                        Some(output)
+                        Err(e) => output.push_str(&format!("{}ls: {}\n", icons::error().content, e)),
                     }
-                    Err(e) => Some(format!("{}ls: {}\n", icons::error().content, e)),
                 }
+                Some(output)
             }
 
             "cd" => {
@@ -1518,10 +1753,17 @@ impl App {
                 for file in files {
                     match vfs.resolve_path(file) {
                         Ok(real) if real.exists() => {
-                            output.push_str(&format!(
-                                "{}Mode of '{}' set to '{}' (simulated — permissions aren't enforced in the lesson sandbox)\n",
-                                icons::success().content, file, mode
-                            ));
+                            if Self::apply_sandbox_mode(&real, mode) {
+                                output.push_str(&format!(
+                                    "{}Mode of '{}' set to '{}'\n",
+                                    icons::success().content, file, mode
+                                ));
+                            } else {
+                                output.push_str(&format!(
+                                    "{}Mode of '{}' set to '{}' (simulated: the sandbox only applies +x, -x and number modes)\n",
+                                    icons::success().content, file, mode
+                                ));
+                            }
                         }
                         Ok(_) => output.push_str(&format!("{}chmod: cannot access '{}': No such file or directory\n", icons::error().content, file)),
                         Err(e) => output.push_str(&format!("{}chmod: {}\n", icons::error().content, e)),
@@ -1539,7 +1781,7 @@ impl App {
             | "df" | "du" | "free" | "uname" | "whoami" | "tar" | "zip" | "unzip" | "gzip"
             | "nano" | "vim" | "vi" | "less" | "more" | "netstat" | "ifconfig" | "ip" | "ss"
             | "lsof" | "systemctl" | "journalctl" | "env" | "printenv" | "find" | "sed"
-            | "awk" | "sort" | "uniq" | "ln" | "which" | "python" | "python3" | "pip"
+            | "awk" | "ln" | "which" | "python" | "python3" | "pip"
             | "npm" | "node" => {
                 Some(format!(
                     "(lesson sandbox) '{}' isn't simulated here — this step checks your command syntax.\n",
@@ -1548,7 +1790,39 @@ impl App {
             }
 
             // Commands that don't manipulate the filesystem
-            _ => None,
+            "sort" | "uniq" | "cut" => {
+                let files = arct_core::text_filter::operands(program, &cmd.args);
+                if files.is_empty() {
+                    return Some(format!(
+                        "{}{} needs a file here, or use it after a pipe: cat file.txt | {}\n",
+                        icons::error().content,
+                        program,
+                        program
+                    ));
+                }
+                let mut input = String::new();
+                for file in &files {
+                    match vfs.read_file(file) {
+                        Ok(content) => input.push_str(&content),
+                        Err(e) => {
+                            return Some(format!("{}{}: {}\n", icons::error().content, program, e))
+                        }
+                    }
+                }
+                let flags: Vec<String> =
+                    cmd.args.iter().filter(|a| !files.contains(a)).cloned().collect();
+                Some(match arct_core::text_filter::apply(program, &flags, &input) {
+                    Ok(out) => out,
+                    Err(message) => format!("{}{}\n", icons::error().content, message),
+                })
+            }
+
+            other => Some(format!(
+                "{}{} doesn't run in the simulated sandbox, so this only checks what you typed. \
+                 To see real output, switch lesson practice to real files in settings (Ctrl+S).\n",
+                icons::info().content,
+                other
+            )),
         }
     }
 
@@ -3547,4 +3821,102 @@ enum SettingsAction {
     StartEdit,
     Close,
     None,
+}
+
+#[cfg(test)]
+mod playthrough_tests {
+    use super::*;
+    use arct_core::{CommandValidation, LessonStep, StepType};
+
+    /// What a learner would type to finish a step: the lesson's own
+    /// solution, or the expected answer for steps that have one
+    fn step_inputs(lesson_id: &str, step: &LessonStep) -> Vec<String> {
+        if !step.solution.is_empty() {
+            return step.solution.clone();
+        }
+        match &step.step_type {
+            StepType::CommandExercise {
+                expected_command,
+                validation,
+                ..
+            } => match validation {
+                CommandValidation::AnyOf(options) => vec![options[0].clone()],
+                _ => vec![expected_command.clone()],
+            },
+            StepType::MultipleChoice { correct_index, .. } => vec![correct_index.to_string()],
+            StepType::FillInBlank {
+                template,
+                correct_answers,
+                ..
+            } => {
+                let answer = &correct_answers[0];
+                let filled = match (template.find('{'), template.find('}')) {
+                    (Some(a), Some(b)) if a < b => {
+                        format!("{}{}{}", &template[..a], answer, &template[b + 1..])
+                    }
+                    _ => answer.clone(),
+                };
+                vec![filled]
+            }
+            StepType::Information { .. } => vec![String::new()],
+            StepType::Practice { .. } | StepType::Task { .. } => panic!(
+                "{lesson_id} step {} '{}' is a task and needs a `solution`",
+                step.step_number, step.title
+            ),
+        }
+    }
+
+    /// Plays every built-in lesson, start to finish, in the simulated
+    /// sandbox, through the same code path a learner's Enter key takes
+    #[tokio::test]
+    async fn every_builtin_lesson_can_be_completed() {
+        let dir = std::env::temp_dir().join(format!("arct-playthrough-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("ARCT_DATA_DIR", &dir);
+        let config = dir.join("config.toml");
+        std::fs::write(
+            &config,
+            "[general]\nsetup_complete = true\n[lessons]\npractice_mode = \"simulated\"\n",
+        )
+        .unwrap();
+
+        let library = arct_core::LessonLibrary::new();
+        for lesson in library.all() {
+            let mut app = App::new_with_options(crate::RunOptions {
+                config_path: Some(config.clone()),
+                ..Default::default()
+            })
+            .unwrap();
+            app.lesson_mode = true;
+            app.lesson_panel
+                .as_mut()
+                .expect("lesson panel")
+                .load_lesson(lesson.clone());
+            app.prepare_lesson_environment();
+
+            for step in &lesson.steps {
+                let before = app.lesson_panel.as_ref().unwrap().current_step_index();
+                for input in step_inputs(&lesson.id, step) {
+                    app.command_buffer = input;
+                    app.execute_command().await.unwrap();
+                }
+                let after = app.lesson_panel.as_ref().unwrap().current_step_index();
+                let finished = app.completed_lessons.contains(&lesson.id);
+                assert!(
+                    after == before + 1 || finished,
+                    "{} step {} '{}' did not pass.\n--- output ---\n{}",
+                    lesson.id,
+                    step.step_number,
+                    step.title,
+                    app.last_output
+                );
+            }
+            assert!(
+                app.completed_lessons.contains(&lesson.id),
+                "{} was not recorded as completed",
+                lesson.id
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

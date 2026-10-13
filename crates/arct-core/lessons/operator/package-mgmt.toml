@@ -9,7 +9,6 @@ tags = [
     "packages",
     "system",
 ]
-setup = []
 
 [[steps]]
 step_number = 1

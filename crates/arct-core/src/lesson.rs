@@ -129,6 +129,11 @@ pub struct LessonStep {
     /// A challenge step gives no hints and never reveals the answer.
     #[serde(default)]
     pub challenge: bool,
+    /// Commands that complete this step, in order. Not shown to learners;
+    /// the test suite plays every built-in lesson with them. Needed for
+    /// task steps; other steps fall back to their expected answer.
+    #[serde(default)]
+    pub solution: Vec<String>,
 }
 
 impl LessonStep {
@@ -594,6 +599,16 @@ impl LessonLibrary {
 /// `crates/arct-core/lessons/`, the same format as user lesson packs, so a
 /// new lesson is a new file, not new Rust.
 const BUILTIN_LESSONS: &[(&str, &str)] = &[
+    ("explorer/look-around.toml", include_str!("../lessons/explorer/look-around.toml")),
+    ("explorer/walk-the-halls.toml", include_str!("../lessons/explorer/walk-the-halls.toml")),
+    ("explorer/read-the-logs.toml", include_str!("../lessons/explorer/read-the-logs.toml")),
+    ("explorer/hidden-compartments.toml", include_str!("../lessons/explorer/hidden-compartments.toml")),
+    ("explorer/build-your-bunk.toml", include_str!("../lessons/explorer/build-your-bunk.toml")),
+    ("explorer/move-the-cargo.toml", include_str!("../lessons/explorer/move-the-cargo.toml")),
+    ("explorer/careful-with-rm.toml", include_str!("../lessons/explorer/careful-with-rm.toml")),
+    ("explorer/search-the-station.toml", include_str!("../lessons/explorer/search-the-station.toml")),
+    ("explorer/write-in-the-log.toml", include_str!("../lessons/explorer/write-in-the-log.toml")),
+    ("explorer/first-script.toml", include_str!("../lessons/explorer/first-script.toml")),
     ("operator/nav-basics.toml", include_str!("../lessons/operator/nav-basics.toml")),
     ("operator/file-mgmt.toml", include_str!("../lessons/operator/file-mgmt.toml")),
     ("operator/safety-essentials.toml", include_str!("../lessons/operator/safety-essentials.toml")),
@@ -1077,7 +1092,7 @@ mod tests {
     fn test_library_order_is_stable_and_respects_prerequisites() {
         let library = LessonLibrary::new();
         let ids: Vec<&str> = library.all().iter().map(|l| l.id.as_str()).collect();
-        assert_eq!(ids.first(), Some(&"nav-basics"));
+        assert!(ids.contains(&"nav-basics") && ids.contains(&"explorer-look-around"));
         let other = LessonLibrary::new();
         let again: Vec<&str> = other.all().iter().map(|l| l.id.as_str()).collect();
         assert_eq!(ids, again, "order must not change between runs");

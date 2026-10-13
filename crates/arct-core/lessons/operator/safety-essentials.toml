@@ -10,7 +10,6 @@ tags = [
     "essential",
     "security",
 ]
-setup = []
 
 [[steps]]
 step_number = 1
