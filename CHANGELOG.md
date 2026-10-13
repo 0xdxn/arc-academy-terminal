@@ -7,9 +7,13 @@
 - The guard checks every part of a chained command (`a && b`, `a; b`, `a | b`), refuses `rm -r ~` and `--no-preserve-root`, and no longer lets `~/...` paths climb out with `..`.
 - In the simulated sandbox, `rm -rf /` now gets the safety lesson instead of wiping the sandbox, and flags like `-rf` are never treated as file names.
 - A lesson step only passes if its command actually worked.
+- The guard also checks each command after variables and wildcards are filled in, so `X=/; rm -rf $X` is refused like `rm -rf /`. Redirecting into `/dev/null` is allowed; into a real device it is not.
 
 ### Learning
 - Explorer track: ten story lessons on Arc Station for younger learners, from `pwd` to a first script.
+- Operator track: twenty new lessons, thirty in all. Dotfiles, wildcards, quoting, command lists, redirection, pipelines and `tee`, `find`, `sed`, `tr` and `cut`, `diff`, variables, the environment, scripts and their arguments, `PATH`, archives, `du`, SSH keys, and two capstones: Log Detective and Spring Cleaning.
+- The simulated sandbox is now a small shell: quotes, variables and `export`, wildcards, redirection (`>`, `>>`, `2>`, `2>&1`, `<`, `/dev/null`), pipes into any text command, `&&`, `||` and `;`, scripts with arguments, and your own commands on `PATH`. New commands: `find`, `sed`, `tr`, `tee`, `diff`, `du`, `tar`, `gzip`, `gunzip`, `which`, `type`, `env`, and a practice-only `ssh-keygen`. `cp` and `mv` take several files into a folder; `ls -l` shows real permissions.
+- In real-files lessons, variables and `export` carry from one command to the next.
 - Lessons are TOML files, and steps can check outcomes (a folder exists, a file contains text, where you are) instead of exact keystrokes.
 - Hints come one per miss; the answer only after the last hint; challenge steps give none.
 - Practice and fill-in-the-blank steps are now actually checked.
