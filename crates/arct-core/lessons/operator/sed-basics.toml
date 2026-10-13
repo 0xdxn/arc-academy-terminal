@@ -47,7 +47,7 @@ unless you say otherwise.
   sed 's/old/new/' FILE       replace the first old on each line
   sed 's/old/new/g' FILE      replace every old (g for global)
   sed '/word/d' FILE          drop the lines that contain word
-  sed -i 's/old/new/' FILE    change the file itself (careful)
+  sed -i.bak 's/old/new/' FILE  change the file, keep FILE.bak
 
 Keep the sed script in single quotes, so the shell
 leaves it alone.
@@ -115,22 +115,22 @@ checks = [{ Used = "sed" }, { OutputContains = "units = imperial\nlog_path" }]
 
 [[steps]]
 step_number = 7
-title = "Back up, preview, then edit"
-instruction = "Now change the file itself: units should be metric, not imperial. Do it in three moves. Copy station.conf to station.conf.bak. Preview the change without -i. When it looks right, run the same command with -i."
-hints = ["cp makes the backup. Then sed 's/imperial/metric/' station.conf to preview.", "Last, add -i: sed -i 's/imperial/metric/' station.conf", "Type: cp station.conf station.conf.bak   then: sed 's/imperial/metric/' station.conf   then: sed -i 's/imperial/metric/' station.conf"]
-solution = ["cp station.conf station.conf.bak", "sed 's/imperial/metric/' station.conf", "sed -i 's/imperial/metric/' station.conf"]
+title = "Preview, then edit with a backup"
+instruction = "Now change the file itself: units should be metric, not imperial. First preview the change, without -i. When it looks right, run the same command with -i.bak: sed changes the file and keeps the original as station.conf.bak."
+hints = ["Preview: sed 's/imperial/metric/' station.conf", "Then add -i.bak: sed -i.bak 's/imperial/metric/' station.conf", "Type: sed 's/imperial/metric/' station.conf   then: sed -i.bak 's/imperial/metric/' station.conf"]
+solution = ["sed 's/imperial/metric/' station.conf", "sed -i.bak 's/imperial/metric/' station.conf"]
 
 [steps.step_type.Task]
 goal = "Set units to metric in station.conf"
-success_message = "-i printed nothing, because it wrote to the file instead. There's no undo, which is why you made the backup first. On a Mac, sed -i needs an extra argument: sed -i '' 's/imperial/metric/' station.conf."
+success_message = "-i.bak printed nothing, because it wrote to the file instead, and kept the original as station.conf.bak. There's no undo, which is why the backup matters."
 checks = [{ FileExists = "station/station.conf.bak" }, { FileContains = { path = "station/station.conf", text = "units = metric" } }]
 
 [[steps]]
 step_number = 8
 title = "Slashes in the way"
-instruction = "The data moved from /old/data to /srv/weather. Those paths are full of slashes, which sed also uses. sed lets you pick another separator: s|/old/data|/srv/weather| works the same way. Preview it, then change the file with -i."
-hints = ["Keep the | script in single quotes, or the shell will read | as a pipe.", "Preview: sed 's|/old/data|/srv/weather|' station.conf", "Type: sed -i 's|/old/data|/srv/weather|' station.conf"]
-solution = ["sed 's|/old/data|/srv/weather|' station.conf", "sed -i 's|/old/data|/srv/weather|' station.conf"]
+instruction = "The data moved from /old/data to /srv/weather. Those paths are full of slashes, which sed also uses. sed lets you pick another separator: s|/old/data|/srv/weather| works the same way. Preview it, then change the file with -i.bak."
+hints = ["Keep the | script in single quotes, or the shell will read | as a pipe.", "Preview: sed 's|/old/data|/srv/weather|' station.conf", "Type: sed -i.bak 's|/old/data|/srv/weather|' station.conf"]
+solution = ["sed 's|/old/data|/srv/weather|' station.conf", "sed -i.bak 's|/old/data|/srv/weather|' station.conf"]
 
 [steps.step_type.Task]
 goal = "Point both paths at /srv/weather"
@@ -154,11 +154,11 @@ step_number = 10
 title = "On your own"
 instruction = "No hints. The station has been renamed from Hilltop to Ridgeview. Change every Hilltop in station.conf to Ridgeview, in the file itself. Preview first."
 challenge = true
-solution = ["sed 's/Hilltop/Ridgeview/g' station.conf", "sed -i 's/Hilltop/Ridgeview/g' station.conf"]
+solution = ["sed 's/Hilltop/Ridgeview/g' station.conf", "sed -i.bak 's/Hilltop/Ridgeview/g' station.conf"]
 
 [steps.step_type.Task]
 goal = "Rename Hilltop to Ridgeview everywhere in station.conf"
-success_message = "Every Hilltop is now Ridgeview, including the line that had two. And your backup still holds the original."
+success_message = "Every Hilltop is now Ridgeview, including the line that had two. And station.conf.bak holds the file as it was just before."
 checks = [{ FileContains = { path = "station/station.conf", text = "name = Ridgeview" } }, { FileContains = { path = "station/station.conf", text = "report_title = Ridgeview daily report (Ridgeview station)" } }]
 
 [[steps]]
@@ -173,10 +173,9 @@ content = """
   sed '/word/d' FILE             leave out lines containing word
   sed 's|/a/b|/c/d|' FILE        another separator, for paths
   ... | sed 's/old/new/'         edit text from a pipe
-  sed -i 's/old/new/' FILE       change the file itself
+  sed -i.bak 's/old/new/' FILE   change the file, keep FILE.bak
 
-Without -i, sed only prints, so try things freely. Before
--i, keep a backup and preview the change. On a real system,
-sed -i.bak 's/old/new/' FILE does both at once: it
-saves the original as FILE.bak. (This practice shell only
-knows plain -i.)"""
+Without -i, sed only prints, so try things freely. Preview
+before you change a file. Plain -i, with no backup, works
+on Linux; on a Mac it is written -i ''. -i.bak works on
+both."""

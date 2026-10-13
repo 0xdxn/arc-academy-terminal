@@ -52,6 +52,115 @@ pub struct PlaygroundGuard {
     display: String,
 }
 
+/// What a sed script can reach beyond the text it edits
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SedReach {
+    /// Only commands that edit, print or delete lines
+    Harmless,
+    /// w, W, r, R or e somewhere (or s///w, s///e): files or programs
+    FilesOrPrograms,
+    /// Not understood: left to the ordinary path check
+    Unknown,
+}
+
+/// Classify a sed script by reading it the way sed does: addresses
+/// (a number, $, /regex/ or \cregexc, a range, !), then a command. Only
+/// a short list of commands counts as harmless.
+fn sed_script_reach(script: &str) -> SedReach {
+    let chars: Vec<char> = script.chars().collect();
+    let mut i = 0;
+    // Read a delimited part (regex or replacement) ending at an unescaped
+    // `delim`; returns the index after it
+    let read_part = |mut i: usize, delim: char| -> Option<usize> {
+        while i < chars.len() {
+            match chars[i] {
+                '\\' => i += 2,
+                c if c == delim => return Some(i + 1),
+                '\n' => return None,
+                _ => i += 1,
+            }
+        }
+        None
+    };
+    let read_address = |i: usize| -> Option<usize> {
+        match chars.get(i) {
+            Some(c) if c.is_ascii_digit() => {
+                let mut j = i;
+                while chars.get(j).is_some_and(|c| c.is_ascii_digit()) {
+                    j += 1;
+                }
+                Some(j)
+            }
+            Some('$') => Some(i + 1),
+            Some('/') => read_part(i + 1, '/'),
+            Some('\\') => {
+                let delim = *chars.get(i + 1)?;
+                read_part(i + 2, delim)
+            }
+            _ => Some(i),
+        }
+    };
+    let mut reach = SedReach::Harmless;
+    loop {
+        while chars.get(i).is_some_and(|c| c.is_whitespace() || *c == ';') {
+            i += 1;
+        }
+        if i >= chars.len() {
+            return reach;
+        }
+        let Some(after) = read_address(i) else { return SedReach::Unknown };
+        i = after;
+        if chars.get(i) == Some(&',') {
+            let Some(after) = read_address(i + 1) else { return SedReach::Unknown };
+            if after == i + 1 {
+                return SedReach::Unknown;
+            }
+            i = after;
+        }
+        while chars.get(i).is_some_and(|c| c.is_whitespace() || *c == '!') {
+            i += 1;
+        }
+        let Some(&command) = chars.get(i) else { return SedReach::Unknown };
+        i += 1;
+        match command {
+            'w' | 'W' | 'r' | 'R' | 'e' => return SedReach::FilesOrPrograms,
+            'd' | 'D' | 'p' | 'P' | 'n' | 'N' | 'q' | 'Q' | '=' | 'g' | 'G' | 'h' | 'H'
+            | 'x' | 'l' | 'z' | '{' | '}' => {}
+            's' | 'y' => {
+                let Some(&delim) = chars.get(i) else { return SedReach::Unknown };
+                if delim == '\\' || delim == '\n' || delim.is_whitespace() {
+                    return SedReach::Unknown;
+                }
+                let Some(after) = read_part(i + 1, delim) else { return SedReach::Unknown };
+                let Some(after) = read_part(after, delim) else { return SedReach::Unknown };
+                i = after;
+                if command == 's' {
+                    while let Some(&flag) = chars.get(i) {
+                        match flag {
+                            'w' | 'e' => return SedReach::FilesOrPrograms,
+                            'g' | 'p' | 'i' | 'I' | 'm' | 'M' => i += 1,
+                            c if c.is_ascii_digit() => i += 1,
+                            _ => break,
+                        }
+                    }
+                }
+            }
+            _ => reach = SedReach::Unknown,
+        }
+        if reach == SedReach::Unknown {
+            return reach;
+        }
+        while chars.get(i).is_some_and(|c| *c == ' ' || *c == '\t') {
+            i += 1;
+        }
+        match chars.get(i) {
+            None => return reach,
+            Some(';') | Some('\n') | Some('}') => {}
+            Some(_) => return SedReach::Unknown,
+        }
+    }
+}
+
 impl PlaygroundGuard {
     /// Create a guard for the given playground root (absolute path).
     pub fn new(root: impl Into<PathBuf>) -> Self {
@@ -172,6 +281,32 @@ impl PlaygroundGuard {
         };
 
         // --- 4. Per-token path containment ---
+        // A sed script such as '/debug/d' starts with '/' but names no file.
+        // Scripts made only of commands that can't reach a file or program
+        // are left out of the path check; scripts with w, r or e (which do)
+        // are refused; anything not understood is checked as a path.
+        let mut sed_scripts = std::collections::HashSet::new();
+        for (index, script) in Self::sed_script_tokens(&tokens) {
+            match sed_script_reach(script) {
+                SedReach::Harmless => {
+                    sed_scripts.insert(index);
+                }
+                SedReach::FilesOrPrograms => {
+                    return GuardVerdict::refuse(
+                        "sed's w, r and e commands write files, read files or run programs \
+                         from inside the script, where the guard can't follow them, so \
+                         they're turned off here. Redirect sed's output with > instead.",
+                    );
+                }
+                SedReach::Unknown => {}
+            }
+        }
+        let tokens: Vec<String> = tokens
+            .into_iter()
+            .enumerate()
+            .filter(|(index, _)| !sed_scripts.contains(index))
+            .map(|(_, token)| token)
+            .collect();
         let mut total_climb: usize = 0;
         // Strip redirect prefixes so `>/etc/passwd` or `2>/tmp/x` are
         // analyzed as paths, and check what follows `=` too, so
@@ -433,6 +568,59 @@ impl PlaygroundGuard {
 
     /// Lexically resolve `.`/`..` in an absolute path (no filesystem access).
     /// Returns None if the path climbs above `/`.
+    /// Indices of the tokens that are sed scripts: after `-e`, in
+    /// `--expression=`, or else sed's first argument that isn't an option.
+    /// sed must be the command (first word, or after ; | & && ||).
+    fn sed_script_tokens(tokens: &[String]) -> Vec<(usize, &str)> {
+        let ends_command = |t: &str| t.ends_with([';', '|', '&']);
+        let mut found = Vec::new();
+        let mut i = 0;
+        while i < tokens.len() {
+            let at_command = i == 0 || ends_command(&tokens[i - 1]);
+            if !(at_command && tokens[i] == "sed") {
+                i += 1;
+                continue;
+            }
+            let mut j = i + 1;
+            let mut saw_expression = false;
+            let mut first_operand = None;
+            while j < tokens.len() {
+                let t = tokens[j].as_str();
+                let last = ends_command(t);
+                if t == "-e" || t == "--expression" {
+                    if let Some(next) = tokens.get(j + 1) {
+                        found.push((j + 1, next.as_str()));
+                    }
+                    saw_expression = true;
+                    j += 2;
+                    continue;
+                }
+                if let Some(script) = t.strip_prefix("--expression=") {
+                    // the path check still sees the whole token; the script
+                    // inside it is classified for w, r and e
+                    if matches!(sed_script_reach(script), SedReach::FilesOrPrograms) {
+                        found.push((j, script));
+                    }
+                    saw_expression = true;
+                } else if t == "-f" || t == "--file" {
+                    j += 2; // a script file is a path: checked as one
+                    continue;
+                } else if !t.starts_with('-') && first_operand.is_none() {
+                    first_operand = Some(j);
+                }
+                j += 1;
+                if last {
+                    break;
+                }
+            }
+            if let (false, Some(k)) = (saw_expression, first_operand) {
+                found.push((k, tokens[k].as_str()));
+            }
+            i = j;
+        }
+        found
+    }
+
     fn lexical_normalize(path: &Path) -> Option<PathBuf> {
         let mut out = PathBuf::from("/");
         for component in path.components() {
@@ -498,6 +686,56 @@ mod tests {
             GuardVerdict::Refuse { reason } => reason,
             GuardVerdict::Allow => panic!("expected Refuse for {cmd:?}, got Allow"),
         }
+    }
+
+    // --- sed scripts are scripts, not paths ---
+
+    #[test]
+    fn sed_scripts_that_only_edit_text_are_not_paths() {
+        let cwd = lesson_cwd();
+        for cmd in [
+            "sed '/debug/d' app.log",
+            "sed -n '/error/p' app.log",
+            "sed -e '/a/d' -e 's/x/y/g' notes.txt",
+            "sed '1,/start/d;s|/usr|/opt|g' notes.txt",
+            "sed -i.bak '/^#/d' notes.txt",
+            "grep x f | sed '/debug/d'",
+        ] {
+            assert_allowed(cmd, &cwd);
+        }
+        // the same line as the real-files path renders it
+        assert!(guard().check_expanded("sed '/debug/d' 'app.log'", &cwd).is_allowed());
+    }
+
+    #[test]
+    fn sed_commands_that_reach_files_or_programs_are_refused() {
+        let cwd = lesson_cwd();
+        for cmd in [
+            "sed '/x/w out.txt' notes.txt",
+            "sed 's/a/b/w /tmp/x' notes.txt",
+            "sed 's/a/date/e' notes.txt",
+            "sed '1e date' notes.txt",
+            "sed '/x/r /etc/passwd' notes.txt",
+            "ls; sed -n '2R /etc/hosts' notes.txt",
+            "sed -e 's/a/b/' -e 'W copy' notes.txt",
+            "sed --expression='w out' notes.txt",
+        ] {
+            let reason = assert_refused(cmd, &cwd);
+            assert!(reason.contains("w, r and e"), "{cmd}: {reason}");
+        }
+    }
+
+    #[test]
+    fn files_given_to_sed_are_still_checked() {
+        let cwd = lesson_cwd();
+        assert_refused("sed '/x/d' /etc/passwd", &cwd);
+        assert_refused("sed -f /etc/script.sed notes.txt", &cwd);
+        assert_refused("sed -i '/x/d' ../../../etc/hosts", &cwd);
+        // a script the guard doesn't understand is checked as a path
+        assert_refused("sed '/x/{w /etc/y}' notes.txt", &cwd);
+        // only sed's script is spared: other commands' /words are paths
+        assert_refused("cat /debug/d", &cwd);
+        assert_refused("echo hi; cat /etc/passwd '/debug/d'", &cwd);
     }
 
     // --- Everyday lesson commands pass through untouched ---
