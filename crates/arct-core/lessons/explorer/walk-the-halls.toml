@@ -6,6 +6,8 @@ estimated_minutes = 10
 prerequisites = ["explorer-look-around"]
 tags = ["explorer", "navigation", "cd"]
 track = "Explorer"
+# cd ~ goes home, which is outside the real-files playground
+simulated_only = true
 
 [[setup]]
 path = "station/bridge/captains-log.txt"
