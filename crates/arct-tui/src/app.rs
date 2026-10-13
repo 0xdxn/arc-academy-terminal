@@ -135,6 +135,15 @@ pub struct App {
     /// first use when shell.safe_mode is on
     pub explore: Option<arct_core::Playground>,
 
+    /// The OS jail for real-files lessons (None: not looked for yet;
+    /// Some(None): this system has none that passes its self-test, so
+    /// real-files practice isn't offered)
+    pub(crate) real_jail: Option<Option<crate::jail::Jail>>,
+
+    /// The OS jail for the safe-mode free shell, found the same way. With
+    /// none, the free shell still has the safety guard.
+    explore_jail: Option<Option<crate::jail::Jail>>,
+
     /// Lesson menu for selecting lessons
     pub lesson_menu: Option<crate::panels::lesson_menu::LessonMenuPanel>,
 
@@ -372,7 +381,7 @@ impl App {
             None
         };
 
-        Ok(Self {
+        let mut app = Self {
             should_quit: false,
             active_panel: PanelId::Shell,
             session,
@@ -410,6 +419,8 @@ impl App {
             sandbox: crate::sandbox::SandboxShell::new(),
             playground: None,
             explore: None,
+            real_jail: None,
+            explore_jail: None,
             lesson_menu: None,
             completed_lessons,
             user_stats,
@@ -434,7 +445,11 @@ impl App {
             show_dashboard,
             notification_ticks: 0,
             panel_rects: crate::ui::PanelRects::default(),
-        })
+        };
+        if app.config.lessons.is_real() {
+            app.real_files_jail();
+        }
+        Ok(app)
     }
 
     /// Initialize empty lesson panel (user will select lesson from menu)
@@ -2064,6 +2079,8 @@ impl App {
         } else {
             (arct_core::PlaygroundGuard::check_catastrophic(&command_str), None)
         };
+        // Safe mode also runs inside the OS jail when this system has one
+        let jail = if self.config.shell.safe_mode { self.explore_jail() } else { None };
         if let arct_core::GuardVerdict::Refuse { reason } = verdict {
             self.last_output = format!(
                 "{}Blocked. Nothing ran.\n\n{}\n\n{}The safety guard turns dangerous commands into lessons.\n",
@@ -2090,7 +2107,7 @@ impl App {
         let env_vars = self.environment_vars.clone();
         let output_result = self
             .shell_executor
-            .execute(to_run.unwrap_or_else(|| command_str.clone()), env_vars, timeout_duration, run_cwd)
+            .execute(to_run.unwrap_or_else(|| command_str.clone()), env_vars, timeout_duration, run_cwd, jail.as_ref())
             .await;
 
         let output = match output_result {
@@ -2627,7 +2644,46 @@ impl App {
 
     /// Whether lesson practice runs on the real filesystem playground
     fn practice_mode_is_real(&self) -> bool {
-        self.config.lessons.is_real()
+        self.config.lessons.is_real() && matches!(self.real_jail, Some(Some(_)))
+    }
+
+    /// The jail for real-files lessons, looked for once (opening the
+    /// playground) and kept. None: real-files practice isn't offered here.
+    fn real_files_jail(&mut self) -> Option<crate::jail::Jail> {
+        if self.real_jail.is_none() {
+            let jail = self
+                .ensure_playground()
+                .ok()
+                .and_then(|()| crate::jail::Jail::for_root(self.playground.as_ref()?.root()));
+            if jail.is_none() {
+                tracing::warn!("no working OS sandbox: real-files practice is off");
+            }
+            self.real_jail = Some(jail);
+        }
+        self.real_jail.clone().flatten()
+    }
+
+    /// The jail for the safe-mode free shell (call after ensure_explore)
+    fn explore_jail(&mut self) -> Option<crate::jail::Jail> {
+        if self.explore_jail.is_none() {
+            let jail = self.explore.as_ref().and_then(|home| crate::jail::Jail::for_root(home.root()));
+            self.explore_jail = Some(jail);
+        }
+        self.explore_jail.clone().flatten()
+    }
+
+    /// Why real-files practice isn't available on this system
+    fn no_jail_message() -> String {
+        let how = if cfg!(target_os = "linux") {
+            "On Linux it uses bubblewrap: install the bwrap package to turn it on."
+        } else {
+            "It uses the system sandbox (sandbox-exec), which isn't working here."
+        };
+        format!(
+            "Real-files practice runs every command inside the operating system's sandbox, so \
+             nothing outside ~/ArcAcademy/playground can be changed. {how} Lessons stay in the \
+             simulated sandbox."
+        )
     }
 
     /// Default playground root: ~/ArcAcademy/playground
@@ -2826,8 +2882,13 @@ impl App {
 
     /// Toggle lesson practice between the simulated sandbox and the real
     /// filesystem playground ("Toggle Real-Filesystem Practice")
-    fn toggle_practice_mode(&mut self) {
+    pub(crate) fn toggle_practice_mode(&mut self) {
         let to_real = !self.practice_mode_is_real();
+        if to_real && self.real_files_jail().is_none() {
+            self.last_output = format!("{}{}\n", icons::warning().content, Self::no_jail_message());
+            self.output_scroll = 0;
+            return;
+        }
         self.config.lessons.practice_mode = if to_real { "real" } else { "simulated" }.to_string();
         if let Err(e) = self.config.save() {
             tracing::warn!("Failed to save config: {}", e);
@@ -2985,14 +3046,18 @@ impl App {
             };
         }
 
-        // Real execution, pinned to the tracked playground cwd, with the
-        // same timeout-kill behavior as the normal shell
+        // Real execution inside the OS jail (never without one), pinned to
+        // the tracked playground cwd, with the same timeout-kill behavior
+        // as the normal shell
+        let Some(jail) = self.real_files_jail() else {
+            return format!("{}{}\n", icons::warning().content, Self::no_jail_message());
+        };
         let timeout = std::time::Duration::from_secs(self.config.general.command_timeout);
         let mut env_vars = self.environment_vars.clone();
         env_vars.extend(self.sandbox.real_env());
         match self
             .shell_executor
-            .execute(to_run.to_string(), env_vars, timeout, Some(cwd))
+            .execute(to_run.to_string(), env_vars, timeout, Some(cwd), Some(&jail))
             .await
         {
             Ok(output) => output,

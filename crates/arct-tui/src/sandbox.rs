@@ -1410,8 +1410,24 @@ mod tests {
         assert!(out.contains(".hidden") && !out.contains("..\n") && !out.contains(".. "), "{out}");
         let out = real(&mut app, "ls .[.]/.[.]").await;
         assert!(out.contains("No such file"), "{out}");
+        // and the OS jail holds where the guard can't see: a script that
+        // climbs out (probe: an empty file in the temp folder)
+        assert!(matches!(app.real_jail, Some(Some(_))), "real files run jailed");
+        let escape = root.parent().unwrap().join(format!("arct-escape-probe-{}", std::process::id()));
+        std::fs::write(lesson.join("x.sh"), format!("cd ..; cd ..; touch '{}'\n", escape.display())).unwrap();
+        real(&mut app, "sh x.sh").await;
+        assert!(!escape.exists(), "the script wrote outside the playground");
 
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn real_files_practice_needs_a_jail() {
+        let mut app = app("nojail");
+        app.real_jail = Some(None);
+        app.toggle_practice_mode();
+        assert_eq!(app.config.lessons.practice_mode, "simulated");
+        assert!(app.last_output.contains("simulated sandbox"), "{}", app.last_output);
     }
 
     #[test]
@@ -1476,6 +1492,11 @@ mod tests {
         assert!(shell(&mut app, "ls -d ../*").await.contains("Blocked"));
         assert!(shell(&mut app, "echo $(date)").await.contains("Blocked"));
         assert!(shell(&mut app, "(ls)").await.contains("Blocked"));
+        // the free shell runs jailed too (probe: an empty file in the temp folder)
+        let escape = root.parent().unwrap().join(format!("arct-free-escape-probe-{}", std::process::id()));
+        std::fs::write(root.join("x.sh"), format!("cd ..; touch '{}'\n", escape.display())).unwrap();
+        shell(&mut app, "sh x.sh").await;
+        assert!(!escape.exists(), "the free shell wrote outside its home");
         // what chmod -R 000 .* would have run here (not executed)
         let vars = |_: &str| None;
         assert_eq!(
