@@ -343,11 +343,58 @@ impl App {
 mod tests {
     use super::*;
 
-    /// An app in lesson mode with a fresh sandbox (data kept in a temp dir)
-    fn app(name: &str) -> App {
+    /// The data folder all test apps in this process share. ARCT_DATA_DIR
+    /// is process-wide, so it is set once rather than per test. Creating it
+    /// also clears test folders more than an hour old from earlier runs.
+    fn shared_data_dir() -> &'static PathBuf {
+        static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+        DIR.get_or_init(|| {
+            let tmp = std::env::temp_dir();
+            let hour = std::time::Duration::from_secs(3600);
+            for entry in std::fs::read_dir(&tmp).into_iter().flatten().flatten() {
+                let stale = entry.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > hour);
+                if stale && entry.file_name().to_string_lossy().starts_with("arct-sandbox-") {
+                    let _ = std::fs::remove_dir_all(entry.path());
+                }
+            }
+            let dir = tmp.join(format!("arct-sandbox-data-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            std::env::set_var("ARCT_DATA_DIR", &dir);
+            dir
+        })
+    }
+
+    /// A test's app, with its own folder (its config) removed when the
+    /// test ends
+    struct TestApp {
+        app: App,
+        dir: PathBuf,
+    }
+
+    impl std::ops::Deref for TestApp {
+        type Target = App;
+        fn deref(&self) -> &App {
+            &self.app
+        }
+    }
+
+    impl std::ops::DerefMut for TestApp {
+        fn deref_mut(&mut self) -> &mut App {
+            &mut self.app
+        }
+    }
+
+    impl Drop for TestApp {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// An app in lesson mode with a fresh sandbox (config in a temp dir)
+    fn app(name: &str) -> TestApp {
+        shared_data_dir();
         let dir = std::env::temp_dir().join(format!("arct-sandbox-{}-{name}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::env::set_var("ARCT_DATA_DIR", &dir);
         let config = dir.join("config.toml");
         std::fs::write(&config, "[general]\nsetup_complete = true\n").unwrap();
         let mut app = App::new_with_options(crate::RunOptions {
@@ -357,7 +404,7 @@ mod tests {
         .unwrap();
         app.lesson_mode = true;
         app.virtual_fs = Some(arct_core::VirtualFileSystem::new("sandbox-test", name).unwrap());
-        app
+        TestApp { app, dir }
     }
 
     fn run(app: &mut App, line: &str) -> String {

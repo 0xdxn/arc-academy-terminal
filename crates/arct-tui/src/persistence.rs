@@ -172,8 +172,32 @@ pub fn clear_session() -> Result<()> {
 mod tests {
     use super::*;
 
-    /// Create a fresh temp directory for a test and return the session path
-    fn temp_session_path(name: &str) -> PathBuf {
+    /// A session path in a fresh temp directory, removed when the test ends
+    struct TempSession {
+        dir: PathBuf,
+        path: PathBuf,
+    }
+
+    impl std::ops::Deref for TempSession {
+        type Target = PathBuf;
+        fn deref(&self) -> &PathBuf {
+            &self.path
+        }
+    }
+
+    impl AsRef<std::path::Path> for TempSession {
+        fn as_ref(&self) -> &std::path::Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempSession {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    fn temp_session_path(name: &str) -> TempSession {
         let dir = std::env::temp_dir().join(format!(
             "arct-persistence-test-{}-{}",
             name,
@@ -181,7 +205,8 @@ mod tests {
         ));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        dir.join("session.json")
+        let path = dir.join("session.json");
+        TempSession { dir, path }
     }
 
     fn sample_session() -> SessionData {

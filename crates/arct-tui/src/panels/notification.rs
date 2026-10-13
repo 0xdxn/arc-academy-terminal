@@ -87,7 +87,24 @@ impl NotificationPanel {
     /// `anim_tick` drives a brief celebratory border animation (~2s of
     /// cycling frame styles, then a steady double border).
     pub fn render(&self, frame: &mut Frame, theme: &Theme, anim_tick: u32) {
-        let area = Self::centered_rect(50, 30, frame.size());
+        // Sized to what it holds, so a long description is never cut off
+        let screen = frame.size();
+        let width = (screen.width / 2).max(40).min(screen.width);
+        let description = Paragraph::new(vec![
+            Line::from(""),
+            Line::from(vec![Span::styled(&self.description, theme.style_secondary())]),
+        ])
+        .alignment(Alignment::Center)
+        .wrap(ratatui::widgets::Wrap { trim: true });
+        let description_rows = description.line_count(width.saturating_sub(2)) as u16;
+        // border, celebration, title, description, points and dismiss
+        let height = (2 + 3 + 4 + description_rows + 3).min(screen.height);
+        let area = Rect::new(
+            screen.x + (screen.width - width) / 2,
+            screen.y + (screen.height - height) / 2,
+            width,
+            height,
+        );
 
         // Clear the background
         frame.render_widget(Clear, area);
@@ -109,7 +126,7 @@ impl NotificationPanel {
             .constraints([
                 Constraint::Length(3),  // Celebration header
                 Constraint::Length(4),  // Notification info
-                Constraint::Min(2),     // Description
+                Constraint::Length(description_rows), // Description
                 Constraint::Length(3),  // Points and dismiss
             ])
             .split(inner);
@@ -146,16 +163,6 @@ impl NotificationPanel {
         .alignment(Alignment::Center);
         frame.render_widget(notification_info, chunks[1]);
 
-        // Description
-        let description = Paragraph::new(vec![
-            Line::from(""),
-            Line::from(vec![Span::styled(
-                &self.description,
-                theme.style_secondary(),
-            )]),
-        ])
-        .alignment(Alignment::Center)
-        .wrap(ratatui::widgets::Wrap { trim: true });
         frame.render_widget(description, chunks[2]);
 
         // Points and dismiss instruction
@@ -199,26 +206,6 @@ impl NotificationPanel {
         }
     }
 
-    /// Helper function to create a centered rectangle
-    fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
-        let popup_layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Percentage((100 - percent_y) / 2),
-                Constraint::Percentage(percent_y),
-                Constraint::Percentage((100 - percent_y) / 2),
-            ])
-            .split(r);
-
-        Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage((100 - percent_x) / 2),
-                Constraint::Percentage(percent_x),
-                Constraint::Percentage((100 - percent_x) / 2),
-            ])
-            .split(popup_layout[1])[1]
-    }
 }
 
 #[cfg(test)]
@@ -236,6 +223,28 @@ mod tests {
         // ...after it, the border is steady
         for tick in ANIMATION_TICKS..ANIMATION_TICKS + 50 {
             assert_eq!(border_type_for_tick(tick), BorderType::Double);
+        }
+    }
+
+    /// A description that wraps to two lines is shown whole on a small
+    /// terminal (it used to lose its last word to a fixed-height popup)
+    #[test]
+    fn a_long_description_is_shown_whole() {
+        let panel = NotificationPanel::info(
+            "ACHIEVEMENT UNLOCKED!",
+            "First Steps",
+            "Complete your very first lesson. Every expert was once a beginner.",
+        );
+        for (w, h) in [(80, 24), (100, 40), (130, 40)] {
+            let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(w, h)).unwrap();
+            terminal.draw(|f| panel.render(f, &Theme::default(), 100)).unwrap();
+            let buffer = terminal.backend().buffer();
+            let text: String = (0..h)
+                .map(|y| (0..w).map(|x| buffer.get(x, y).symbol().to_string()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(text.contains("beginner."), "{w}x{h}:\n{text}");
+            assert!(text.contains("Press Enter or Esc to continue"), "{w}x{h}:\n{text}");
         }
     }
 }
