@@ -9,6 +9,7 @@
 - A lesson step only passes if its command actually worked.
 - The guard also checks each command after variables and wildcards are filled in, so `X=/; rm -rf $X` is refused like `rm -rf /`. Redirecting into `/dev/null` is allowed; into a real device it is not.
 - Real-files lessons can use `$`: arct fills in variables, `~` and wildcards itself, the guard checks the command with the real values and file names, and exactly that command runs, with nothing expanded a second time. Wildcards never match `.` or `..`. `$(...)` and backticks are still refused, and so is `$` inside `for`, `while` and `if`, whose values only exist as the shell runs them.
+- In safe mode the free shell works the same way: arct fills in `$`, `~` and wildcards against your Arc Academy home itself, the guard checks the result, and exactly that runs. Wildcards never match `.` or `..`.
 - The guard reads quoted words the way the shell does, and checks paths after `=` (`of=...`, `--target-directory=...`) like any other path.
 
 ### Learning

@@ -1753,7 +1753,7 @@ impl App {
     }
 
     /// Execute the current command
-    async fn execute_command(&mut self) -> Result<()> {
+    pub(crate) async fn execute_command(&mut self) -> Result<()> {
         // In lesson mode, allow empty commands (for Information steps that just need Enter)
         if self.command_buffer.is_empty() && !self.lesson_mode {
             return Ok(());
@@ -2028,6 +2028,10 @@ impl App {
         // a destructive command. Safe mode keeps the free shell inside
         // ~/ArcAcademy/home; with it off, catastrophic patterns are still
         // refused everywhere.
+        // In safe mode the line is also expanded here (variables from the
+        // environment, ~, globs against the real files) and quoted back, so
+        // the guard checks exactly what runs, and that is what runs.
+        let mut to_run: Option<String> = None;
         let (verdict, run_cwd) = if self.config.shell.safe_mode {
             if let Err(e) = self.ensure_explore() {
                 self.last_output = format!(
@@ -2040,10 +2044,23 @@ impl App {
             }
             let home = self.explore.as_ref().expect("ensured above");
             let guard = arct_core::PlaygroundGuard::with_display(home.root(), EXPLORE_DISPLAY);
-            (
-                guard.check(&command_str, home.cwd()),
-                Some(home.cwd().to_path_buf()),
-            )
+            let vars = |n: &str| self.environment_vars.get(n).cloned().or_else(|| std::env::var(n).ok());
+            let verdict = match arct_core::PlaygroundGuard::check_catastrophic(&command_str) {
+                refused @ arct_core::GuardVerdict::Refuse { .. } => refused,
+                arct_core::GuardVerdict::Allow => {
+                    match crate::sandbox::expand_real_line(&command_str, home.cwd(), home.root(), &vars) {
+                        Ok(Some(line)) => {
+                            let verdict = guard.check_expanded(&line, home.cwd());
+                            to_run = Some(line);
+                            verdict
+                        }
+                        // $(...) or backticks: refused, with the reason
+                        Ok(None) => guard.check(&command_str, home.cwd()),
+                        Err(reason) => arct_core::GuardVerdict::Refuse { reason },
+                    }
+                }
+            };
+            (verdict, Some(home.cwd().to_path_buf()))
         } else {
             (arct_core::PlaygroundGuard::check_catastrophic(&command_str), None)
         };
@@ -2073,7 +2090,7 @@ impl App {
         let env_vars = self.environment_vars.clone();
         let output_result = self
             .shell_executor
-            .execute(command_str.clone(), env_vars, timeout_duration, run_cwd)
+            .execute(to_run.unwrap_or_else(|| command_str.clone()), env_vars, timeout_duration, run_cwd)
             .await;
 
         let output = match output_result {

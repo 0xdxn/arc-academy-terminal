@@ -84,106 +84,14 @@ impl SandboxShell {
     }
 
     /// A variable's value in real-files mode: set in this lesson, or from
-    /// the real environment. `$PWD` is the playground folder the learner is
-    /// in; `$?` is left for the real shell to fill in (see
-    /// `shell_syntax::STATUS_MARK`).
+    /// the real environment (see [`fresh_shell_lookup`])
     fn real_lookup(&self, name: &str, pwd: &str) -> Option<String> {
-        match name {
-            "?" => Some(shell_syntax::STATUS_MARK.to_string()),
-            "#" => Some("0".to_string()),
-            "@" | "*" => Some(String::new()),
-            "0" => Some("sh".to_string()),
-            "PWD" => Some(pwd.to_string()),
-            n if n.chars().all(|c| c.is_ascii_digit()) => None,
-            n => self.real.get(n).cloned().or_else(|| std::env::var(n).ok()),
-        }
+        fresh_shell_lookup(name, pwd, &|n| self.real.get(n).cloned().or_else(|| std::env::var(n).ok()))
     }
 
-    /// Real-files mode: every line is expanded here (variables, `~`, globs
-    /// against the real playground) and written back fully quoted
-    /// (`shell_syntax::render`), so the guard checks the command as it
-    /// will really run and the shell expands nothing again. `Ok(None)` for
-    /// a line with `$(...)` or backticks, which the guard refuses as it
-    /// always has. Each part of a list is expanded after the ones before
-    /// it, as sh does: in `X=5; echo $X` the echo sees 5.
+    /// Real-files mode: [`expand_real_line`] with this lesson's variables
     pub(crate) fn expand_for_real(&self, line: &str, cwd: &Path, root: &Path) -> Result<Option<String>, String> {
-        if line.contains("$(") || line.contains('`') {
-            return Ok(None);
-        }
-        let pwd = cwd.display().to_string();
-        // Variables set earlier in this line (None: unset)
-        let mut local: BTreeMap<String, Option<String>> = BTreeMap::new();
-        let mut list = Vec::new();
-        for (joiner, part) in shell_syntax::split_list(line) {
-            let lookup = |name: &str| match local.get(name) {
-                Some(value) => value.clone(),
-                None => self.real_lookup(name, &pwd),
-            };
-            let mut parsed = shell_syntax::parse(&part, &lookup)?;
-            if parsed.is_empty() {
-                if joiner != Joiner::Always {
-                    return Err("syntax error: a command is missing after && or ||".to_string());
-                }
-                continue;
-            }
-            let mut pipeline = parsed.remove(0).1;
-            // Inside a loop or an if, the shell fills in $ as it goes, so
-            // there is no value to check before it runs
-            let opens_block = pipeline.stages.iter().any(|stage| {
-                stage
-                    .words
-                    .first()
-                    .is_some_and(|w| KEYWORDS.contains(&w.text.as_str()) || matches!(w.text.as_str(), "{" | "}" | "!"))
-            });
-            if opens_block && line.contains('$') {
-                return Err(
-                    "In real-files mode, arct fills in each $ before anything runs, so the safety \
-                     guard can check the real values. Inside for, while and if, the shell fills \
-                     them in as it goes, so they can't be checked: type the values out, or \
-                     practise this in the simulated sandbox."
-                        .to_string(),
-                );
-            }
-            for stage in &mut pipeline.stages {
-                stage.words = stage
-                    .words
-                    .drain(..)
-                    .flat_map(|word| {
-                        let matches = if word.glob { real_glob(&word.text, cwd, root) } else { Vec::new() };
-                        if matches.is_empty() {
-                            vec![Word { glob: false, ..word }]
-                        } else {
-                            matches.into_iter().map(|text| Word { text, glob: false }).collect()
-                        }
-                    })
-                    .collect();
-            }
-            if let [stage] = pipeline.stages.as_slice() {
-                let words: Vec<&str> = stage.words.iter().map(|w| w.text.as_str()).collect();
-                match words.split_first() {
-                    None => {
-                        for (name, value) in &stage.assignments {
-                            local.insert(name.clone(), Some(value.clone()));
-                        }
-                    }
-                    Some((&"export", rest)) => {
-                        for word in rest {
-                            if let Some((name, value)) = word.split_once('=') {
-                                local.insert(name.to_string(), Some(value.to_string()));
-                            }
-                        }
-                    }
-                    Some((&"unset", rest)) => {
-                        for name in rest {
-                            local.insert(name.to_string(), None);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            list.push((joiner, pipeline));
-        }
-        Ok(Some(shell_syntax::render(&list)))
+        expand_real_line(line, cwd, root, &|n| self.real.get(n).cloned().or_else(|| std::env::var(n).ok()))
     }
 
     /// Real-files mode: handle a line that only sets or clears variables
@@ -241,6 +149,127 @@ impl SandboxShell {
     /// Variables set during a real-files lesson, for the next command's environment
     pub(crate) fn real_env(&self) -> impl Iterator<Item = (String, String)> + '_ {
         self.real.iter().map(|(k, v)| (k.clone(), v.clone()))
+    }
+}
+
+/// A line for a real shell (real-files lessons, the safe-mode free shell),
+/// expanded here (variables from `vars`, `~`, globs against the real
+/// files under `root`) and written back fully quoted
+/// (`shell_syntax::render`), so the guard checks the command as it
+/// will really run and the shell expands nothing again. `Ok(None)` for
+/// a line with `$(...)` or backticks, which the guard refuses as it
+/// always has. Each part of a list is expanded after the ones before
+/// it, as sh does: in `X=5; echo $X` the echo sees 5.
+pub(crate) fn expand_real_line(
+    line: &str,
+    cwd: &Path,
+    root: &Path,
+    vars: &dyn Fn(&str) -> Option<String>,
+) -> Result<Option<String>, String> {
+    if line.contains("$(") || line.contains('`') {
+        return Ok(None);
+    }
+    let pwd = cwd.display().to_string();
+    // Variables set earlier in this line (None: unset)
+    let mut local: BTreeMap<String, Option<String>> = BTreeMap::new();
+    let mut list = Vec::new();
+    for (joiner, part) in shell_syntax::split_list(line) {
+        let lookup = |name: &str| match local.get(name) {
+            Some(value) => value.clone(),
+            None => fresh_shell_lookup(name, &pwd, vars),
+        };
+        let mut parsed = shell_syntax::parse(&part, &lookup)?;
+        if parsed.is_empty() {
+            if joiner != Joiner::Always {
+                return Err("syntax error: a command is missing after && or ||".to_string());
+            }
+            continue;
+        }
+        let mut pipeline = parsed.remove(0).1;
+        // Inside a loop or an if, the shell fills in $ as it goes, so
+        // there is no value to check before it runs
+        let opens_block = pipeline.stages.iter().any(|stage| {
+            stage
+                .words
+                .first()
+                .is_some_and(|w| KEYWORDS.contains(&w.text.as_str()) || matches!(w.text.as_str(), "{" | "}" | "!"))
+        });
+        // Shell grammar the parser doesn't model would reach sh quoted, as a
+        // command name that doesn't exist: say so instead
+        let grouping = pipeline.stages.iter().any(|stage| {
+            stage.words.first().is_some_and(|w| {
+                w.text.contains(['(', ')']) || matches!(w.text.as_str(), "{" | "}" | "!" | "[[" | "case" | "function")
+            })
+        });
+        if grouping {
+            return Err(
+                "Grouping with ( ) or { }, functions, case, [[ and ! aren't available here: \
+                 run the commands one at a time."
+                    .to_string(),
+            );
+        }
+        if opens_block && line.contains('$') {
+            return Err(
+                "arct fills in each $ before anything runs, so the safety guard can check \
+                 the real values. Inside for, while and if, the shell fills them in as it \
+                 goes, so they can't be checked here: type the values out instead."
+                    .to_string(),
+            );
+        }
+        for stage in &mut pipeline.stages {
+            stage.words = stage
+                .words
+                .drain(..)
+                .flat_map(|word| {
+                    let matches = if word.glob { real_glob(&word.text, cwd, root) } else { Vec::new() };
+                    if matches.is_empty() {
+                        vec![Word { glob: false, ..word }]
+                    } else {
+                        matches.into_iter().map(|text| Word { text, glob: false }).collect()
+                    }
+                })
+                .collect();
+        }
+        if let [stage] = pipeline.stages.as_slice() {
+            let words: Vec<&str> = stage.words.iter().map(|w| w.text.as_str()).collect();
+            match words.split_first() {
+                None => {
+                    for (name, value) in &stage.assignments {
+                        local.insert(name.clone(), Some(value.clone()));
+                    }
+                }
+                Some((&"export", rest)) => {
+                    for word in rest {
+                        if let Some((name, value)) = word.split_once('=') {
+                            local.insert(name.to_string(), Some(value.to_string()));
+                        }
+                    }
+                }
+                Some((&"unset", rest)) => {
+                    for name in rest {
+                        local.insert(name.to_string(), None);
+                    }
+                }
+                _ => {}
+            }
+        }
+        list.push((joiner, pipeline));
+    }
+    Ok(Some(shell_syntax::render(&list)))
+}
+
+/// What `$name` means to a fresh `sh -c` running in `pwd`, with `vars`
+/// for named variables. `$?` is left for the shell to fill in (see
+/// `shell_syntax::STATUS_MARK`).
+pub(crate) fn fresh_shell_lookup(name: &str, pwd: &str, vars: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+    match name {
+        "?" => Some(shell_syntax::STATUS_MARK.to_string()),
+        "#" => Some("0".to_string()),
+        "@" | "*" => Some(String::new()),
+        "0" => Some("sh".to_string()),
+        "PWD" => Some(pwd.to_string()),
+        n if n.chars().all(|c| c.is_ascii_digit()) => None,
+        n => vars(n),
     }
 }
 
@@ -1416,6 +1445,43 @@ mod tests {
         assert!(!allowed(&lesson, "ls /etc/*"));
         assert!(!allowed(&lesson, "ls ~/*"));
 
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn safe_free_shell_expands_and_globs_in_the_app() {
+        // This reaches a real shell: read-only probes only (negjr11u)
+        let mut app = app("freeshell");
+        app.lesson_mode = false;
+        app.config.shell.safe_mode = true;
+        let root = std::env::temp_dir().join(format!("arct-freeshell-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("notes")).unwrap();
+        std::fs::write(root.join(".hidden"), "x").unwrap();
+        std::fs::write(root.join("notes/a.txt"), "alpha\n").unwrap();
+        app.explore = Some(arct_core::Playground::open_with_display(root.clone(), "~/ArcAcademy/home").unwrap());
+        app.environment_vars.insert("ARCT_TEST_WORD".into(), "alpha".into());
+        let shell = async |app: &mut App, line: &str| {
+            app.command_buffer = line.to_string();
+            app.execute_command().await.unwrap();
+            app.last_output.clone()
+        };
+
+        let out = shell(&mut app, "ls -d .* .?").await;
+        assert!(out.contains(".hidden") && !out.contains("..\n") && !out.contains(".. "), "{out}");
+        let out = shell(&mut app, "ls .[.]/.[.]").await;
+        assert!(out.contains("No such file"), "{out}");
+        assert!(shell(&mut app, "grep $ARCT_TEST_WORD notes/*.txt").await.contains("alpha"));
+        assert!(shell(&mut app, "W=alpha; echo \"[$W]\"").await.contains("[alpha]"));
+        assert!(shell(&mut app, "ls -d $HOME").await.contains("Blocked"));
+        assert!(shell(&mut app, "ls -d ../*").await.contains("Blocked"));
+        assert!(shell(&mut app, "echo $(date)").await.contains("Blocked"));
+        assert!(shell(&mut app, "(ls)").await.contains("Blocked"));
+        // what chmod -R 000 .* would have run here (not executed)
+        let vars = |_: &str| None;
+        assert_eq!(
+            expand_real_line("chmod -R 000 .*", &root, &root, &vars).unwrap().as_deref(),
+            Some("chmod -R 000 .hidden")
+        );
         std::fs::remove_dir_all(&root).unwrap();
     }
 
