@@ -544,3 +544,89 @@ impl Default for LessonPanel {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod ladder_tests {
+    use super::*;
+    use arct_core::{CommandValidation, Difficulty, Track};
+
+    fn lesson(challenge: bool) -> Lesson {
+        Lesson {
+            id: "t".into(),
+            title: "T".into(),
+            description: String::new(),
+            difficulty: Difficulty::Beginner,
+            estimated_minutes: 1,
+            steps: vec![LessonStep {
+                step_number: 1,
+                title: "pwd".into(),
+                instruction: "Where are you?".into(),
+                hint: None,
+                step_type: StepType::CommandExercise {
+                    expected_command: "pwd".into(),
+                    validation: CommandValidation::CommandOnly,
+                    success_message: "Yes".into(),
+                },
+                hints: vec!["It prints the folder you're in.".into(), "p, w, d".into()],
+                challenge,
+            }],
+            prerequisites: vec![],
+            tags: vec![],
+            setup: vec![],
+            track: Track::Explorer,
+        }
+    }
+
+    fn failure(r: &ValidationResult) -> (String, Option<String>) {
+        match r {
+            ValidationResult::Failure { message, hint } => (message.clone(), hint.clone()),
+            other => panic!("expected failure, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn each_miss_reveals_the_next_rung_then_the_answer() {
+        let mut panel = LessonPanel::new();
+        panel.load_lesson(lesson(false));
+
+        let (msg, hint) = failure(&panel.validate_current_step("ls"));
+        assert_eq!(msg, "Not quite.");
+        assert_eq!(hint.as_deref(), Some("It prints the folder you're in."));
+
+        let (msg, hint) = failure(&panel.validate_current_step("ls"));
+        assert_eq!(msg, "Not quite.");
+        assert_eq!(hint.as_deref(), Some("p, w, d"));
+
+        let (msg, _) = failure(&panel.validate_current_step("ls"));
+        assert!(msg.contains("pwd"), "third miss shows the answer: {msg}");
+
+        assert!(panel.validate_current_step("pwd").is_success());
+    }
+
+    #[test]
+    fn challenge_steps_never_give_the_answer() {
+        let mut panel = LessonPanel::new();
+        panel.load_lesson(lesson(true));
+        for _ in 0..5 {
+            let (msg, hint) = failure(&panel.validate_current_step("ls"));
+            assert!(!msg.contains("pwd"), "{msg}");
+            assert!(!hint.unwrap_or_default().contains("pwd"));
+        }
+    }
+
+    #[test]
+    fn misses_reset_on_a_new_step() {
+        let mut panel = LessonPanel::new();
+        let mut l = lesson(false);
+        let mut second = l.steps[0].clone();
+        second.step_number = 2;
+        l.steps.push(second);
+        panel.load_lesson(l);
+        let _ = panel.validate_current_step("ls");
+        let _ = panel.validate_current_step("ls");
+        assert!(panel.validate_current_step("pwd").is_success());
+        panel.next_step();
+        let (_, hint) = failure(&panel.validate_current_step("ls"));
+        assert_eq!(hint.as_deref(), Some("It prints the folder you're in."));
+    }
+}
