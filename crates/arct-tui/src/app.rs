@@ -1205,6 +1205,29 @@ impl App {
         })
     }
 
+    /// `ls -l` style permissions (drwxr-xr-x) for a sandbox path, from the
+    /// file's real mode bits, so chmod changes show up
+    fn mode_string(real: &std::path::Path) -> String {
+        let Ok(meta) = std::fs::symlink_metadata(real) else {
+            return "----------".to_string();
+        };
+        #[cfg(unix)]
+        let bits = {
+            use std::os::unix::fs::PermissionsExt;
+            meta.permissions().mode()
+        };
+        #[cfg(not(unix))]
+        let bits: u32 = if meta.is_dir() { 0o755 } else { 0o644 };
+        let mut out = String::from(if meta.is_dir() { "d" } else { "-" });
+        for shift in [6, 3, 0] {
+            let part = (bits >> shift) & 0o7;
+            out.push(if part & 4 != 0 { 'r' } else { '-' });
+            out.push(if part & 2 != 0 { 'w' } else { '-' });
+            out.push(if part & 1 != 0 { 'x' } else { '-' });
+        }
+        out
+    }
+
     /// Apply a chmod mode to a sandbox file for the modes lessons rely on:
     /// octal numbers and adding/removing execute (`+x`, `u+x`, `a-x`...).
     /// Returns false for modes it leaves simulated.
@@ -1299,7 +1322,7 @@ impl App {
                             Ok(real) if real.is_file() => {
                                 let size = std::fs::metadata(&real).map(|m| m.len()).unwrap_or(0);
                                 if long {
-                                    output.push_str(&format!("-rw-r--r--  {:>6}  {}\n", size_text(size), name));
+                                    output.push_str(&format!("{}  {:>6}  {}\n", Self::mode_string(&real), size_text(size), name));
                                 } else {
                                     output.push_str(&format!("{}\n", name));
                                 }
@@ -1328,6 +1351,12 @@ impl App {
                             if !show_hidden {
                                 entries.retain(|e| !e.name.starts_with('.'));
                             }
+                            // -a also lists . (this folder) and .. (the one above); -A doesn't
+                            if show_hidden && !Self::has_flag(cmd, "-A") {
+                                for dot in ["..", "."] {
+                                    entries.insert(0, arct_core::DirEntry { name: dot.to_string(), is_dir: true, size: 0 });
+                                }
+                            }
                             if entries.is_empty() {
                                 output.push_str("(empty folder)\n");
                             }
@@ -1338,7 +1367,13 @@ impl App {
                                     entry.name.clone()
                                 };
                                 if long {
-                                    let mode = if entry.is_dir { "drwxr-xr-x" } else { "-rw-r--r--" };
+                                    let real = vfs
+                                        .resolve_path(&match target {
+                                            Some(dir) => format!("{}/{}", dir.trim_end_matches('/'), entry.name),
+                                            None => entry.name.clone(),
+                                        })
+                                        .unwrap_or_default();
+                                    let mode = Self::mode_string(&real);
                                     output.push_str(&format!("{}  {:>6}  {}\n", mode, size_text(entry.size), shown));
                                 } else {
                                     output.push_str(&format!("{}\n", shown));
@@ -1431,13 +1466,20 @@ impl App {
                     return Some(format!("{}mv: missing source or destination\n", icons::error().content));
                 }
 
-                let source = &operands[0];
-                let dest = &operands[1];
-
-                match vfs.move_item(source, dest) {
-                    Ok(_) => Some(format!("{}Moved {} to {}\n", icons::success().content, source, dest)),
-                    Err(e) => Some(format!("{}mv: {}\n", icons::error().content, e)),
+                let (sources, dest) = operands.split_at(operands.len() - 1);
+                let dest = &dest[0];
+                // Several files go into a folder, never over each other
+                if sources.len() > 1 && !vfs.resolve_path(dest).is_ok_and(|p| p.is_dir()) {
+                    return Some(format!("{}mv: '{}' is not a folder (moving several files needs a folder at the end)\n", icons::error().content, dest));
                 }
+                let mut output = String::new();
+                for source in sources {
+                    match vfs.move_item(source, dest) {
+                        Ok(_) => output.push_str(&format!("{}Moved {} to {}\n", icons::success().content, source, dest)),
+                        Err(e) => output.push_str(&format!("{}mv: {}\n", icons::error().content, e)),
+                    }
+                }
+                Some(output)
             }
 
             "cp" => {
@@ -1446,13 +1488,20 @@ impl App {
                 }
 
                 let recursive = Self::has_flag(cmd, "-r") || Self::has_flag(cmd, "-R") || Self::has_flag(cmd, "--recursive");
-                let source = &operands[0];
-                let dest = &operands[1];
-
-                match vfs.copy(source, dest, recursive) {
-                    Ok(_) => Some(format!("{}Copied {} to {}\n", icons::success().content, source, dest)),
-                    Err(e) => Some(format!("{}cp: {}\n", icons::error().content, e)),
+                let (sources, dest) = operands.split_at(operands.len() - 1);
+                let dest = &dest[0];
+                // Several files go into a folder, never over each other
+                if sources.len() > 1 && !vfs.resolve_path(dest).is_ok_and(|p| p.is_dir()) {
+                    return Some(format!("{}cp: '{}' is not a folder (copying several files needs a folder at the end)\n", icons::error().content, dest));
                 }
+                let mut output = String::new();
+                for source in sources {
+                    match vfs.copy(source, dest, recursive) {
+                        Ok(_) => output.push_str(&format!("{}Copied {} to {}\n", icons::success().content, source, dest)),
+                        Err(e) => output.push_str(&format!("{}cp: {}\n", icons::error().content, e)),
+                    }
+                }
+                Some(output)
             }
 
             "grep" => {

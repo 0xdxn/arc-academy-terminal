@@ -313,10 +313,30 @@ fn tokenize(line: &str, lookup: &dyn Fn(&str) -> Option<String>) -> Result<Vec<T
                 i += 2;
             }
             '$' => {
-                started = true;
                 let (value, used) = expand_dollar(&chars[i..], lookup)?;
-                text.push_str(&value);
                 i += used;
+                // Unquoted, a value is split into words at spaces, and an
+                // empty one vanishes (as in sh). Not in NAME=value, though.
+                let assigning = text.split_once('=').is_some_and(|(n, _)| is_name(n)) && !glob;
+                if assigning {
+                    text.push_str(&value);
+                    started = true;
+                    continue;
+                }
+                if value.starts_with(char::is_whitespace) {
+                    end_word!();
+                }
+                let mut pieces = value.split_whitespace().peekable();
+                while let Some(piece) = pieces.next() {
+                    text.push_str(piece);
+                    started = true;
+                    if pieces.peek().is_some() {
+                        end_word!();
+                    }
+                }
+                if value.ends_with(char::is_whitespace) {
+                    end_word!();
+                }
             }
             '`' => return Err(unsupported_substitution()),
             '~' if !started => {
@@ -494,6 +514,8 @@ mod tests {
         match name {
             "HOME" => Some("/lesson-home".into()),
             "NAME" => Some("Ada".into()),
+            "SPACED" => Some("a b".into()),
+            "EMPTY" => Some(String::new()),
             "1" => Some("first".into()),
             "#" => Some("1".into()),
             _ => None,
@@ -518,10 +540,17 @@ mod tests {
         assert_eq!(texts(&one("echo '$NAME'")), ["echo", "$NAME"]);
         assert_eq!(texts(&one("echo ${NAME}s")), ["echo", "Adas"]);
         assert_eq!(texts(&one("echo $1 $#")), ["echo", "first", "1"]);
-        assert_eq!(texts(&one("echo $MISSING end")), ["echo", "", "end"]);
+        assert_eq!(texts(&one("echo $MISSING end")), ["echo", "end"]);
+        assert_eq!(texts(&one("echo \"$MISSING\" end")), ["echo", "", "end"]);
+        assert_eq!(texts(&one("echo $SPACED")), ["echo", "a", "b"]);
+        assert_eq!(texts(&one("echo \"$SPACED\"")), ["echo", "a b"]);
+        assert_eq!(texts(&one("echo x$SPACED")), ["echo", "xa", "b"]);
+        assert_eq!(texts(&one("echo $EMPTY")), ["echo"]);
+        let s = one("X=$SPACED");
+        assert_eq!(s.assignments, [("X".to_string(), "a b".to_string())]);
         assert_eq!(texts(&one("echo \"\"")), ["echo", ""]);
         assert_eq!(texts(&one("echo a\\ b")), ["echo", "a b"]);
-        assert_eq!(texts(&one("echo costs $5")), ["echo", "costs", ""]);
+        assert_eq!(texts(&one("echo costs $5")), ["echo", "costs"]);
         assert_eq!(texts(&one("echo 5$")), ["echo", "5$"]);
     }
 

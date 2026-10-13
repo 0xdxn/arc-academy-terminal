@@ -296,15 +296,29 @@ impl App {
             }
 
             // NAME=value before a command applies to that command only
-            let saved: Vec<(String, Option<String>)> = stage
+            // (and is in that command's environment, as if exported)
+            let saved: Vec<(String, Option<String>, bool)> = stage
                 .assignments
                 .iter()
                 .map(|(name, value)| {
                     let old = self.sandbox.vars.get(name).cloned();
+                    let was_exported = !self.sandbox.exported.insert(name.clone());
                     self.sandbox.set(name, value);
-                    (name.clone(), old)
+                    (name.clone(), old, was_exported)
                 })
                 .collect();
+
+            // > and 2> empty their file before the command runs (so
+            // `sort x > x` leaves x empty, as in sh)
+            for redirect in &stage.redirects {
+                if let Redirect::Out { target, append: false } | Redirect::Err { target, append: false } = redirect {
+                    if target != "/dev/null" {
+                        if let Some(vfs) = self.virtual_fs.as_ref() {
+                            let _ = vfs.write_file(target, "", false);
+                        }
+                    }
+                }
+            }
             // A pipeline's status is its last command's
             self.sandbox.pending_status = None;
             let printed = self.run_sandbox_stage(&words, stdin);
@@ -317,7 +331,10 @@ impl App {
                 }
                 _ => {}
             }
-            for (name, old) in saved {
+            for (name, old, was_exported) in saved {
+                if !was_exported {
+                    self.sandbox.exported.remove(&name);
+                }
                 match old {
                     Some(value) => self.sandbox.set(&name, &value),
                     None => {
@@ -325,7 +342,16 @@ impl App {
                     }
                 }
             }
+            // Errors count even when 2> sends them away
+            if Self::output_reports_failure(&printed) {
+                self.sandbox.pending_status = Some(1);
+            }
 
+            // Last command, nothing redirected: show it exactly as printed
+            if i == last && stage.redirects.iter().all(|r| matches!(r, Redirect::In(_))) {
+                terminal.push_str(&printed);
+                continue;
+            }
             let (out, err, notes) = split_streams(&printed);
             let (out, err) = self.route(&stage.redirects, out, err, &mut terminal);
             terminal.push_str(&err);
@@ -628,7 +654,13 @@ impl App {
             Err(_) => return error(format!("{name}: no such script")),
         };
 
+        // A script is a new shell: it sees exported variables only, and
+        // what it sets doesn't come back
         let saved_args = std::mem::replace(&mut self.sandbox.args, args);
+        let saved_vars = self.sandbox.vars.clone();
+        let saved_exported = self.sandbox.exported.clone();
+        let exported = &self.sandbox.exported;
+        self.sandbox.vars.retain(|k, _| exported.contains(k));
         self.sandbox.depth += 1;
         let mut output = String::new();
         for line in script.lines().map(str::trim) {
@@ -645,6 +677,8 @@ impl App {
         self.sandbox.depth -= 1;
         self.sandbox.exiting = false;
         self.sandbox.args = saved_args;
+        self.sandbox.vars = saved_vars;
+        self.sandbox.exported = saved_exported;
         if output.is_empty() {
             output.push_str("(the script ran and printed nothing)\n");
         }
@@ -767,7 +801,14 @@ impl App {
                 }
                 continue;
             }
-            for letter in letters.chars() {
+            let letters: Vec<char> = letters.chars().collect();
+            for (k, &letter) in letters.iter().enumerate() {
+                // In -cfz, f takes the rest of the bundle ("z") as the
+                // archive's name, as in real tar: f goes last
+                if letter == 'f' && k + 1 < letters.len() {
+                    archive = Some(letters[k + 1..].iter().collect());
+                    break;
+                }
                 match letter {
                     'c' => create = true,
                     'x' => extract = true,
@@ -801,6 +842,7 @@ impl App {
 
     fn sandbox_gzip(&self, program: &str, args: &[String]) -> String {
         let unzip = program == "gunzip" || args.iter().any(|a| a == "-d");
+        let keep = args.iter().any(|a| a == "-k" || a == "--keep");
         let files: Vec<&String> = args.iter().filter(|a| !a.starts_with('-')).collect();
         if files.is_empty() {
             return error(format!("{program}: name a file, like: {program} notes.txt{}", if unzip { ".gz" } else { "" }));
@@ -808,9 +850,16 @@ impl App {
         let Some(vfs) = self.virtual_fs.as_ref() else { return String::new() };
         let mut out = String::new();
         for file in files {
+            // -k keeps the original: copy it back after the swap
+            let backup = keep.then(|| vfs.resolve_path(file).ok().and_then(|p| std::fs::read(p).ok())).flatten();
             let result = if unzip { vfs.gunzip(file) } else { vfs.gzip(file) };
-            if let Err(e) = result {
-                out.push_str(&error(e));
+            match result {
+                Ok(_) => {
+                    if let (Some(bytes), Ok(path)) = (backup, vfs.resolve_path(file)) {
+                        let _ = std::fs::write(path, bytes);
+                    }
+                }
+                Err(e) => out.push_str(&error(e)),
             }
         }
         out
@@ -895,7 +944,7 @@ mod tests {
         assert_eq!(run(&mut app, "echo [$NAME]"), "[]\n");
         // A prefix assignment lasts for one command
         run(&mut app, "GREETING=hey env > env.txt");
-        assert!(!read(&app, "env.txt").contains("GREETING"), "not exported");
+        assert!(read(&app, "env.txt").contains("GREETING=hey"), "in that command's environment");
         assert_eq!(run(&mut app, "echo [$GREETING]"), "[]\n");
     }
 
@@ -995,6 +1044,39 @@ mod tests {
     }
 
     #[test]
+    fn shell_fidelity() {
+        let mut app = app("fidelity");
+        // NAME=value cmd: in that command's environment only
+        assert!(run(&mut app, "GREETING=hey env").contains("GREETING=hey"));
+        assert!(!run(&mut app, "env").contains("GREETING"));
+        // Scripts see exported variables only, and can't change ours
+        run(&mut app, "echo 'echo [$SECRET] [$SHARED]; SHARED=changed' > s.sh");
+        run(&mut app, "SECRET=x; export SHARED=y");
+        assert_eq!(run(&mut app, "sh s.sh"), "[] [y]\n");
+        assert_eq!(run(&mut app, "echo $SHARED"), "y\n");
+        // Word splitting and empty values
+        run(&mut app, "FILES='a.txt b.txt'; touch $FILES");
+        assert!(app.virtual_fs.as_ref().unwrap().resolve_path("b.txt").unwrap().exists());
+        // Hidden errors still set $?
+        assert_eq!(run(&mut app, "cat nope 2>/dev/null; echo $?"), "1\n");
+        // > empties its file before the command runs
+        run(&mut app, "echo b > x; echo a >> x; sort x > x");
+        assert_eq!(read(&app, "x"), "");
+        // Several files into a folder, never over each other
+        run(&mut app, "mkdir box; touch c d");
+        run(&mut app, "mv c d box");
+        assert!(app.virtual_fs.as_ref().unwrap().resolve_path("box/d").unwrap().exists());
+        assert!(App::output_reports_failure(&run(&mut app, "cp a.txt b.txt x")));
+        // mkdir -p is fine when the folder exists; ls -a shows . and ..
+        assert!(!App::output_reports_failure(&run(&mut app, "mkdir -p box")));
+        assert!(run(&mut app, "ls -a box").starts_with("./\n../\n"));
+        assert!(!run(&mut app, "ls -A box").contains("./"));
+        // ls -l shows real modes
+        run(&mut app, "chmod 600 box/d");
+        assert!(run(&mut app, "ls -l box").contains("-rw-------"));
+    }
+
+    #[test]
     fn guard_checks_the_expanded_command() {
         let mut app = app("guard");
         run(&mut app, "touch keep.txt");
@@ -1038,6 +1120,12 @@ mod tests {
         assert!(run(&mut app, "du -sh proj").ends_with("\tproj\n"));
         run(&mut app, "echo hi > a; echo ho > b");
         assert_eq!(run(&mut app, "diff a b"), "1c1\n< hi\n---\n> ho\n");
+        // tar's f takes the rest of a bundle as the name; gzip -k keeps
+        run(&mut app, "tar -cfz proj");
+        assert!(app.virtual_fs.as_ref().unwrap().resolve_path("z").unwrap().exists());
+        run(&mut app, "gzip -k a");
+        assert_eq!(read(&app, "a"), "hi\n");
+        assert!(app.virtual_fs.as_ref().unwrap().resolve_path("a.gz").unwrap().exists());
         // diff exits 1 when the files differ, grep when nothing matched
         assert!(!run(&mut app, "diff a b > /dev/null && echo same").contains("same"));
         assert!(run(&mut app, "cp a c; diff a c && echo same").contains("same"));

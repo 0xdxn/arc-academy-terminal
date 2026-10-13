@@ -299,6 +299,10 @@ impl VirtualFileSystem {
     pub fn create_directory(&self, path: &str, parents: bool) -> Result<()> {
         let real_path = self.resolve_path(path)?;
 
+        // mkdir -p is fine with a folder that's already there
+        if parents && real_path.is_dir() {
+            return Ok(());
+        }
         if real_path.exists() {
             anyhow::bail!("File or directory already exists: {}", path);
         }

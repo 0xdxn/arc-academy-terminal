@@ -242,8 +242,14 @@ impl PlaygroundGuard {
             ));
         }
 
-        // Redirecting output into /dev (e.g. `> /dev/sda`)
-        if command.contains('>') && command.contains("/dev/") {
+        // Redirecting output into a device (e.g. `> /dev/sda`). /dev/null,
+        // the "throw it away" file, and the terminal's own streams are fine
+        const HARMLESS: &[&str] = &["/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty"];
+        let into_device = regex::Regex::new(r">>?\s*(/dev/[^\s;|&<>]*)").expect("valid pattern");
+        if into_device
+            .captures_iter(command)
+            .any(|c| !HARMLESS.contains(&c.get(1).map_or("", |m| m.as_str())))
+        {
             return Some(GuardVerdict::refuse(
                 "Redirecting output into /dev writes bytes directly to a hardware device. \
                  Aimed at a disk like /dev/sda, that corrupts the filesystem and destroys \
@@ -557,6 +563,17 @@ mod tests {
         let reason = assert_refused("echo garbage > /dev/sda", &lesson_cwd());
         assert!(reason.contains("/dev"), "reason: {reason}");
         assert_refused("cat file >/dev/sdb1", &lesson_cwd());
+        assert_refused("ls > /dev/null; echo x >> /dev/sda", &lesson_cwd());
+    }
+
+    #[test]
+    fn test_allows_dev_null() {
+        for ok in ["cat missing.txt 2>/dev/null", "ls > /dev/null", "grep x f >/dev/null 2>&1"] {
+            assert!(
+                matches!(PlaygroundGuard::check_catastrophic(ok), GuardVerdict::Allow),
+                "{ok} should be allowed"
+            );
+        }
     }
 
     #[test]
