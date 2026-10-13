@@ -4,13 +4,238 @@ description = "Build longer pipelines, and save a copy along the way with tee."
 difficulty = "Intermediate"
 estimated_minutes = 15
 prerequisites = ["redirection", "text-processing"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "pipes", "sort", "uniq", "head", "tee"]
+
+[[setup]]
+path = "bakery/sold.txt"
+contents = """croissant
+sourdough
+bagel
+croissant
+muffin
+scone
+croissant
+sourdough
+eclair
+bagel
+croissant
+sourdough
+muffin
+croissant
+bagel
+scone
+sourdough
+croissant
+bagel
+muffin
+sourdough
+croissant
+"""
+
+[[setup]]
+path = "bakery/payments.txt"
+contents = """card
+cash
+card
+phone
+card
+cash
+card
+phone
+card
+cash
+card
+cash
+card
+phone
+card
+cash
+card
+"""
+
+[[setup]]
+path = "bakery/customers.txt"
+contents = """Mei
+Omar
+Grace
+Mei
+Sam
+Omar
+Mei
+Grace
+Ada
+Mei
+Omar
+Sam
+Mei
+Grace
+Omar
+Mei
+"""
+
+[[setup]]
+path = "bakery/best-sellers.txt"
+contents = """      8 bagel
+      6 sourdough
+"""
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "One stage at a time"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+A pipeline is a row of small commands joined by |.
+Each command's output becomes the next command's input.
+
+Long pipelines look scary. Nobody types them in one go.
+Run the first command, look at the output, then add the
+next | and look again. Stop when the output is the answer.
+
+  sort FILE        put the lines in order
+  uniq -c          merge repeated lines that sit together, with a count
+  sort -rn         biggest number first (-n numbers, -r reverse)
+  head -n 3        keep only the first 3 lines
+  tee FILE         save a copy to FILE and pass the text on
+  tee -a FILE      the same, but add to the end of FILE
+
+A small bakery's till wrote one line per item sold.
+It's in bakery/sold.txt. Which item sells best?"""
+
+[[steps]]
+step_number = 2
+title = "Stage one: sort"
+instruction = "Go into the bakery folder. Look at sold.txt with cat if you like, then sort it."
+hints = ["cd into bakery first. sort takes a file name.", "Type: cd bakery   then: sort sold.txt"]
+solution = ["cd bakery", "sort sold.txt"]
+
+[steps.step_type.Task]
+goal = "Sort sold.txt"
+success_message = "Same lines, now in order. Every croissant sits next to the other croissants, which is what the next stage needs."
+checks = [{ Used = "sort" }, { OutputContains = "eclair\nmuffin" }]
+
+[[steps]]
+step_number = 3
+title = "Stage two: count"
+instruction = "Press the up arrow to get your last command back, then add | uniq -c to the end."
+hints = ["uniq -c goes after a pipe, at the end of the line.", "Type: sort sold.txt | uniq -c"]
+solution = ["sort sold.txt | uniq -c"]
+
+[steps.step_type.Task]
+goal = "Count each item"
+success_message = "One line per item, with how many were sold. 7 croissants."
+checks = [{ Used = "uniq" }, { OutputContains = "7 croissant" }]
+
+[[steps]]
+step_number = 4
+title = "Why sort first?"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "A short till roll says: croissant, bagel, croissant. What does uniq -c print for it, without sort?"
+options = ["2 croissant and 1 bagel", "1 croissant, 1 bagel, 1 croissant", "Nothing: uniq only works on files"]
+correct_index = 1
+explanation = "uniq only merges repeated lines that sit next to each other. The two croissants are apart, so they're counted separately. sort puts matching lines together first, which is why the pattern is always sort, then uniq."
+
+[[steps]]
+step_number = 5
+title = "Stages three and four"
+instruction = "Now put the biggest count first with sort -rn, and keep only the top 3 with head -n 3. Add them one at a time if you like."
+hints = ["Add | sort -rn, look, then add | head -n 3.", "Type: sort sold.txt | uniq -c | sort -rn | head -n 3"]
+solution = ["sort sold.txt | uniq -c | sort -rn | head -n 3"]
+
+[steps.step_type.Task]
+goal = "Show the top 3 sellers"
+success_message = "Croissant, sourdough, bagel. sort | uniq -c | sort -rn | head is one of the most useful lines in the shell: it answers 'what happens most?' for any list."
+checks = [{ Used = "head" }, { OutputContains = "7 croissant" }, { OutputContains = "5 sourdough" }]
+
+[[steps]]
+step_number = 6
+title = "Same pattern, new question"
+instruction = "payments.txt has one line per payment: card, cash or phone. Count each kind of payment, biggest first."
+hints = ["It's the same pipeline as before, with a different file.", "Start with sort payments.txt, then add uniq -c, then sort -rn.", "Type: sort payments.txt | uniq -c | sort -rn"]
+solution = ["sort payments.txt | uniq -c | sort -rn"]
+
+[steps.step_type.Task]
+goal = "Count the payment types"
+success_message = "Most people pay by card. You just reused a pipeline on new data, which is most of what shell work is."
+checks = [{ Used = "uniq" }, { OutputContains = "9 card" }]
+
+[[steps]]
+step_number = 7
+title = "Save a copy halfway"
+instruction = "tee is a T-shaped pipe joint: it writes the text to a file and also passes it on down the pipeline. Save the full count list to counts.txt, and still show only the best seller on screen: sort sold.txt | uniq -c | tee counts.txt | sort -rn | head -n 1"
+hints = ["tee goes in the middle, right after uniq -c.", "Type: sort sold.txt | uniq -c | tee counts.txt | sort -rn | head -n 1"]
+solution = ["sort sold.txt | uniq -c | tee counts.txt | sort -rn | head -n 1"]
+
+[steps.step_type.Task]
+goal = "Save all the counts, show only the top one"
+success_message = "One line on screen, but counts.txt holds every item. Check with cat counts.txt if you like. tee is handy for keeping the middle of a pipeline to look at later."
+checks = [{ FileContains = { path = "bakery/counts.txt", text = "1 eclair" } }, { FileContains = { path = "bakery/counts.txt", text = "7 croissant" } }, { OutputContains = "7 croissant" }]
+
+[[steps]]
+step_number = 8
+title = "Add to a running list"
+instruction = "best-sellers.txt keeps each day's top seller. Read it with cat. Then add today's top seller to the end with tee -a, so the old days stay."
+hints = ["Get just the top line with sort -rn | head -n 1, then end with | tee -a best-sellers.txt", "Type: sort sold.txt | uniq -c | sort -rn | head -n 1 | tee -a best-sellers.txt"]
+solution = ["sort sold.txt | uniq -c | sort -rn | head -n 1 | tee -a best-sellers.txt"]
+
+[steps.step_type.Task]
+goal = "Append today's best seller"
+success_message = "The bagel and sourdough days are still there, and croissant is on the end. -a means append."
+checks = [{ FileContains = { path = "bakery/best-sellers.txt", text = "8 bagel" } }, { FileContains = { path = "bakery/best-sellers.txt", text = "7 croissant" } }]
+
+[[steps]]
+step_number = 9
+title = "Careful with tee"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "best-sellers.txt has a month of lines in it. What happens if you end a pipeline with | tee best-sellers.txt, without -a?"
+options = ["The new line is added to the end", "The file is replaced: the month is gone and only the new line is left", "tee refuses because the file already exists"]
+correct_index = 1
+explanation = "Plain tee works like >: it empties the file first. tee -a works like >>: it adds to the end. When a file holds history, use -a."
+
+[[steps]]
+step_number = 10
+title = "Send the end to a file"
+instruction = "If you only want the result in a file, not on screen, end the pipeline with > instead of tee. Count the payment types, biggest first, into payment-report.txt."
+hints = ["The same pipeline as before, with > payment-report.txt on the end.", "Type: sort payments.txt | uniq -c | sort -rn > payment-report.txt"]
+solution = ["sort payments.txt | uniq -c | sort -rn > payment-report.txt"]
+
+[steps.step_type.Task]
+goal = "Write the payment counts to payment-report.txt"
+success_message = "The counts went into the file, not onto the screen. Use tee when you want to see the result too, > when you don't."
+checks = [{ FileContains = { path = "bakery/payment-report.txt", text = "9 card" } }, { FileContains = { path = "bakery/payment-report.txt", text = "3 phone" } }]
+
+[[steps]]
+step_number = 11
+title = "On your own"
+instruction = "No hints. customers.txt has one name per order. Save every customer's order count, busiest first, to regulars.txt, and show only the single busiest customer on screen. One pipeline."
+challenge = true
+solution = ["sort customers.txt | uniq -c | sort -rn | tee regulars.txt | head -n 1"]
+
+[steps.step_type.Task]
+goal = "Save regulars.txt and show the top customer"
+success_message = "Mei, 6 orders. The full list is in regulars.txt and the answer is on screen, from one line you built yourself."
+checks = [{ FileContains = { path = "bakery/regulars.txt", text = "6 Mei" } }, { FileContains = { path = "bakery/regulars.txt", text = "1 Ada" } }, { OutputContains = "6 Mei" }]
+
+[[steps]]
+step_number = 12
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  A | B | C                    each output feeds the next command
+  sort | uniq -c               count each kind of line
+  sort | uniq -c | sort -rn    the same, biggest first
+  ... | head -n 3              keep only the top 3
+  ... | tee FILE | ...         save a copy and keep going
+  ... | tee -a FILE            add to the end of FILE
+  ... > FILE                   send the end to a file only
+
+Build pipelines one stage at a time and look at each
+step's output. uniq needs sorted input. tee without -a
+replaces the file, just like >."""

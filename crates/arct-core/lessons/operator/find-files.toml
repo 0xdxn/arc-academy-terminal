@@ -4,13 +4,219 @@ description = "Search folders by name and type with find."
 difficulty = "Intermediate"
 estimated_minutes = 15
 prerequisites = ["wildcards"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "find", "search", "wc"]
+
+[[setup]]
+path = "band/README.md"
+contents = "Shared folder for the band. Lyrics, notes and demo recordings.\n"
+
+[[setup]]
+path = "band/setlist.txt"
+contents = "1. Night Drive\n2. River Song\n3. Lantern\n"
+
+[[setup]]
+path = "band/audio/demo-1.wav"
+contents = "(practice file: pretend this is a recording)\n"
+
+[[setup]]
+path = "band/audio/demo-2.wav"
+contents = "(practice file: pretend this is a recording)\n"
+
+[[setup]]
+path = "band/audio/live/encore.wav"
+contents = "(practice file: pretend this is a recording)\n"
+
+[[setup]]
+path = "band/audio/live/encore-take2.wav"
+contents = "(practice file: pretend this is a recording)\n"
+
+[[setup]]
+path = "band/audio/live/soundcheck.wav"
+contents = "(practice file: pretend this is a recording)\n"
+
+[[setup]]
+path = "band/lyrics/night-drive.txt"
+contents = "Headlights on the empty road\n"
+
+[[setup]]
+path = "band/lyrics/river-song.txt"
+contents = "Down where the slow water bends\n"
+
+[[setup]]
+path = "band/lyrics/drafts/night-drive-v1.txt"
+contents = "Headlights on the road (first try)\n"
+
+[[setup]]
+path = "band/lyrics/drafts/night-drive-v2.txt"
+contents = "Headlights on the empty road (closer)\n"
+
+[[setup]]
+path = "band/notes/Ideas.TXT"
+contents = "Slower bridge in River Song. Try a cello?\n"
+
+[[setup]]
+path = "band/notes/rehearsal-april.txt"
+contents = "Tuesday 7pm. Bring the spare cables.\n"
+
+[[setup]]
+path = "band/notes/rehearsal-march.txt"
+contents = "Thursday 7pm. New song run-through.\n"
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "Searching by name"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+ls shows one folder. find walks into every folder below
+the one you name, and lists what it finds on the way.
+
+  find PATH                      everything under PATH
+  find PATH -name 'PATTERN'      only names that match, like '*.txt'
+  find PATH -iname 'PATTERN'     the same, ignoring capitals
+  find PATH -type f              only files
+  find PATH -type d              only folders (directories)
+  find PATH -maxdepth 1          don't go deeper than 1 level
+
+The path comes first, then the tests. Put the pattern in
+single quotes. You'll see why in a minute.
+
+A band keeps its files in a shared folder called band."""
+
+[[steps]]
+step_number = 2
+title = "Everything at once"
+instruction = "List everything inside band, all the way down, with find."
+hints = ["find, then the folder to start from.", "Type: find band"]
+solution = ["find band"]
+
+[steps.step_type.Task]
+goal = "List everything under band"
+success_message = "Every file and folder, however deep, each with its full path. ls band would only have shown the top level. (A real find lists things in the order the disk keeps them, which can look random. This practice shell sorts them.)"
+checks = [{ Used = "find" }, { OutputContains = "band/lyrics/drafts/night-drive-v2.txt" }]
+
+[[steps]]
+step_number = 3
+title = "Only the recordings"
+instruction = "Find every .wav file in band: find band -name '*.wav'"
+hints = ["-name takes a pattern. Keep the quotes.", "Type: find band -name '*.wav'"]
+solution = ["find band -name '*.wav'"]
+
+[steps.step_type.Task]
+goal = "Find the .wav files"
+success_message = "Five recordings, including the ones in audio/live."
+checks = [{ Used = "find" }, { OutputContains = "band/audio/live/soundcheck.wav" }]
+
+[[steps]]
+step_number = 4
+title = "Why the quotes?"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "You're inside band/audio, which holds demo-1.wav and demo-2.wav. You type find . -name *.wav with no quotes. What happens?"
+options = ["The same as with quotes: every .wav below here", "The shell turns *.wav into demo-1.wav demo-2.wav before find runs, and find complains", "find makes a new file called *.wav"]
+correct_index = 1
+explanation = "The shell expands wildcards before any command sees them. find gets -name demo-1.wav demo-2.wav, which it can't make sense of. With only one matching file it's worse: find quietly searches for that one name and misses the rest. Quotes hand the * to find untouched."
+
+[[steps]]
+step_number = 5
+title = "Every version of a song"
+instruction = "The band wants every file for Night Drive, drafts included. Find every name in band that starts with night-drive."
+hints = ["A * at the end of a pattern matches anything after it.", "Use -name 'night-drive*'", "Type: find band -name 'night-drive*'"]
+solution = ["find band -name 'night-drive*'"]
+
+[steps.step_type.Task]
+goal = "Find all the Night Drive files"
+success_message = "Three of them: the finished lyrics and two drafts in a folder you might never have opened."
+checks = [{ Used = "find" }, { OutputContains = "band/lyrics/drafts/night-drive-v1.txt" }]
+
+[[steps]]
+step_number = 6
+title = "Capitals"
+instruction = "Someone saved a notes file as .TXT in capitals, so -name '*.txt' misses it. Find every .txt file in band, ignoring capitals."
+hints = ["-iname is -name that ignores case.", "Type: find band -iname '*.txt'"]
+solution = ["find band -iname '*.txt'"]
+
+[steps.step_type.Task]
+goal = "Find .txt files in any case"
+success_message = "There it is: notes/Ideas.TXT. Use -iname when you can't trust how people typed a name."
+checks = [{ Used = "find" }, { OutputContains = "band/notes/Ideas.TXT" }]
+
+[[steps]]
+step_number = 7
+title = "Only folders"
+instruction = "Show only the folders under band, not the files."
+hints = ["-type d means directories, -type f means files.", "Type: find band -type d"]
+solution = ["find band -type d"]
+
+[steps.step_type.Task]
+goal = "List the folders"
+success_message = "Six folders, band itself included. find counts the starting folder as a match too."
+checks = [{ Used = "find" }, { OutputContains = "band/lyrics/drafts" }]
+
+[[steps]]
+step_number = 8
+title = "Count them"
+instruction = "find prints one line per match, so wc -l counts matches. How many .wav files are in band? Then compare with ls band/audio | wc -l if you're curious."
+hints = ["Send find's list into wc -l with a pipe.", "Type: find band -name '*.wav' | wc -l"]
+solution = ["find band -name '*.wav' | wc -l"]
+
+[steps.step_type.Task]
+goal = "Count the .wav files"
+success_message = "5. ls band/audio would say 3: two files and the live folder. ls doesn't look inside subfolders, find does."
+checks = [{ Used = "wc" }, { OutputContains = "5" }]
+
+[[steps]]
+step_number = 9
+title = "Not too deep"
+instruction = "Sometimes you only want the top level. Show what's directly inside band, and nothing deeper, with -maxdepth 1. Put -maxdepth right after the path: find on Linux warns if it comes after a test like -name."
+hints = ["-maxdepth takes a number: how many levels down to go.", "Type: find band -maxdepth 1"]
+solution = ["find band -maxdepth 1"]
+
+[steps.step_type.Task]
+goal = "List the top level of band"
+success_message = "Just the top level, like ls, but with full paths. Mix it with other tests, like -maxdepth 1 -type f."
+checks = [{ Used = "find" }, { OutputContains = "band/setlist.txt" }]
+
+[[steps]]
+step_number = 10
+title = "find only looks"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "Real find can also act on what it finds: -delete removes every match, and -exec runs a command on each one. You want to remove every .tmp file under a project. What do you run first?"
+options = ["find project -name '*.tmp' -delete, then see what's left", "find project -name '*.tmp', and read the list", "rm -r project, then restore what you need"]
+correct_index = 1
+explanation = "-delete and -exec act on every match at once, with no undo. Run the same find without them first and read the list. If you do use -delete, put it last: find reads its tests in order, so -delete placed before -name deletes everything it reaches. This practice shell doesn't run -delete or -exec, so here find only ever lists."
+
+[[steps]]
+step_number = 11
+title = "On your own"
+instruction = "No hints. How many .txt files are in band, counting the one with capitals? Show just the number."
+challenge = true
+solution = ["find band -iname '*.txt' | wc -l"]
+
+[steps.step_type.Task]
+goal = "Count every .txt file, any case"
+success_message = "8. -name '*.txt' would have said 7 and missed Ideas.TXT."
+checks = [{ Used = "wc" }, { OutputContains = "8" }]
+
+[[steps]]
+step_number = 12
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  find PATH                    everything below PATH
+  find PATH -name '*.wav'      match names (quote the pattern)
+  find PATH -iname '*.txt'     match names, any capitals
+  find PATH -type f            files only (-type d: folders)
+  find PATH -maxdepth 1        stay near the top
+  find ... | wc -l             count the matches
+
+The path comes first, then the tests. Quotes keep the
+shell's hands off your pattern. Before you ever add
+-delete or -exec on a real system, run the find without
+them and read the list."""

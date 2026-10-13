@@ -4,13 +4,179 @@ description = "Find and replace text in files without opening an editor."
 difficulty = "Intermediate"
 estimated_minutes = 15
 prerequisites = ["text-processing"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "sed", "text", "editing"]
+
+[[setup]]
+path = "station/notice.txt"
+contents = """The north sensor is offline. The north gate is shut.
+Check the north sensor before noon.
+"""
+
+[[setup]]
+path = "station/station.conf"
+contents = """# Weather station settings
+name = Hilltop
+report_title = Hilltop daily report (Hilltop station)
+units = imperial
+debug = on
+log_path = /old/data/logs
+backup_path = /old/data/backup
+alert = wind over 40
+"""
+
+[[setup]]
+path = "station/readings.txt"
+contents = """north 14C
+south 17C
+north 15C
+east 16C
+north 13C
+"""
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "A stream editor"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+sed reads text line by line, changes it the way you ask,
+and prints the result. The file itself stays as it was,
+unless you say otherwise.
+
+  sed 's/old/new/' FILE       replace the first old on each line
+  sed 's/old/new/g' FILE      replace every old (g for global)
+  sed '/word/d' FILE          drop the lines that contain word
+  sed -i 's/old/new/' FILE    change the file itself (careful)
+
+Keep the sed script in single quotes, so the shell
+leaves it alone.
+
+A weather station's files are in the station folder."""
+
+[[steps]]
+step_number = 2
+title = "First replace"
+instruction = "Go into station. The north sensor has moved to the east side. Replace north with east in notice.txt and read the result."
+hints = ["cd station, then sed 's/old/new/' FILE.", "Type: cd station   then: sed 's/north/east/' notice.txt"]
+solution = ["cd station", "sed 's/north/east/' notice.txt"]
+
+[steps.step_type.Task]
+goal = "Replace north with east"
+success_message = "Look closely at the first line: the sensor changed, the gate still says north. Without g, sed replaces only the first match on each line."
+checks = [{ Used = "sed" }, { OutputContains = "The east sensor is offline. The north gate" }]
+
+[[steps]]
+step_number = 3
+title = "Every match"
+instruction = "Run it again with g after the last slash, so every north on every line changes."
+hints = ["g goes at the very end: s/north/east/g", "Type: sed 's/north/east/g' notice.txt"]
+solution = ["sed 's/north/east/g' notice.txt"]
+
+[steps.step_type.Task]
+goal = "Replace every north"
+success_message = "Both on the first line now. g means global: every match, not just the first."
+checks = [{ Used = "sed" }, { OutputContains = "The east sensor is offline. The east gate is shut." }]
+
+[[steps]]
+step_number = 4
+title = "Did the file change?"
+instruction = "Look at notice.txt itself now."
+hints = ["cat shows a file.", "Type: cat notice.txt"]
+solution = ["cat notice.txt"]
+
+[steps.step_type.Task]
+goal = "Read notice.txt"
+success_message = "Still north. Plain sed only prints. That makes it safe to try things: you can run it as often as you like until the output looks right."
+checks = [{ Used = "cat" }, { OutputContains = "The north sensor is offline." }]
+
+[[steps]]
+step_number = 5
+title = "Quick check"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "A line says: red, red, red. What does sed 's/red/blue/' print for it?"
+options = ["blue, blue, blue", "blue, red, red", "red, red, blue"]
+correct_index = 1
+explanation = "Without g, sed changes only the first match on each line. Add g to change them all."
+
+[[steps]]
+step_number = 6
+title = "Drop a line"
+instruction = "Show station.conf without the debug line. /word/d deletes every line that contains word, in the output."
+hints = ["The script is /debug/d, in single quotes.", "Type: sed '/debug/d' station.conf"]
+solution = ["sed '/debug/d' station.conf"]
+
+[steps.step_type.Task]
+goal = "Show the settings without debug"
+success_message = "The debug line is gone from what you see. Be precise with the word: /on/d would also have dropped the comment and the report_title line, because 'station' contains 'on'."
+checks = [{ Used = "sed" }, { OutputContains = "units = imperial\nlog_path" }]
+
+[[steps]]
+step_number = 7
+title = "Back up, preview, then edit"
+instruction = "Now change the file itself: units should be metric, not imperial. Do it in three moves. Copy station.conf to station.conf.bak. Preview the change without -i. When it looks right, run the same command with -i."
+hints = ["cp makes the backup. Then sed 's/imperial/metric/' station.conf to preview.", "Last, add -i: sed -i 's/imperial/metric/' station.conf", "Type: cp station.conf station.conf.bak   then: sed 's/imperial/metric/' station.conf   then: sed -i 's/imperial/metric/' station.conf"]
+solution = ["cp station.conf station.conf.bak", "sed 's/imperial/metric/' station.conf", "sed -i 's/imperial/metric/' station.conf"]
+
+[steps.step_type.Task]
+goal = "Set units to metric in station.conf"
+success_message = "-i printed nothing, because it wrote to the file instead. There's no undo, which is why you made the backup first. On a Mac, sed -i needs an extra argument: sed -i '' 's/imperial/metric/' station.conf."
+checks = [{ FileExists = "station/station.conf.bak" }, { FileContains = { path = "station/station.conf", text = "units = metric" } }]
+
+[[steps]]
+step_number = 8
+title = "Slashes in the way"
+instruction = "The data moved from /old/data to /srv/weather. Those paths are full of slashes, which sed also uses. sed lets you pick another separator: s|/old/data|/srv/weather| works the same way. Preview it, then change the file with -i."
+hints = ["Keep the | script in single quotes, or the shell will read | as a pipe.", "Preview: sed 's|/old/data|/srv/weather|' station.conf", "Type: sed -i 's|/old/data|/srv/weather|' station.conf"]
+solution = ["sed 's|/old/data|/srv/weather|' station.conf", "sed -i 's|/old/data|/srv/weather|' station.conf"]
+
+[steps.step_type.Task]
+goal = "Point both paths at /srv/weather"
+success_message = "Both paths changed. The other way is to put a backslash before every slash, s/\\/old\\/data/... which is hard to read and easy to get wrong."
+checks = [{ FileContains = { path = "station/station.conf", text = "log_path = /srv/weather/logs" } }, { FileContains = { path = "station/station.conf", text = "backup_path = /srv/weather/backup" } }]
+
+[[steps]]
+step_number = 9
+title = "sed in a pipeline"
+instruction = "sed works on piped text too. Pick out the north readings in readings.txt with grep, then pipe them into sed to shorten north to N."
+hints = ["grep north readings.txt, then | sed with a replace.", "Type: grep north readings.txt | sed 's/north/N/'"]
+solution = ["grep north readings.txt | sed 's/north/N/'"]
+
+[steps.step_type.Task]
+goal = "Show the north readings as N"
+success_message = "N 14C, N 15C, N 13C. With no file name, sed edits whatever flows in from the pipe."
+checks = [{ Used = "grep" }, { Used = "sed" }, { OutputContains = "N 15C" }]
+
+[[steps]]
+step_number = 10
+title = "On your own"
+instruction = "No hints. The station has been renamed from Hilltop to Ridgeview. Change every Hilltop in station.conf to Ridgeview, in the file itself. Preview first."
+challenge = true
+solution = ["sed 's/Hilltop/Ridgeview/g' station.conf", "sed -i 's/Hilltop/Ridgeview/g' station.conf"]
+
+[steps.step_type.Task]
+goal = "Rename Hilltop to Ridgeview everywhere in station.conf"
+success_message = "Every Hilltop is now Ridgeview, including the line that had two. And your backup still holds the original."
+checks = [{ FileContains = { path = "station/station.conf", text = "name = Ridgeview" } }, { FileContains = { path = "station/station.conf", text = "report_title = Ridgeview daily report (Ridgeview station)" } }]
+
+[[steps]]
+step_number = 11
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  sed 's/old/new/' FILE          first match on each line
+  sed 's/old/new/g' FILE         every match
+  sed '/word/d' FILE             leave out lines containing word
+  sed 's|/a/b|/c/d|' FILE        another separator, for paths
+  ... | sed 's/old/new/'         edit text from a pipe
+  sed -i 's/old/new/' FILE       change the file itself
+
+Without -i, sed only prints, so try things freely. Before
+-i, keep a backup and preview the change. On a real system,
+sed -i.bak 's/old/new/' FILE does both at once: it
+saves the original as FILE.bak. (This practice shell only
+knows plain -i.)"""

@@ -4,13 +4,233 @@ description = "See exactly what changed between two versions of a file."
 difficulty = "Intermediate"
 estimated_minutes = 12
 prerequisites = ["file-viewing"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "diff", "compare", "config"]
+
+[[setup]]
+path = "garden/rota-v1.txt"
+contents = """Mon: Ada
+Tue: Omar
+Wed: Mei
+Thu: Sam
+Fri: Grace
+"""
+
+[[setup]]
+path = "garden/rota-v2.txt"
+contents = """Mon: Ada
+Tue: Grace
+Wed: Mei
+Thu: Sam
+Fri: Grace
+Sat: Omar
+"""
+
+[[setup]]
+path = "garden/copy-a.txt"
+contents = """Mon: Ada
+Tue: Omar
+Wed: Mei
+Thu: Mei
+Fri: Grace
+"""
+
+[[setup]]
+path = "garden/copy-b.txt"
+contents = """Mon: Ada
+Tue: Omar
+Wed: Mei
+Thu: Sam
+Fri: Grace
+"""
+
+[[setup]]
+path = "garden/plants-old.txt"
+contents = """tomatoes
+beans
+kale
+mint
+chard
+"""
+
+[[setup]]
+path = "garden/plants-new.txt"
+contents = """tomatoes
+kale
+mint
+chard
+"""
+
+[[setup]]
+path = "garden/sprinkler.conf"
+contents = """zone = north
+start = 06:00
+minutes = 20
+days = mon wed fri
+note = check the north valve monthly
+"""
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "Spot the difference"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+diff compares two files line by line and prints only
+what's different. Put the old file first, the new second.
+
+  diff OLD NEW
+
+  < line     this line is from the first file (OLD)
+  > line     this line is from the second file (NEW)
+  ---        separates the old lines from the new ones
+
+Each change starts with a short header:
+
+  2c2      line 2 of OLD was changed into line 2 of NEW
+  5a6      after line 5 of OLD, NEW adds its line 6
+  2d1      line 2 of OLD was deleted (it would have
+           come after line 1 of NEW)
+
+No output at all means the files are the same.
+
+A community garden keeps its files in the garden folder."""
+
+[[steps]]
+step_number = 2
+title = "Two versions of the rota"
+instruction = "Go into garden. Someone updated the watering rota. Compare rota-v1.txt (old) with rota-v2.txt (new)."
+hints = ["cd garden, then diff OLD NEW.", "Type: cd garden   then: diff rota-v1.txt rota-v2.txt"]
+solution = ["cd garden", "diff rota-v1.txt rota-v2.txt"]
+
+[steps.step_type.Task]
+goal = "Compare the two rotas"
+success_message = "Two changes. 2c2: Tuesday went from Omar to Grace. 5a6: a new Saturday line was added at the end. The four lines that match aren't shown at all."
+checks = [{ Used = "diff" }, { OutputContains = "2c2" }, { OutputContains = "< Tue: Omar" }]
+
+[[steps]]
+step_number = 3
+title = "Read the header"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "In that output, what does 5a6 mean?"
+options = ["Line 5 was changed to line 6", "After line 5 of the old file, the new file adds its line 6", "5 lines were added, 6 were removed"]
+correct_index = 1
+explanation = "The letter is what happened: a for added, c for changed, d for deleted. The number on the left is a line in the first file, the number on the right is a line in the second."
+
+[[steps]]
+step_number = 4
+title = "Something removed"
+instruction = "The plant list was cut down. Compare plants-old.txt with plants-new.txt and see what went."
+hints = ["Old file first, new file second.", "Type: diff plants-old.txt plants-new.txt"]
+solution = ["diff plants-old.txt plants-new.txt"]
+
+[steps.step_type.Task]
+goal = "Find the removed plant"
+success_message = "2d1: line 2 of the old list, beans, was deleted. The < says the line lives only in the first file."
+checks = [{ Used = "diff" }, { OutputContains = "2d1" }, { OutputContains = "< beans" }]
+
+[[steps]]
+step_number = 5
+title = "Order matters"
+instruction = "Now swap them: put plants-new.txt first and plants-old.txt second."
+hints = ["Same two files, the other way round.", "Type: diff plants-new.txt plants-old.txt"]
+solution = ["diff plants-new.txt plants-old.txt"]
+
+[steps.step_type.Task]
+goal = "Compare them the other way round"
+success_message = "Now it reads 1a2, > beans: going from the first file to the second, beans is added. Same files, opposite story. That's why the old file always goes first."
+checks = [{ Used = "diff" }, { OutputContains = "> beans" }]
+
+[[steps]]
+step_number = 6
+title = "The true copy"
+instruction = "Two people saved a copy of rota-v1.txt: copy-a.txt and copy-b.txt. One is exact; the other has a mistake. Use diff to find the exact one, then rename it to rota-final.txt."
+hints = ["diff rota-v1.txt against each copy, one at a time. The one that prints nothing is identical.", "mv OLDNAME NEWNAME renames a file.", "copy-b.txt is the exact one. Type: mv copy-b.txt rota-final.txt"]
+solution = ["diff rota-v1.txt copy-a.txt", "diff rota-v1.txt copy-b.txt", "mv copy-b.txt rota-final.txt"]
+
+[steps.step_type.Task]
+goal = "Rename the exact copy to rota-final.txt"
+success_message = "copy-b.txt was the one. When diff has nothing to say, the files are identical, down to every character."
+checks = [{ FileExists = "garden/rota-final.txt" }, { FileContains = { path = "garden/rota-final.txt", text = "Thu: Sam" } }]
+
+[[steps]]
+step_number = 7
+title = "A change with sed"
+instruction = "The sprinklers are moving to the south zone. Make a new version of the config with sed, leaving the original alone: sed 's/north/south/' sprinkler.conf > sprinkler-new.conf"
+hints = ["The > sends sed's output into a new file.", "Type: sed 's/north/south/' sprinkler.conf > sprinkler-new.conf"]
+solution = ["sed 's/north/south/' sprinkler.conf > sprinkler-new.conf"]
+
+[steps.step_type.Task]
+goal = "Make sprinkler-new.conf"
+success_message = "sprinkler-new.conf exists. Before you trust it, check what actually changed."
+checks = [{ FileContains = { path = "garden/sprinkler-new.conf", text = "zone = south" } }]
+
+[[steps]]
+step_number = 8
+title = "Check the change"
+instruction = "Compare the original config with the new one. Original first."
+hints = ["diff OLD NEW, with the two config files.", "Type: diff sprinkler.conf sprinkler-new.conf"]
+solution = ["diff sprinkler.conf sprinkler-new.conf"]
+
+[steps.step_type.Task]
+goal = "See what sed changed"
+success_message = "Two changes, not one. The zone moved, but line 5 changed too: the note now talks about a south valve that doesn't exist."
+checks = [{ Used = "diff" }, { OutputContains = "1c1" }, { OutputContains = "> note = check the south valve monthly" }]
+
+[[steps]]
+step_number = 9
+title = "What went wrong?"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "Why did the note on line 5 change as well?"
+options = ["diff got confused and marked the wrong line", "sed changes the first north on every line that has one, and the note had one", "> always copies the whole file twice"]
+correct_index = 1
+explanation = "sed works on every line. 's/north/south/' hit both lines containing north. This is exactly what diff is for: you see the whole effect of a change before you rely on it."
+
+[[steps]]
+step_number = 10
+title = "Fix it"
+instruction = "Make sprinkler-new.conf again, this time changing only the zone line. Then diff again to check that only line 1 changed."
+hints = ["Make the match more exact: include 'zone = ' in the pattern.", "Type: sed 's/zone = north/zone = south/' sprinkler.conf > sprinkler-new.conf"]
+solution = ["sed 's/zone = north/zone = south/' sprinkler.conf > sprinkler-new.conf"]
+
+[steps.step_type.Task]
+goal = "Change only the zone"
+success_message = "Now the zone is south and the note still says north. A diff of the two files shows just 1c1."
+checks = [{ FileContains = { path = "garden/sprinkler-new.conf", text = "zone = south" } }, { FileContains = { path = "garden/sprinkler-new.conf", text = "note = check the north valve monthly" } }]
+
+[[steps]]
+step_number = 11
+title = "On your own"
+instruction = "No hints. Starting from sprinkler.conf, make sprinkler-early.conf with only one change: start at 05:30 instead of 06:00. Then use diff to show that change, original first. (On a real system you might make the edit in an editor such as nano; here, use sed.)"
+challenge = true
+solution = ["sed 's/06:00/05:30/' sprinkler.conf > sprinkler-early.conf", "diff sprinkler.conf sprinkler-early.conf"]
+
+[steps.step_type.Task]
+goal = "Make sprinkler-early.conf and diff it"
+success_message = "2c2, one line, exactly the change you meant. Edit a copy, diff it against the original, and only then use it: that habit catches mistakes before they water the wrong garden."
+checks = [{ Used = "diff" }, { FileContains = { path = "garden/sprinkler-early.conf", text = "start = 05:30" } }, { FileContains = { path = "garden/sprinkler-early.conf", text = "zone = north" } }, { FileContains = { path = "garden/sprinkler-early.conf", text = "note = check the north valve monthly" } }, { OutputContains = "< start = 06:00" }, { OutputContains = "> start = 05:30" }]
+
+[[steps]]
+step_number = 12
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  diff OLD NEW      show what's different, line by line
+  < line            only in OLD (the first file)
+  > line            only in NEW (the second file)
+  2c2, 5a6, 2d1     changed, added, deleted (OLD line, NEW line)
+  no output         the files are identical
+
+Put the old file first. After any change you didn't type
+by hand, such as a sed command, diff the result against
+the original before you use it.
+
+On a real system, diff -u shows the same changes in the
+'unified' style, with - and + in front of lines. It's the
+format code reviews and patches use."""
