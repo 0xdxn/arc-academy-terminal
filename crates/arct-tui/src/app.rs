@@ -2907,14 +2907,36 @@ impl App {
             );
         }
 
+        let cwd = self.playground.as_ref().expect("ensured above").cwd().to_path_buf();
+        let pwd = cwd.display().to_string();
+        let is_simple = !command_str.contains(['|', ';', '&', '<', '>']);
+
+        // Each command runs in a fresh shell, so variables set in a lesson
+        // (NAME=value, export, unset) are kept here and handed to every
+        // later command, for this lesson only. Setting one runs nothing;
+        // its value is checked where it's used.
+        if is_simple {
+            if let Some(out) = self.sandbox.real_assignments(command_str, &pwd) {
+                return out;
+            }
+        }
+
+        // A line with $ is expanded here and quoted back, so the guard
+        // checks the values it will really use, and that is what runs
+        let expanded = match self.sandbox.expand_for_real(command_str, &pwd) {
+            Ok(expanded) => expanded,
+            Err(reason) => return format!("{}{}\n", icons::warning().content, reason),
+        };
+        let to_run = expanded.as_deref().unwrap_or(command_str);
+
         // Safety guard: playground containment + catastrophic-pattern denylist
-        let (verdict, cwd) = {
+        let verdict = {
             let playground = self.playground.as_ref().expect("ensured above");
             let guard = arct_core::PlaygroundGuard::new(playground.root());
-            (
-                guard.check(command_str, playground.cwd()),
-                playground.cwd().to_path_buf(),
-            )
+            match expanded {
+                Some(_) => guard.check_expanded(to_run, &cwd),
+                None => guard.check(command_str, &cwd),
+            }
         };
         if let arct_core::GuardVerdict::Refuse { reason } = verdict {
             return format!("{}{}\n", icons::warning().content, reason);
@@ -2922,9 +2944,9 @@ impl App {
 
         // cd builtin with per-session cwd persistence (simple `cd` only;
         // compound commands run in the shell where cd affects a subshell)
-        let is_simple = !command_str.contains(['|', ';', '&', '<', '>']);
         if cmd.program == "cd" && is_simple {
-            let target = cmd.args.first().map(String::as_str).unwrap_or("");
+            let words = shellwords::split(to_run).unwrap_or_default();
+            let target = words.get(1).map(String::as_str).unwrap_or("");
             let playground = self.playground.as_mut().expect("ensured above");
             return match playground.change_directory(target) {
                 Ok(new_path) => format!(
@@ -2936,15 +2958,6 @@ impl App {
             };
         }
 
-        // Each command runs in a fresh shell, so variables set in a lesson
-        // (NAME=value, export, unset) are kept here and handed to every
-        // later command, for this lesson only
-        if is_simple {
-            if let Some(out) = self.sandbox.real_assignments(command_str) {
-                return out;
-            }
-        }
-
         // Real execution, pinned to the tracked playground cwd, with the
         // same timeout-kill behavior as the normal shell
         let timeout = std::time::Duration::from_secs(self.config.general.command_timeout);
@@ -2952,7 +2965,7 @@ impl App {
         env_vars.extend(self.sandbox.real_env());
         match self
             .shell_executor
-            .execute(command_str.to_string(), env_vars, timeout, Some(cwd))
+            .execute(to_run.to_string(), env_vars, timeout, Some(cwd))
             .await
         {
             Ok(output) => output,

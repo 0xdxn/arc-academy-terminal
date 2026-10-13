@@ -121,6 +121,8 @@ The sandbox is a small shell over the lesson's own files. It never touches anyth
 
 **Scripts:** `sh file`, `bash file`, `./file` after `chmod +x`, and any executable file in a folder on `$PATH` (try `export PATH=$HOME/bin:$PATH`). Scripts get their arguments as `$1`, `$2`, `$#` and `$@`, see only exported variables (as in a real shell), and `exit` ends them. One command per line: `if`, `for` and `while` need a real shell, and the sandbox says so.
 
+In real-files mode, a line with `$` is filled in by arct with the same rules, then checked by the guard and run as written out: `$HOME` is the learner's real home (so the guard keeps it out of reach), `$PWD` is their playground folder, and `$` inside `for`, `while` or `if` is refused. Lessons that live in `~` (like `path-and-which`) only work in the sandbox.
+
 Real commands the sandbox doesn't run (`git`, `ps`, `curl`...) are accepted by `CommandExercise` steps with a note that they only ran as a check; write those lessons for real-files mode. A word that isn't a command at all gets "command not found", and the step doesn't pass.
 
 ## Test it

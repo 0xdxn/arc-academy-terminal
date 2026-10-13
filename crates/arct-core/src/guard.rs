@@ -84,6 +84,19 @@ impl PlaygroundGuard {
     /// must be inside the playground root. The check is purely lexical — it
     /// never touches the filesystem.
     pub fn check(&self, command: &str, cwd: &Path) -> GuardVerdict {
+        self.check_line(command, cwd, false)
+    }
+
+    /// Check a line the app has already expanded and quoted itself (see
+    /// `shell_syntax::render`): every word is a literal, and the only `$`
+    /// left is inside single quotes or the shell's own `"$?"`. Such a line
+    /// shows exactly what will run, so `$` is no reason to refuse it.
+    /// Command substitution is still refused.
+    pub fn check_expanded(&self, command: &str, cwd: &Path) -> GuardVerdict {
+        self.check_line(command, cwd, true)
+    }
+
+    fn check_line(&self, command: &str, cwd: &Path, expanded: bool) -> GuardVerdict {
         let trimmed = command.trim();
         if trimmed.is_empty() {
             return GuardVerdict::Allow;
@@ -104,7 +117,7 @@ impl PlaygroundGuard {
                  directly instead.",
             );
         }
-        if trimmed.contains('$') {
+        if trimmed.contains('$') && !expanded {
             return GuardVerdict::refuse(
                 "Environment variables like $HOME or $PATH can expand to locations outside \
                  the folder you're practising in, so commands using '$' are blocked. Try \
@@ -125,17 +138,20 @@ impl PlaygroundGuard {
 
         // --- 4. Per-token path containment ---
         let mut total_climb: usize = 0;
-        for raw_token in &tokens {
-            // Strip redirect prefixes so `>/etc/passwd` or `2>/tmp/x` are
-            // analyzed as paths
-            let token = {
-                let digits_stripped = raw_token.trim_start_matches(|c: char| c.is_ascii_digit());
-                if digits_stripped.starts_with(['<', '>', '&']) {
-                    digits_stripped.trim_start_matches(['<', '>', '&'])
-                } else {
-                    raw_token.as_str()
-                }
+        // Strip redirect prefixes so `>/etc/passwd` or `2>/tmp/x` are
+        // analyzed as paths, and check what follows `=` too, so
+        // `of=/dev/disk2` or `--output=/etc/x` is seen as the path it names
+        let candidates = tokens.iter().flat_map(|raw_token| {
+            let digits_stripped = raw_token.trim_start_matches(|c: char| c.is_ascii_digit());
+            let token = if digits_stripped.starts_with(['<', '>', '&']) {
+                digits_stripped.trim_start_matches(['<', '>', '&'])
+            } else {
+                raw_token.as_str()
             };
+            let value = token.split_once('=').map(|(_, value)| value);
+            std::iter::once(token).chain(value)
+        });
+        for token in candidates {
             if token.is_empty() {
                 continue;
             }
@@ -210,9 +226,23 @@ impl PlaygroundGuard {
             ));
         }
 
+        // Commands in a chain, split two ways: at every ; | & (catches a
+        // quote that hides a split, like `true';' sudo x`), and only where
+        // the shell splits (catches a quoted ';' that would otherwise make
+        // the segment fail to tokenize, like `rm -rf ~ ';'`)
+        let mut segments: Vec<String> = command
+            .split([';', '|', '&'])
+            .map(str::to_string)
+            .collect();
+        segments.extend(Self::split_unquoted(command));
+
         // sudo anywhere in the pipeline/sequence
-        for segment in command.split(|c| c == ';' || c == '|' || c == '&') {
-            if segment.split_whitespace().next() == Some("sudo") {
+        for segment in &segments {
+            let first = shellwords::split(segment)
+                .ok()
+                .and_then(|t| t.into_iter().next())
+                .or_else(|| segment.split_whitespace().next().map(str::to_string));
+            if first.as_deref() == Some("sudo") {
                 return Some(GuardVerdict::refuse(
                     "'sudo' runs a command with full administrator power, where a single \
                      typo can change or delete critical system files. arct never needs \
@@ -222,11 +252,16 @@ impl PlaygroundGuard {
             }
         }
 
-        // mkfs formats disks
-        if command
+        // Every word, as typed and as the shell reads it after quotes, so
+        // 'of=/dev/disk2' is seen as of=/dev/disk2
+        let words: Vec<String> = command
             .split_whitespace()
-            .any(|t| t == "mkfs" || t.starts_with("mkfs."))
-        {
+            .map(str::to_string)
+            .chain(segments.iter().filter_map(|s| shellwords::split(s).ok()).flatten())
+            .collect();
+
+        // mkfs formats disks
+        if words.iter().any(|t| t == "mkfs" || t.starts_with("mkfs.")) {
             return Some(GuardVerdict::refuse(
                 "'mkfs' formats a disk partition, instantly erasing every file on it. \
                  It's used to prepare brand-new drives — never something to practice with.",
@@ -234,7 +269,7 @@ impl PlaygroundGuard {
         }
 
         // dd writing to a raw device
-        if command.split_whitespace().any(|t| t.starts_with("of=/dev/")) {
+        if words.iter().any(|t| t.starts_with("of=/dev/")) {
             return Some(GuardVerdict::refuse(
                 "'dd' writing to a /dev device bypasses the filesystem and overwrites the \
                  raw disk underneath your files — it can wipe an entire drive in seconds \
@@ -245,7 +280,8 @@ impl PlaygroundGuard {
         // Redirecting output into a device (e.g. `> /dev/sda`). /dev/null,
         // the "throw it away" file, and the terminal's own streams are fine
         const HARMLESS: &[&str] = &["/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty"];
-        let into_device = regex::Regex::new(r">>?\s*(/dev/[^\s;|&<>]*)").expect("valid pattern");
+        let into_device =
+            regex::Regex::new(r#">>?\s*['"]?(/dev/[^\s;|&<>'"]*)"#).expect("valid pattern");
         if into_device
             .captures_iter(command)
             .any(|c| !HARMLESS.contains(&c.get(1).map_or("", |m| m.as_str())))
@@ -259,13 +295,41 @@ impl PlaygroundGuard {
 
         // rm -rf / chmod -R 777 — checked in every segment of a chain like
         // `cd / && rm -rf *` or `true; rm -rf ~`
-        for segment in command.split(|c| c == ';' || c == '|' || c == '&') {
+        for segment in &segments {
             if let Some(verdict) = Self::check_segment(segment.trim()) {
                 return Some(verdict);
             }
         }
 
         None
+    }
+
+    /// Split a line at the `;`, `|` and `&` the shell would act on: not
+    /// inside quotes, not after a backslash
+    fn split_unquoted(command: &str) -> Vec<String> {
+        let mut segments = vec![String::new()];
+        let mut quote: Option<char> = None;
+        let mut chars = command.chars();
+        while let Some(c) = chars.next() {
+            match (quote, c) {
+                (None, '\'' | '"') => quote = Some(c),
+                (Some(q), _) if c == q => quote = None,
+                (None | Some('"'), '\\') => {
+                    segments.last_mut().expect("never empty").push(c);
+                    if let Some(next) = chars.next() {
+                        segments.last_mut().expect("never empty").push(next);
+                    }
+                    continue;
+                }
+                (None, ';' | '|' | '&') => {
+                    segments.push(String::new());
+                    continue;
+                }
+                _ => {}
+            }
+            segments.last_mut().expect("never empty").push(c);
+        }
+        segments
     }
 
     /// Destructive-target checks for one simple command (no `;`/`|`/`&`).
@@ -667,5 +731,55 @@ mod tests {
             }
             GuardVerdict::Allow => panic!("should be refused"),
         }
+    }
+
+    #[test]
+    fn test_quotes_do_not_hide_catastrophic_commands() {
+        for cmd in [
+            // a quoted ; or | used to make the segment fail to tokenize
+            "rm -rf ~ ';'",
+            "rm -rf / '|'",
+            "rm -rf \"$HOME\" '&&'",
+            // quoting the program or the target
+            "'sudo' ls",
+            "true; \"sudo\" ls",
+            "dd if=x 'of=/dev/disk2'",
+            "echo x > '/dev/disk2'",
+            "echo x >> \"/dev/sda\"",
+            "'mkfs.ext4' disk.img",
+        ] {
+            assert!(
+                !PlaygroundGuard::check_catastrophic(cmd).is_allowed(),
+                "{cmd} should be refused"
+            );
+        }
+        // quoted ; and | in ordinary commands are still fine
+        for cmd in ["grep -E 'a|b' notes.txt", "echo 'one; two'", "echo x > /dev/null"] {
+            assert!(PlaygroundGuard::check_catastrophic(cmd).is_allowed(), "{cmd} should be allowed");
+        }
+    }
+
+    #[test]
+    fn test_refuses_paths_after_equals() {
+        let cwd = lesson_cwd();
+        assert_refused("dd if=notes.txt of=/etc/x", &cwd);
+        assert_refused("cp notes.txt --target-directory=../..", &cwd);
+        assert_refused("tar --file=~/stuff.tar -c notes", &cwd);
+        assert_allowed("ls --color=auto", &cwd);
+        assert_allowed("sort --output=sorted.txt notes.txt", &cwd);
+    }
+
+    #[test]
+    fn test_expanded_lines_may_carry_quoted_dollars() {
+        let cwd = lesson_cwd();
+        // the app's own rendering: $ only inside single quotes, or "$?"
+        let line = "echo 'echo $1' > 'greet.sh'";
+        assert!(!guard().check(line, &cwd).is_allowed());
+        assert!(guard().check_expanded(line, &cwd).is_allowed());
+        assert!(guard().check_expanded("false; echo 'status '\"$?\"", &cwd).is_allowed());
+        // still contained, still no command substitution
+        assert!(!guard().check_expanded("cat '/etc/hosts'", &cwd).is_allowed());
+        assert!(!guard().check_expanded("echo '$(date)'", &cwd).is_allowed());
+        assert!(!guard().check_expanded("rm -rf '/'", &cwd).is_allowed());
     }
 }

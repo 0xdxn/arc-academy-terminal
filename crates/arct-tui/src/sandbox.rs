@@ -82,12 +82,104 @@ impl SandboxShell {
         self.vars.insert(name.to_string(), value.to_string());
     }
 
+    /// A variable's value in real-files mode: set in this lesson, or from
+    /// the real environment. `$PWD` is the playground folder the learner is
+    /// in; `$?` is left for the real shell to fill in (see
+    /// `shell_syntax::STATUS_MARK`).
+    fn real_lookup(&self, name: &str, pwd: &str) -> Option<String> {
+        match name {
+            "?" => Some(shell_syntax::STATUS_MARK.to_string()),
+            "#" => Some("0".to_string()),
+            "@" | "*" => Some(String::new()),
+            "0" => Some("sh".to_string()),
+            "PWD" => Some(pwd.to_string()),
+            n if n.chars().all(|c| c.is_ascii_digit()) => None,
+            n => self.real.get(n).cloned().or_else(|| std::env::var(n).ok()),
+        }
+    }
+
+    /// Real-files mode: a line that uses `$`, expanded here and written
+    /// back fully quoted (`shell_syntax::render`), so the guard checks the
+    /// command as it will really run and the shell expands nothing again.
+    /// `Ok(None)` for a line without `$`, or with `$(...)` or backticks,
+    /// which the guard refuses as it always has. Each part of a list is
+    /// expanded after the ones before it, as sh does: in `X=5; echo $X`
+    /// the echo sees 5.
+    pub(crate) fn expand_for_real(&self, line: &str, pwd: &str) -> Result<Option<String>, String> {
+        if !line.contains('$') || line.contains("$(") || line.contains('`') {
+            return Ok(None);
+        }
+        // Variables set earlier in this line (None: unset)
+        let mut local: BTreeMap<String, Option<String>> = BTreeMap::new();
+        let mut list = Vec::new();
+        for (joiner, part) in shell_syntax::split_list(line) {
+            let lookup = |name: &str| match local.get(name) {
+                Some(value) => value.clone(),
+                None => self.real_lookup(name, pwd),
+            };
+            let mut parsed = shell_syntax::parse(&part, &lookup)?;
+            if parsed.is_empty() {
+                if joiner != Joiner::Always {
+                    return Err("syntax error: a command is missing after && or ||".to_string());
+                }
+                continue;
+            }
+            let pipeline = parsed.remove(0).1;
+            // Inside a loop or an if, the shell fills in $ as it goes, so
+            // there is no value to check before it runs
+            let opens_block = pipeline.stages.iter().any(|stage| {
+                stage
+                    .words
+                    .first()
+                    .is_some_and(|w| KEYWORDS.contains(&w.text.as_str()) || matches!(w.text.as_str(), "{" | "}" | "!"))
+            });
+            if opens_block {
+                return Err(
+                    "In real-files mode, arct fills in each $ before anything runs, so the safety \
+                     guard can check the real values. Inside for, while and if, the shell fills \
+                     them in as it goes, so they can't be checked: type the values out, or \
+                     practise this in the simulated sandbox."
+                        .to_string(),
+                );
+            }
+            if let [stage] = pipeline.stages.as_slice() {
+                let words: Vec<&str> = stage.words.iter().map(|w| w.text.as_str()).collect();
+                match words.split_first() {
+                    None => {
+                        for (name, value) in &stage.assignments {
+                            local.insert(name.clone(), Some(value.clone()));
+                        }
+                    }
+                    Some((&"export", rest)) => {
+                        for word in rest {
+                            if let Some((name, value)) = word.split_once('=') {
+                                local.insert(name.to_string(), Some(value.to_string()));
+                            }
+                        }
+                    }
+                    Some((&"unset", rest)) => {
+                        for name in rest {
+                            local.insert(name.to_string(), None);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            list.push((joiner, pipeline));
+        }
+        Ok(Some(shell_syntax::render(&list)))
+    }
+
     /// Real-files mode: handle a line that only sets or clears variables
     /// (`NAME=value`, `export NAME=value`, `unset NAME`). Returns `None`
     /// for any other line, which then runs in a real shell.
-    pub(crate) fn real_assignments(&mut self, line: &str) -> Option<String> {
+    pub(crate) fn real_assignments(&mut self, line: &str, pwd: &str) -> Option<String> {
         let real_value = |name: &str| std::env::var(name).ok();
-        let lookup = |name: &str| self.real.get(name).cloned().or_else(|| real_value(name));
+        let lookup = |name: &str| match name {
+            // a status from an earlier line isn't kept between real commands
+            "?" => Some("0".to_string()),
+            n => self.real_lookup(n, pwd),
+        };
         let mut list = shell_syntax::parse(line, &lookup).ok()?;
         if list.len() != 1 || list[0].1.stages.len() != 1 {
             return None;
@@ -1088,18 +1180,101 @@ mod tests {
     #[test]
     fn real_mode_keeps_variables_between_commands() {
         let mut shell = SandboxShell::new();
-        assert_eq!(shell.real_assignments("GREETING=hello"), Some(String::new()));
-        assert_eq!(shell.real_assignments("export WHO=\"$GREETING world\""), Some(String::new()));
+        assert_eq!(shell.real_assignments("GREETING=hello", "/p"), Some(String::new()));
+        assert_eq!(shell.real_assignments("export WHO=\"$GREETING world\"", "/p"), Some(String::new()));
         let env: BTreeMap<String, String> = shell.real_env().collect();
         assert_eq!(env["WHO"], "hello world");
-        assert_eq!(shell.real_assignments("export PATH=/x/bin:$PATH").as_deref(), Some(""));
+        assert_eq!(shell.real_assignments("export PATH=/x/bin:$PATH", "/p").as_deref(), Some(""));
         assert!(shell.real.get("PATH").unwrap().starts_with("/x/bin:"));
-        assert_eq!(shell.real_assignments("unset GREETING"), Some(String::new()));
+        assert_eq!(shell.real_assignments("unset GREETING", "/p"), Some(String::new()));
         assert!(!shell.real.contains_key("GREETING"));
         // Anything else runs for real
-        assert_eq!(shell.real_assignments("echo $WHO"), None);
-        assert_eq!(shell.real_assignments("X=1 env"), None);
-        assert_eq!(shell.real_assignments("export"), None);
+        assert_eq!(shell.real_assignments("echo $WHO", "/p"), None);
+        assert_eq!(shell.real_assignments("X=1 env", "/p"), None);
+        assert_eq!(shell.real_assignments("export", "/p"), None);
+    }
+
+    #[test]
+    fn real_mode_expands_dollar_before_the_guard() {
+        let mut shell = SandboxShell::new();
+        let pwd = "/home/u/ArcAcademy/playground/variables/tour";
+        let expand = |shell: &SandboxShell, line: &str| shell.expand_for_real(line, pwd);
+        // Lines without $ (and with substitution) are left to the guard
+        assert_eq!(expand(&shell, "ls -l"), Ok(None));
+        assert_eq!(expand(&shell, "echo $(date)"), Ok(None));
+        assert_eq!(expand(&shell, "echo `date`"), Ok(None));
+
+        shell.real.insert("VENUE".into(), "The Lantern Hall".into());
+        assert_eq!(
+            expand(&shell, "echo \"Tonight: $VENUE\"").unwrap().as_deref(),
+            Some("echo 'Tonight: The Lantern Hall'")
+        );
+        // later parts see what earlier parts set, as in sh
+        assert_eq!(
+            expand(&shell, "BAND=Nightjar; echo $BAND && unset BAND; echo \"[$BAND]\"").unwrap().as_deref(),
+            Some("BAND=Nightjar; echo Nightjar && unset BAND; echo '[]'")
+        );
+        assert_eq!(expand(&shell, "echo $PWD").unwrap().as_deref(), Some(&*format!("echo {pwd}")));
+        assert_eq!(expand(&shell, "false; echo $?").unwrap().as_deref(), Some("false; echo \"$?\""));
+        // script text in single quotes is kept as typed
+        assert_eq!(
+            expand(&shell, "echo 'echo \"$1: $2\"' > log.sh").unwrap().as_deref(),
+            Some("echo 'echo \"$1: $2\"' > log.sh")
+        );
+        // loops and if fill in $ as they run: refused, with a reason
+        for line in ["for x in a b; do echo $x; done", "if true; then echo $VENUE; fi", "while read l; do echo $l; done < f"] {
+            assert!(expand(&shell, line).unwrap_err().contains("can't be checked"), "{line}");
+        }
+    }
+
+    #[test]
+    fn real_mode_guard_sees_what_variables_hold() {
+        let root = std::path::Path::new("/home/u/ArcAcademy/playground");
+        let cwd = root.join("variables");
+        let guard = arct_core::PlaygroundGuard::new(root);
+        let mut shell = SandboxShell::new();
+        let checked = |shell: &SandboxShell, line: &str| {
+            let line = shell.expand_for_real(line, &cwd.display().to_string()).unwrap().unwrap();
+            guard.check_expanded(&line, &cwd).is_allowed()
+        };
+        shell.real.insert("X".into(), "/".into());
+        shell.real.insert("UP".into(), "../..".into());
+        shell.real.insert("D".into(), "/dev/disk2".into());
+        shell.real.insert("SEP".into(), ";".into());
+        assert!(!checked(&shell, "rm -rf $X"));
+        assert!(!checked(&shell, "cat $UP/secret"));
+        assert!(!checked(&shell, "dd if=a of=$D"));
+        assert!(!checked(&shell, "echo hi > $D"));
+        assert!(!checked(&shell, "cat $HOME/notes"));
+        assert!(!checked(&shell, "cat ~/notes $X"));
+        assert!(!checked(&shell, "Y=/etc; cat $Y/hosts"));
+        // a value is data, never a second command
+        assert!(checked(&shell, "echo $SEP rm -rf"));
+        assert!(checked(&shell, "Y=tour; ls $Y && echo \"$Y done\""));
+        assert!(checked(&shell, "cd $PWD"));
+    }
+
+    #[test]
+    fn real_mode_runs_exactly_the_expanded_line() {
+        let dir = std::env::temp_dir().join(format!("arct-real-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut shell = SandboxShell::new();
+        shell.real.insert("LIST".into(), "encore songs.txt".into());
+        shell.real.insert("TRICK".into(), "$(touch pwned)".into());
+        let line = shell
+            .expand_for_real("echo \"Starlight Road\" > \"$LIST\"; echo $TRICK; X=5; echo \"$X\"", "/p")
+            .unwrap()
+            .unwrap();
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&line)
+            .current_dir(&dir)
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "$(touch pwned)\n5\n");
+        assert_eq!(std::fs::read_to_string(dir.join("encore songs.txt")).unwrap(), "Starlight Road\n");
+        assert!(!dir.join("pwned").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
