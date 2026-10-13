@@ -199,6 +199,7 @@ dependencies = [
  "chrono",
  "crossterm 0.27.0",
  "dirs",
+ "libc",
  "portable-pty",
  "ratatui 0.26.3",
  "rusqlite",

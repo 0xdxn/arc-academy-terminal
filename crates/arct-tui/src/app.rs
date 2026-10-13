@@ -4011,4 +4011,70 @@ mod playthrough_tests {
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// Plays every real-files lesson on real files inside the jail, so a
+    /// jail rule that breaks an ordinary lesson command shows up here.
+    /// Ignored by default: it writes a real playground under $HOME, so it
+    /// refuses to run unless HOME is a scratch folder under the temp dir.
+    /// Run: HOME=<scratch> CARGO_HOME=~/.cargo RUSTUP_HOME=~/.rustup
+    ///      cargo test -p arct-tui real_files_lessons -- --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn real_files_lessons_can_be_completed_in_the_jail() {
+        let home = std::env::var("HOME").unwrap_or_default();
+        let scratch_home = std::path::Path::new(&home)
+            .canonicalize()
+            .ok()
+            .zip(std::env::temp_dir().canonicalize().ok())
+            .is_some_and(|(h, t)| h.starts_with(&t) && h != t)
+            || home.contains("/.synap/scratch/");
+        assert!(scratch_home, "HOME must be a scratch folder, not {home}");
+
+        let dir = std::path::Path::new(&home).join("arct-data");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("ARCT_DATA_DIR", &dir);
+        let config = dir.join("config.toml");
+        std::fs::write(
+            &config,
+            "[general]\nsetup_complete = true\n[lessons]\npractice_mode = \"real\"\n",
+        )
+        .unwrap();
+
+        let library = arct_core::LessonLibrary::new();
+        let mut played = 0;
+        let mut failures = Vec::new();
+        for lesson in library.all().into_iter().filter(|l| !l.simulated_only) {
+            let mut app = App::new_with_options(crate::RunOptions {
+                config_path: Some(config.clone()),
+                ..Default::default()
+            })
+            .unwrap();
+            assert!(app.practice_mode_is_real(), "no jail, so no real files");
+            app.lesson_mode = true;
+            app.lesson_panel
+                .as_mut()
+                .expect("lesson panel")
+                .load_lesson(lesson.clone());
+            app.prepare_lesson_environment();
+            for step in &lesson.steps {
+                let before = app.lesson_panel.as_ref().unwrap().current_step_index();
+                for input in step_inputs(&lesson.id, step) {
+                    app.command_buffer = input;
+                    app.execute_command().await.unwrap();
+                }
+                let after = app.lesson_panel.as_ref().unwrap().current_step_index();
+                let finished = app.completed_lessons.contains(&lesson.id);
+                if !(after == before + 1 || finished) {
+                    failures.push(format!(
+                        "{} step {} '{}':\n{}",
+                        lesson.id, step.step_number, step.title, app.last_output
+                    ));
+                    break;
+                }
+            }
+            played += 1;
+        }
+        assert!(played > 0);
+        assert!(failures.is_empty(), "{} of {played} lessons stuck on real files:\n\n{}", failures.len(), failures.join("\n\n"));
+    }
 }
