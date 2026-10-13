@@ -27,6 +27,9 @@ pub struct SandboxShell {
     /// Variables set in real-files mode (each command there is a new
     /// process, so the app carries them from one command to the next)
     real: BTreeMap<String, String>,
+    /// Exit status a command chose that its printout can't show: diff
+    /// finding differences, grep finding nothing (both exit 1 in sh)
+    pending_status: Option<i32>,
 }
 
 impl Default for SandboxShell {
@@ -45,6 +48,7 @@ impl SandboxShell {
             depth: 0,
             exiting: false,
             real: BTreeMap::new(),
+            pending_status: None,
         };
         for (k, v) in [
             ("HOME", "/lesson-home"),
@@ -225,8 +229,10 @@ impl App {
             if !run {
                 continue;
             }
+            self.sandbox.pending_status = None;
             let text = self.run_sandbox_pipeline(&pipeline);
-            self.sandbox.status = i32::from(Self::output_reports_failure(&text));
+            let pending = self.sandbox.pending_status.take();
+            self.sandbox.status = if Self::output_reports_failure(&text) { 1 } else { pending.unwrap_or(0) };
             output.push_str(&text);
         }
         Some(output)
@@ -299,7 +305,18 @@ impl App {
                     (name.clone(), old)
                 })
                 .collect();
+            // A pipeline's status is its last command's
+            self.sandbox.pending_status = None;
             let printed = self.run_sandbox_stage(&words, stdin);
+            match words[0].as_str() {
+                "diff" if !printed.is_empty() && !Self::output_reports_failure(&printed) => {
+                    self.sandbox.pending_status = Some(1)
+                }
+                "grep" if printed.trim().is_empty() || printed.starts_with("(no lines matched") => {
+                    self.sandbox.pending_status = Some(1)
+                }
+                _ => {}
+            }
             for (name, old) in saved {
                 match old {
                     Some(value) => self.sandbox.set(&name, &value),
@@ -934,6 +951,8 @@ mod tests {
         assert_eq!(run(&mut app, "cat f.txt | tee copy.txt | wc -l"), "2\n");
         assert_eq!(read(&app, "copy.txt"), "b apple\na pear\n");
         assert_eq!(run(&mut app, "sed 's/apple/plum/' f.txt"), "b plum\na pear\n");
+        assert_eq!(run(&mut app, "tail -n +2 f.txt"), "a pear\n");
+        assert_eq!(run(&mut app, "cat f.txt | tail -n +2"), "a pear\n");
         run(&mut app, "sed -i 's/pear/fig/' f.txt");
         assert_eq!(read(&app, "f.txt"), "b apple\na fig\n");
         assert_eq!(run(&mut app, "grep fig < f.txt"), "a fig\n");
@@ -1019,5 +1038,11 @@ mod tests {
         assert!(run(&mut app, "du -sh proj").ends_with("\tproj\n"));
         run(&mut app, "echo hi > a; echo ho > b");
         assert_eq!(run(&mut app, "diff a b"), "1c1\n< hi\n---\n> ho\n");
+        // diff exits 1 when the files differ, grep when nothing matched
+        assert!(!run(&mut app, "diff a b > /dev/null && echo same").contains("same"));
+        assert!(run(&mut app, "cp a c; diff a c && echo same").contains("same"));
+        assert!(run(&mut app, "grep zzz a || echo none").contains("none"));
+        assert!(run(&mut app, "cat a | grep zzz || echo none").contains("none"));
+        assert_eq!(run(&mut app, "grep hi a > /dev/null; echo $?"), "0\n");
     }
 }

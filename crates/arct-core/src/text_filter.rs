@@ -22,7 +22,12 @@ pub fn apply(program: &str, args: &[String], input: &str) -> Result<String, Stri
         }
         "tail" => {
             let n = line_count(args)?;
-            let skip = lines.len().saturating_sub(n);
+            // tail -n +N starts at line N (skips a header, for example)
+            let skip = if tail_from_start(args) {
+                n.saturating_sub(1)
+            } else {
+                lines.len().saturating_sub(n)
+            };
             lines.iter().skip(skip).map(|l| l.to_string()).collect()
         }
         "wc" => {
@@ -108,6 +113,18 @@ pub fn operands(program: &str, args: &[String]) -> Vec<String> {
         out.push(a.clone());
     }
     out
+}
+
+/// `tail -n +N` / `tail -n+N` / `tail +N`: count from the start, not the end
+pub fn tail_from_start(args: &[String]) -> bool {
+    let mut prev_n = false;
+    for a in args {
+        if (prev_n && a.starts_with('+')) || a.starts_with("-n+") || (a.starts_with('+') && a.len() > 1) {
+            return true;
+        }
+        prev_n = a == "-n";
+    }
+    false
 }
 
 fn line_count(args: &[String]) -> Result<usize, String> {
@@ -432,6 +449,14 @@ mod tests {
     }
 
     const LOG: &str = "a INFO ok\nb ERROR bad\nc INFO ok\nd error worse\n";
+
+    #[test]
+    fn tail_plus_starts_at_a_line() {
+        let text = "header\na\nb\nc\n";
+        assert_eq!(run("tail", &["-n", "+2"], text), "a\nb\nc\n");
+        assert_eq!(run("tail", &["-n+3"], text), "b\nc\n");
+        assert_eq!(run("tail", &["-n", "2"], text), "b\nc\n");
+    }
 
     #[test]
     fn sed_substitutes_and_filters() {

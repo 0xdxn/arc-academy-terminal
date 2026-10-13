@@ -1511,6 +1511,14 @@ impl App {
                 for file in &files {
                     let result = if program == "head" {
                         vfs.head_file(file, count)
+                    } else if arct_core::text_filter::tail_from_start(&cmd.args) {
+                        // tail -n +N: from line N on
+                        let flags: Vec<String> =
+                            cmd.args.iter().filter(|a| !files.contains(a)).cloned().collect();
+                        vfs.read_file(file).and_then(|text| {
+                            arct_core::text_filter::apply("tail", &flags, &text)
+                                .map_err(|e| anyhow::anyhow!(e))
+                        })
                     } else {
                         vfs.tail_file(file, count)
                     };
@@ -1773,7 +1781,11 @@ impl App {
             // real shell inside ~/ArcAcademy/playground (guard-checked) when
             // practice_mode = "real", simulated virtual filesystem otherwise
             let mut guard_refused = false;
-            let vfs_output = if self.practice_mode_is_real() {
+            // A quiz answer ("1") is not a command: don't run it
+            let answering = self.lesson_panel.as_ref().is_some_and(|p| p.expects_answer());
+            let vfs_output = if answering {
+                None
+            } else if self.practice_mode_is_real() {
                 Some(self.execute_playground_command(&cmd, &command_str).await)
             } else if let arct_core::GuardVerdict::Refuse { reason } =
                 arct_core::PlaygroundGuard::check_catastrophic(&command_str)

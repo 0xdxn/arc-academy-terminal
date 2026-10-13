@@ -121,6 +121,14 @@ impl LessonPanel {
         !self.answer_revealed && !self.resumed
     }
 
+    /// The current step is a quiz: what's typed is an answer, not a command
+    pub fn expects_answer(&self) -> bool {
+        matches!(
+            self.current_step().map(|s| &s.step_type),
+            Some(StepType::MultipleChoice { .. })
+        )
+    }
+
     /// Get current step
     fn current_step(&self) -> Option<&LessonStep> {
         self.current_lesson
