@@ -4,13 +4,178 @@ description = "Find the hidden files that hold settings, and read them safely."
 difficulty = "Beginner"
 estimated_minutes = 10
 prerequisites = ["nav-basics"]
-tags = ["operator", "placeholder"]
+tags = ["operator", "dotfiles", "hidden-files", "ls", "config"]
+
+[[setup]]
+path = "ada-home/notes.txt"
+contents = """Shopping: eggs, flour, coffee
+Call Grace about Saturday
+"""
+
+[[setup]]
+path = "ada-home/.bashrc"
+contents = """# .bashrc: bash reads this file each time a new terminal opens
+alias ll='ls -l'
+export HISTSIZE=5000
+"""
+
+[[setup]]
+path = "ada-home/.gitconfig"
+contents = """[user]
+    name = Ada
+    email = ada@example.com
+[core]
+    editor = nano
+"""
+
+[[setup]]
+path = "ada-home/.config/radio/settings.ini"
+contents = """volume = 7
+station = 101.5 FM
+start_muted = no
+"""
 
 [[steps]]
 step_number = 1
-title = "Coming soon"
+title = "Names that start with a dot"
 instruction = ""
 
 [steps.step_type.Information]
 content = """
-This lesson is being written."""
+A file or folder whose name starts with a dot is hidden.
+ls leaves it out. ls -a (a for "all") shows it.
+
+  ls        everything except hidden names
+  ls -a     hidden names too
+
+Most hidden files hold settings, so people call them
+dotfiles: .bashrc, .gitconfig, the .config folder.
+
+Two special names live in every folder:
+  .         this folder
+  ..        the folder above it
+
+A real ls -a lists . and .. first. This practice shell
+leaves those two out."""
+
+[[steps]]
+step_number = 2
+title = "Look, then look again"
+instruction = "The folder ada-home is a small practice home folder. Go into it and run ls. Then run ls -a and compare."
+hints = ["cd into ada-home first. Then ls, then ls with -a.", "Type: cd ada-home   then: ls -a"]
+solution = ["cd ada-home", "ls -a"]
+
+[steps.step_type.Task]
+goal = "List ada-home with its hidden files"
+success_message = "ls showed one file. ls -a showed the settings files hiding next to it."
+checks = [{ CwdIs = "ada-home" }, { OutputContains = ".gitconfig" }]
+
+[[steps]]
+step_number = 3
+title = "Read a dotfile"
+instruction = "Dotfiles are plain text, and the leading dot is part of the name. Read .gitconfig."
+hints = ["cat shows a file. Type the dot as part of the name.", "Type: cat .gitconfig"]
+solution = ["cat .gitconfig"]
+
+[steps.step_type.Task]
+goal = "Read .gitconfig"
+success_message = "This is git's settings file: who you are, which editor to open. Each line is one setting."
+checks = [{ Used = "cat" }, { OutputContains = "ada@example.com" }]
+
+[[steps]]
+step_number = 4
+title = "A hidden folder"
+instruction = "One hidden name ends in a slash, so it's a folder: .config. Newer programs keep their settings in there, one folder each. Look inside it and read the settings file you find."
+hints = ["ls .config shows what's inside. Keep going one folder at a time, then cat the file.", "Type: ls .config/radio   then: cat .config/radio/settings.ini"]
+solution = ["ls .config", "ls .config/radio", "cat .config/radio/settings.ini"]
+
+[steps.step_type.Task]
+goal = "Read the radio program's settings"
+success_message = "Same idea as .gitconfig: plain lines of settings. When a program 'remembers' something, it's often a file like this."
+checks = [{ Used = "cat" }, { OutputContains = "101.5 FM" }]
+
+[[steps]]
+step_number = 5
+title = "Hidden is not private"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "Why do dotfiles start with a dot?"
+options = [
+  "To keep them secret from other people on the computer",
+  "To keep everyday listings tidy. Anyone allowed into the folder can still read them",
+  "So the system can delete them when space runs low",
+]
+correct_index = 1
+explanation = "The dot only keeps ls quiet. It protects nothing: ls -a shows the files and cat reads them. Privacy comes from permissions, which is a lesson of its own."
+
+[[steps]]
+step_number = 6
+title = "Back up before you edit"
+instruction = "You're going to add a setting to .bashrc. First make a copy called .bashrc.bak, so you can put things back if it goes wrong."
+hints = ["cp copies a file. Both names start with a dot.", "Type: cp .bashrc .bashrc.bak"]
+solution = ["cp .bashrc .bashrc.bak"]
+
+[steps.step_type.Task]
+goal = "Copy .bashrc to .bashrc.bak"
+success_message = "A backup costs one command. It's the habit that saves you when an edit goes wrong."
+checks = [{ FileContains = { path = "ada-home/.bashrc.bak", text = "HISTSIZE=5000" } }]
+
+[[steps]]
+step_number = 7
+title = "One arrow or two?"
+instruction = ""
+
+[steps.step_type.MultipleChoice]
+question = "Which line adds a setting to the end of .bashrc and keeps everything already in it?"
+options = [
+  "echo 'export EDITOR=nano' > .bashrc",
+  "echo 'export EDITOR=nano' >> .bashrc",
+  "cat 'export EDITOR=nano' .bashrc",
+]
+correct_index = 1
+explanation = "Two arrows (>>) add to the end. One arrow (>) replaces the whole file with that single line, and there is no undo. That's why you made a backup first."
+
+[[steps]]
+step_number = 8
+title = "Add a setting"
+instruction = "Add the line export EDITOR=nano to the end of .bashrc. Keep the lines that are already there."
+hints = ["echo the line in quotes, then >> and the file's name.", "Used one > by mistake? Put the file back first: cp .bashrc.bak .bashrc", "Type: echo 'export EDITOR=nano' >> .bashrc"]
+solution = ["echo 'export EDITOR=nano' >> .bashrc"]
+
+[steps.step_type.Task]
+goal = "Append export EDITOR=nano to .bashrc"
+success_message = "Added at the end, everything else kept. bash reads .bashrc when a terminal opens, so on a real system the change shows up in new terminals (or right away after: source ~/.bashrc)."
+checks = [{ FileContains = { path = "ada-home/.bashrc", text = "export EDITOR=nano" } }, { FileContains = { path = "ada-home/.bashrc", text = "alias ll=" } }]
+
+[[steps]]
+step_number = 9
+title = "On your own"
+instruction = "No hints. In ada-home, make a hidden file called .todo that says Water the plants. Then list ada-home so that .todo shows up."
+challenge = true
+solution = ["echo 'Water the plants' > .todo", "ls -a"]
+
+[steps.step_type.Task]
+goal = "Make .todo and see it in a listing"
+success_message = "A file of your own that ls won't show unless you ask. Now you know where to look."
+checks = [{ FileContains = { path = "ada-home/.todo", text = "Water the plants" } }, { OutputContains = ".todo" }]
+
+[[steps]]
+step_number = 10
+title = "What you learned"
+instruction = ""
+
+[steps.step_type.Information]
+content = """
+  ls -a                  show hidden names too
+  cat .gitconfig         read a dotfile, dot included
+  cp .bashrc .bashrc.bak back up before you edit
+  echo '...' >> .bashrc  add a line at the end
+
+  .  is this folder, .. is the folder above.
+
+Your own dotfiles are in your home folder: ls -a ~
+If your terminal runs bash, look for .bashrc. On a Mac the
+shell is usually zsh, and its file is .zshrc.
+
+Hidden keeps listings tidy. It doesn't keep anything secret."""
