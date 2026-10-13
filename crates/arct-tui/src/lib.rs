@@ -20,6 +20,7 @@ pub mod streak;
 pub mod certificate;
 pub mod sandbox;
 pub mod jail;
+pub mod first_keys;
 
 pub use app::App;
 pub use theme::Theme;
