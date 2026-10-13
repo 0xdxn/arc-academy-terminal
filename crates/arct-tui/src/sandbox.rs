@@ -1278,13 +1278,14 @@ mod tests {
             .contains("Load in"));
         real(&mut app, "cd tour").await;
         assert!(real(&mut app, "echo $PWD").await.contains("tour"));
-        // the guard sees what the variable holds
+        // the guard sees what the variable holds. This test reaches a real
+        // shell, so it only ever probes with harmless, read-only commands:
+        // if the guard regresses, ls runs, nothing else (destructive cases
+        // are in real_mode_guard_sees_what_variables_hold, which runs nothing)
         real(&mut app, "X=/").await;
-        let out = real(&mut app, "rm -rf $X").await;
-        assert!(out.contains("'rm -rf /'"), "{out}");
-        let out = real(&mut app, "ls $X").await;
+        let out = real(&mut app, "ls -d $X").await;
         assert!(out.contains("points outside"), "{out}");
-        let out = real(&mut app, "cat $HOME/.profile").await;
+        let out = real(&mut app, "ls -d $HOME/arct-no-such-probe").await;
         assert!(out.contains("points outside"), "{out}");
         let out = real(&mut app, "for f in *; do echo $f; done").await;
         assert!(out.contains("can't be checked"), "{out}");
