@@ -603,11 +603,30 @@ mod tests {
         assert!(checked(&shell, "cd $PWD"));
     }
 
+    /// For tests that need the OS jail. Where none works (a CI runner that
+    /// blocks user namespaces, so bubblewrap can't start) they say so and
+    /// stop; with ARCT_REQUIRE_JAIL set, a missing jail fails them instead.
+    fn jail_works_at(root: &Path) -> bool {
+        if crate::jail::Jail::for_root(root).is_some() {
+            return true;
+        }
+        assert!(
+            std::env::var_os("ARCT_REQUIRE_JAIL").is_none(),
+            "ARCT_REQUIRE_JAIL is set and no OS jail works on this machine"
+        );
+        eprintln!("skipped: no OS jail works on this machine");
+        let _ = std::fs::remove_dir_all(root);
+        false
+    }
+
     #[tokio::test]
     async fn real_files_lesson_uses_variables_end_to_end() {
         let mut app = app("realfiles");
         let root = std::env::temp_dir().join(format!("arct-realfiles-{}", std::process::id()));
         let mut playground = arct_core::Playground::open(root.clone()).unwrap();
+        if !jail_works_at(&root) {
+            return;
+        }
         let lesson = playground.enter_lesson("variables", &[]).unwrap();
         std::fs::create_dir_all(lesson.join("tour")).unwrap();
         app.playground = Some(playground);
@@ -723,6 +742,9 @@ mod tests {
         app.config.shell.safe_mode = true;
         let root = std::env::temp_dir().join(format!("arct-freeshell-{}", std::process::id()));
         std::fs::create_dir_all(root.join("notes")).unwrap();
+        if !jail_works_at(&root) {
+            return;
+        }
         std::fs::write(root.join(".hidden"), "x").unwrap();
         std::fs::write(root.join("notes/a.txt"), "alpha\n").unwrap();
         app.explore = Some(arct_core::Playground::open_with_display(root.clone(), "~/ArcAcademy/home").unwrap());

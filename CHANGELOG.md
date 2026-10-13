@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.1.3] (2026-10-13)
+
+- The test suite runs on machines without an OS sandbox; tests that need one say they were skipped. Nothing else changes from 1.1.2.
+
 ## [1.1.2] (2026-10-13)
 
 - Release builds for all four platforms complete on Linux build machines as well. Nothing else changes from 1.1.1.
