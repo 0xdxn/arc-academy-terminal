@@ -16,7 +16,7 @@
 
 set -eu
 
-VERSION="${ARCT_VERSION:-1.1.4}"
+VERSION="${ARCT_VERSION:-1.1.5}"
 INSTALL_DIR="${ARCT_INSTALL_DIR:-$HOME/.local/bin}"
 BASE="${ARCT_DOWNLOAD_BASE:-https://arcacademy.sh/releases}"
 

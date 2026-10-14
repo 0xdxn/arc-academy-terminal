@@ -9,7 +9,7 @@ homepage.workspace = true
 description = "Privacy-first analytics and telemetry for Arc Academy Terminal"
 
 [dependencies]
-arct-core = { path = "../arct-core", version = "1.1.4" }
+arct-core = { path = "../arct-core", version = "1.1.5" }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

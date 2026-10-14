@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.5] (2026-10-13)
+
+### Lessons
+- In a task step, commands that only look around (`ls`, `pwd`, `cd`, `cat`, `grep` and the like) don't count as wrong answers or use up hints. They still count when the step is about that command.
+- Achievement popups size themselves to show the whole description.
+
+### Development
+- The test suite removes the temporary folders it creates.
+
 ## [1.1.4] (2026-10-13)
 
 ### Safety
